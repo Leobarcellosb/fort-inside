@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generatePrognosticSchema } from "@/lib/schemas";
-import { PROGNOSTIC_SYSTEM_PROMPT, buildUserPrompt } from "@/lib/ai/prognostic-prompt";
-import type { PrognosticContent, QuizResponse, QuizStage } from "@/types/database";
+import { buildSystemPrompt, buildUserPrompt } from "@/lib/ai/prognostic-prompt";
+import type { PrognosticContent, QuizResponse, QuizStage, Participant, Prognostic } from "@/types/database";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     .from("participants")
     .select("full_name")
     .eq("id", participant_id)
-    .single();
+    .single() as { data: Pick<Participant, "full_name"> | null; error: { message: string } | null };
 
   if (pErr || !participant) {
     return NextResponse.json({ error: "Participante não encontrado" }, { status: 404 });
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   const { data: responses, error: rErr } = await supabase
     .from("quiz_responses")
     .select("*")
-    .eq("participant_id", participant_id);
+    .eq("participant_id", participant_id) as { data: QuizResponse[] | null; error: { message: string } | null };
 
   if (rErr || !responses || responses.length < 5) {
     return NextResponse.json({ error: "Participante não completou todas as etapas" }, { status: 400 });
@@ -54,12 +54,19 @@ export async function POST(req: NextRequest) {
   const { data: stages, error: sErr } = await supabase
     .from("quiz_stages")
     .select("*")
-    .order("id");
+    .order("id") as { data: QuizStage[] | null; error: { message: string } | null };
 
   if (sErr || !stages) {
     return NextResponse.json({ error: "Erro ao buscar etapas" }, { status: 500 });
   }
 
+  const { data: kbEntries } = await supabase
+    .from("knowledge_base")
+    .select("title, content")
+    .order("priority", { ascending: false })
+    .order("created_at", { ascending: true }) as { data: { title: string; content: string }[] | null; error: unknown };
+
+  const systemPrompt = buildSystemPrompt(kbEntries ?? []);
   const userPrompt = buildUserPrompt(participant.full_name, {
     responses: responses as QuizResponse[],
     stages: stages as QuizStage[],
@@ -67,9 +74,9 @@ export async function POST(req: NextRequest) {
 
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 2000,
+    max_tokens: 2048,
     temperature: 0.7,
-    system: PROGNOSTIC_SYSTEM_PROMPT,
+    system: systemPrompt,
     messages: [{ role: "user", content: userPrompt }],
   });
 
@@ -88,38 +95,72 @@ export async function POST(req: NextRequest) {
     .from("prognostics")
     .select("id")
     .eq("participant_id", participant_id)
-    .single();
+    .single() as { data: Pick<Prognostic, "id"> | null; error: unknown };
+
+  type MutResult = { data: unknown; error: { message: string } | null };
+  type SelectSingle<T> = { data: T | null; error: { message: string } | null };
+
+  let prognosticId: string | null = null;
 
   if (existing) {
-    const { error: uErr } = await supabase
-      .from("prognostics")
-      .update({
-        raw_ai_output: content,
-        status: "generated",
-        trail_recommendation: content.trilha_recomendada,
-        generated_at: new Date().toISOString(),
-      })
-      .eq("participant_id", participant_id);
+    prognosticId = existing.id;
+    const { error: uErr } = await ((supabase.from("prognostics") as unknown as {
+      update(v: Record<string, unknown>): { eq(c: string, v: string): Promise<MutResult> };
+    }).update({
+      raw_ai_output: content,
+      status: "generated",
+      trail_recommendation: content.trilha_recomendada,
+      generated_at: new Date().toISOString(),
+      pdf_url: null,
+    }).eq("participant_id", participant_id));
 
     if (uErr) return NextResponse.json({ error: "Erro ao salvar prognóstico" }, { status: 500 });
   } else {
-    const { error: iErr } = await supabase.from("prognostics").insert({
+    const { data: inserted, error: iErr } = await ((supabase.from("prognostics") as unknown as {
+      insert(v: Record<string, unknown>): {
+        select(cols: string): { single(): Promise<SelectSingle<Pick<Prognostic, "id">>> };
+      };
+    }).insert({
       participant_id,
       raw_ai_output: content,
       status: "generated",
       trail_recommendation: content.trilha_recomendada,
       generated_at: new Date().toISOString(),
-    });
+    }).select("id").single());
 
-    if (iErr) return NextResponse.json({ error: "Erro ao salvar prognóstico" }, { status: 500 });
+    if (iErr || !inserted) return NextResponse.json({ error: "Erro ao salvar prognóstico" }, { status: 500 });
+    prognosticId = inserted.id;
   }
 
-  await supabase.from("event_logs").insert({
-    event_id,
-    participant_id,
-    action: "prognostic_generated",
-    payload: { trail: content.trilha_recomendada },
-  });
+  await ((supabase.from("event_logs") as unknown as {
+    insert(v: Record<string, unknown>): Promise<unknown>;
+  }).insert({ event_id, participant_id, action: "prognostic_generated", payload: { trail: content.trilha_recomendada } }));
 
-  return NextResponse.json({ success: true, trail: content.trilha_recomendada });
+  // Chain PDF generation — await so result is persisted before response
+  let pdfUrl: string | null = null;
+  if (prognosticId) {
+    try {
+      const baseUrl =
+        process.env.NEXT_PUBLIC_APP_URL ??
+        (req.headers.get("origin") || `http://${req.headers.get("host") ?? "localhost:3000"}`);
+      const pdfRes = await fetch(`${baseUrl}/api/generate-pdf`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prognostic_id: prognosticId }),
+      });
+      if (pdfRes.ok) {
+        const pdfJson = (await pdfRes.json()) as { pdf_url?: string };
+        pdfUrl = pdfJson.pdf_url ?? null;
+      }
+    } catch {
+      // PDF failure should not break prognostic generation
+    }
+  }
+
+  return NextResponse.json({
+    success: true,
+    prognostic_id: prognosticId,
+    trail: content.trilha_recomendada,
+    pdf_url: pdfUrl,
+  });
 }

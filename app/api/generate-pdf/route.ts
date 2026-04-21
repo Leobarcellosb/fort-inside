@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generatePdfSchema } from "@/lib/schemas";
-import type { PrognosticContent } from "@/types/database";
+import type { PrognosticContent, Prognostic, Event } from "@/types/database";
 
 export const maxDuration = 60;
 
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     .from("prognostics")
     .select("*, participants(full_name, event_id)")
     .eq("id", prognostic_id)
-    .single();
+    .single() as { data: (Prognostic & { participants: { full_name: string; event_id: string } | null }) | null; error: unknown };
 
   if (!prognostic) {
     return NextResponse.json({ error: "Prognóstico não encontrado" }, { status: 404 });
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     .from("events")
     .select("name, event_date, host_name")
     .eq("id", participant?.event_id ?? "")
-    .single();
+    .single() as { data: Pick<Event, "name" | "event_date" | "host_name"> | null; error: unknown };
 
   const content = (prognostic.final_content ?? prognostic.raw_ai_output) as PrognosticContent;
 
@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
   const { PrognosticPdfDocument } = await import("@/components/features/prognostic/PrognosticPdfDocument");
   const { createElement } = await import("react");
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const pdfBuffer = await renderToBuffer(
     createElement(PrognosticPdfDocument, {
       participantName: participant?.full_name ?? "",
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest) {
       hostName: event?.host_name ?? "Yuri Fortes",
       content,
       yuriNote: prognostic.yuri_note ?? null,
-    })
+    }) as any
   );
 
   // Upload to Supabase Storage
@@ -73,10 +74,9 @@ export async function POST(req: NextRequest) {
     .from("documents")
     .getPublicUrl(fileName);
 
-  await supabase
-    .from("prognostics")
-    .update({ pdf_url: publicUrl })
-    .eq("id", prognostic_id);
+  await ((supabase.from("prognostics") as unknown as {
+    update(v: Record<string, unknown>): { eq(c: string, v: string): Promise<unknown> };
+  }).update({ pdf_url: publicUrl }).eq("id", prognostic_id));
 
   return NextResponse.json({ pdf_url: publicUrl });
 }

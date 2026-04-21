@@ -75,16 +75,16 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
     setSaving(true);
     try {
       const supabase = createClient();
-      const { error } = await supabase
-        .from("prognostics")
-        .update({
-          edited_content: editData,
-          trail_recommendation: editData.trilha_recomendada,
-          yuri_note: yuriNote || null,
-          status: "reviewed",
-          reviewed_at: new Date().toISOString(),
-        })
-        .eq("id", selected);
+      type MutResult = { data: unknown; error: { message: string } | null };
+      const { error } = await ((supabase.from("prognostics") as unknown as {
+        update(v: Record<string, unknown>): { eq(c: string, v: string): Promise<MutResult> };
+      }).update({
+        edited_content: editData,
+        trail_recommendation: editData.trilha_recomendada,
+        yuri_note: yuriNote || null,
+        status: "reviewed",
+        reviewed_at: new Date().toISOString(),
+      }).eq("id", selected));
 
       if (error) throw error;
 
@@ -113,14 +113,14 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
 
       const final = prog.edited_content ?? prog.raw_ai_output;
 
-      const { error } = await supabase
-        .from("prognostics")
-        .update({
-          final_content: final,
-          status: "delivered",
-          delivered_at: new Date().toISOString(),
-        })
-        .eq("id", prognosticId);
+      type MutResult2 = { data: unknown; error: { message: string } | null };
+      const { error } = await ((supabase.from("prognostics") as unknown as {
+        update(v: Record<string, unknown>): { eq(c: string, v: string): Promise<MutResult2> };
+      }).update({
+        final_content: final,
+        status: "delivered",
+        delivered_at: new Date().toISOString(),
+      }).eq("id", prognosticId));
 
       if (error) throw error;
 

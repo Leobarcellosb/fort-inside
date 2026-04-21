@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { joinEventSchema, type JoinEventInput } from "@/lib/schemas";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,66 +32,25 @@ export function JoinForm({ eventId, eventCode }: Props) {
   async function onSubmit(data: JoinEventInput) {
     setLoading(true);
     try {
-      const supabase = createClient();
-
-      // Sign up or sign in (magic password = email+eventCode)
-      const password = `${data.email}::${eventCode}`;
-      let userId: string;
-
-      const { data: signUp, error: signUpError } = await supabase.auth.signUp({
-        email: data.email,
-        password,
-        options: { data: { full_name: data.full_name } },
+      // Create user + participant server-side (no confirmation email)
+      const res = await fetch("/api/join-event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...data, event_id: eventId, event_code: eventCode }),
       });
 
-      if (signUpError?.message?.includes("already registered")) {
-        const { data: signIn, error: signInError } = await supabase.auth.signInWithPassword({
-          email: data.email,
-          password,
-        });
-        if (signInError || !signIn.user) throw new Error("Erro ao entrar. Tente novamente.");
-        userId = signIn.user.id;
-      } else if (signUpError || !signUp.user) {
-        throw new Error(signUpError?.message ?? "Erro ao criar conta.");
-      } else {
-        userId = signUp.user.id;
-      }
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Erro ao entrar na imersão.");
 
-      // Check if already joined
-      const { data: existing } = await supabase
-        .from("participants")
-        .select("id")
-        .eq("event_id", eventId)
-        .eq("email", data.email)
-        .single();
+      // Sign in client-side to establish the session
+      const supabase = createClient();
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: data.email,
+        password: json.password,
+      });
+      if (signInError) throw new Error("Erro ao autenticar. Tente novamente.");
 
-      let participantId: string;
-
-      if (existing) {
-        participantId = existing.id;
-        await supabase
-          .from("participants")
-          .update({ user_id: userId })
-          .eq("id", existing.id);
-      } else {
-        const { data: participant, error: pErr } = await supabase
-          .from("participants")
-          .insert({
-            event_id: eventId,
-            user_id: userId,
-            full_name: data.full_name,
-            email: data.email,
-            phone: data.phone ?? null,
-            course_or_moment: data.course_or_moment ?? null,
-          })
-          .select("id")
-          .single();
-
-        if (pErr || !participant) throw new Error("Erro ao registrar. Tente novamente.");
-        participantId = participant.id;
-      }
-
-      localStorage.setItem("fort_participant_id", participantId);
+      localStorage.setItem("fort_participant_id", json.participant_id);
       localStorage.setItem("fort_event_id", eventId);
 
       router.push("/waiting");
@@ -153,7 +113,7 @@ export function JoinForm({ eventId, eventCode }: Props) {
         </Label>
         <Input
           id="course_or_moment"
-          placeholder="Contexto breve"
+          placeholder="Ex: empresário em transição, investidor, em construção de carreira..."
           className="bg-transparent border-0 border-b border-border rounded-none focus-visible:ring-0 focus-visible:border-primary px-0 transition-colors"
           {...register("course_or_moment")}
         />

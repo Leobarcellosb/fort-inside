@@ -49,10 +49,11 @@ interface Props {
 
 const STAGE_LABELS = ["—", "Entrada", "Sala Principal", "Cozinha", "Varanda", "Suíte"];
 
-export function LiveControlPanel({ event, stages, participants, initialResponses, initialLogs }: Props) {
+export function LiveControlPanel({ event, stages, participants: initialParticipants, initialResponses, initialLogs }: Props) {
   const router = useRouter();
   const [currentStage, setCurrentStage] = useState(event.current_stage);
   const [eventStatus, setEventStatus] = useState(event.status);
+  const [participants, setParticipants] = useState<Participant[]>(initialParticipants);
   const [responses, setResponses] = useState<ResponseRecord[]>(initialResponses);
   const [logs, setLogs] = useState<LogRecord[]>(initialLogs);
   const [releasing, setReleasing] = useState(false);
@@ -71,32 +72,112 @@ export function LiveControlPanel({ event, stages, participants, initialResponses
   const allCompletedCurrent =
     currentStage > 0 && completedCurrentStage >= participants.length;
 
+  const allParticipantsDone =
+    participants.length > 0 && participants.every((p) => p.completed_at !== null);
+
   useEffect(() => {
     const supabase = createClient();
+    const participantIds = new Set(initialParticipants.map((p) => p.id));
+
+    const upsertResponse = (r: ResponseRecord) => {
+      if (!participantIds.has(r.participant_id)) return;
+      setResponses((prev) => {
+        const idx = prev.findIndex(
+          (x) => x.participant_id === r.participant_id && x.stage_id === r.stage_id
+        );
+        if (idx >= 0) {
+          const next = prev.slice();
+          next[idx] = r;
+          return next;
+        }
+        return [...prev, r];
+      });
+      const p = initialParticipants.find((x) => x.id === r.participant_id);
+      setLogs((prev) => [
+        {
+          action: "response_submitted",
+          payload: { stage_id: r.stage_id },
+          created_at: new Date().toISOString(),
+          participant_id: r.participant_id,
+        },
+        ...prev,
+      ]);
+      if (p) toast.success(`${p.full_name} completou etapa ${r.stage_id}`);
+    };
 
     const channel = supabase
       .channel(`event:${event.id}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "quiz_responses" },
+        (payload) => upsertResponse(payload.new as ResponseRecord)
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "quiz_responses" },
+        (payload) => upsertResponse(payload.new as ResponseRecord)
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "participants", filter: `event_id=eq.${event.id}` },
         (payload) => {
-          const r = payload.new as ResponseRecord;
-          if (participants.some((p) => p.id === r.participant_id)) {
-            setResponses((prev) => [...prev, r]);
-            const p = participants.find((x) => x.id === r.participant_id);
-            setLogs((prev) => [
-              {
-                action: "response_submitted",
-                payload: { stage_id: r.stage_id },
-                created_at: new Date().toISOString(),
-                participant_id: r.participant_id,
-              },
-              ...prev,
-            ]);
+          const updated = payload.new as Participant;
+          setParticipants((prev) =>
+            prev.map((p) => (p.id === updated.id ? { ...p, completed_at: updated.completed_at } : p))
+          );
+          if (updated.completed_at) {
+            const p = initialParticipants.find((x) => x.id === updated.id);
             if (p) {
-              toast.success(`${p.full_name} completou etapa ${r.stage_id}`);
+              setLogs((prev) => [
+                {
+                  action: "participant_completed",
+                  payload: null,
+                  created_at: new Date().toISOString(),
+                  participant_id: updated.id,
+                },
+                ...prev,
+              ]);
+              toast.success(`${p.full_name} concluiu o quiz — gerando prognóstico…`);
             }
           }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "prognostics" },
+        (payload) => {
+          const pr = payload.new as { participant_id: string; trail_recommendation: string | null };
+          if (!participantIds.has(pr.participant_id)) return;
+          const p = initialParticipants.find((x) => x.id === pr.participant_id);
+          setLogs((prev) => [
+            {
+              action: "prognostic_generated",
+              payload: { trail: pr.trail_recommendation },
+              created_at: new Date().toISOString(),
+              participant_id: pr.participant_id,
+            },
+            ...prev,
+          ]);
+          if (p) toast.success(`Prognóstico gerado — ${p.full_name}`);
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "prognostics" },
+        (payload) => {
+          const pr = payload.new as { participant_id: string; pdf_url: string | null };
+          if (!participantIds.has(pr.participant_id) || !pr.pdf_url) return;
+          const p = initialParticipants.find((x) => x.id === pr.participant_id);
+          setLogs((prev) => [
+            {
+              action: "pdf_generated",
+              payload: null,
+              created_at: new Date().toISOString(),
+              participant_id: pr.participant_id,
+            },
+            ...prev,
+          ]);
+          if (p) toast.success(`PDF pronto — ${p.full_name}`);
         }
       )
       .on(
@@ -111,7 +192,7 @@ export function LiveControlPanel({ event, stages, participants, initialResponses
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [event.id, participants]);
+  }, [event.id, initialParticipants]);
 
   async function releaseNextStage() {
     if (releasing) return;
@@ -119,18 +200,16 @@ export function LiveControlPanel({ event, stages, participants, initialResponses
     try {
       const supabase = createClient();
       const next = currentStage + 1;
-      const { error } = await supabase
-        .from("events")
-        .update({ current_stage: next, status: "live" })
-        .eq("id", event.id);
+      type MutResult = { data: unknown; error: { message: string } | null };
+      const { error } = await ((supabase.from("events") as unknown as {
+        update(v: Record<string, unknown>): { eq(c: string, v: string): Promise<MutResult> };
+      }).update({ current_stage: next, status: "live" }).eq("id", event.id));
 
       if (error) throw error;
 
-      await supabase.from("event_logs").insert({
-        event_id: event.id,
-        action: "stage_released",
-        payload: { stage_id: next },
-      });
+      await ((supabase.from("event_logs") as unknown as {
+        insert(v: Record<string, unknown>): Promise<unknown>;
+      }).insert({ event_id: event.id, action: "stage_released", payload: { stage_id: next } }));
 
       setCurrentStage(next);
       toast.success(`Etapa ${next} liberada — ${STAGE_LABELS[next]}`);
@@ -211,13 +290,15 @@ export function LiveControlPanel({ event, stages, participants, initialResponses
           {/* Release button */}
           {currentStage < 5 && (
             <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button
-                  disabled={!canReleaseNext || releasing}
-                  className="w-full h-12 bg-primary text-primary-foreground hover:bg-primary/90 uppercase tracking-[0.08em] text-sm"
-                >
-                  {releasing ? "Liberando..." : `Liberar etapa ${currentStage + 1}`}
-                </Button>
+              <AlertDialogTrigger
+                render={
+                  <Button
+                    disabled={!canReleaseNext || releasing}
+                    className="w-full h-12 bg-primary text-primary-foreground hover:bg-primary/90 uppercase tracking-[0.08em] text-sm"
+                  />
+                }
+              >
+                {releasing ? "Liberando..." : `Liberar etapa ${currentStage + 1}`}
               </AlertDialogTrigger>
               <AlertDialogContent className="bg-card border-border">
                 <AlertDialogHeader>
@@ -251,13 +332,15 @@ export function LiveControlPanel({ event, stages, participants, initialResponses
           {/* Process prognostics */}
           {currentStage === 5 && eventStatus !== "processing" && eventStatus !== "completed" && (
             <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button
-                  className="w-full h-12 bg-primary text-primary-foreground hover:bg-primary/90 uppercase tracking-[0.08em] text-sm"
-                  disabled={processing}
-                >
-                  {processing ? "Processando prognósticos..." : "Processar prognósticos"}
-                </Button>
+              <AlertDialogTrigger
+                render={
+                  <Button
+                    className="w-full h-12 bg-primary text-primary-foreground hover:bg-primary/90 uppercase tracking-[0.08em] text-sm"
+                    disabled={processing}
+                  />
+                }
+              >
+                {processing ? "Processando prognósticos..." : "Processar prognósticos"}
               </AlertDialogTrigger>
               <AlertDialogContent className="bg-card border-border">
                 <AlertDialogHeader>
@@ -364,6 +447,10 @@ export function LiveControlPanel({ event, stages, participants, initialResponses
                   label = `Etapa ${(log.payload as { stage_id?: number })?.stage_id ?? ""} liberada`;
                 } else if (log.action === "prognostic_generated" && participant) {
                   label = `Prognóstico gerado — ${participant.full_name}`;
+                } else if (log.action === "pdf_generated" && participant) {
+                  label = `PDF pronto — ${participant.full_name}`;
+                } else if (log.action === "participant_completed" && participant) {
+                  label = `${participant.full_name} concluiu o quiz`;
                 } else if (log.action === "batch_process_completed") {
                   label = `Processamento concluído`;
                 }

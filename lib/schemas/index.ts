@@ -16,7 +16,7 @@ export const quizResponseSchema = z.object({
 export const createEventSchema = z.object({
   name: z.string().min(3),
   event_code: z.string().min(3).max(20).regex(/^[A-Z0-9]+$/, "Somente letras maiúsculas e números"),
-  event_date: z.string().datetime(),
+  event_date: z.string().min(1).transform((v) => (v.length === 16 ? v + ":00" : v)),
   location_name: z.string().optional(),
   max_participants: z.number().int().min(1).max(20).default(8),
   host_name: z.string().default("Yuri Fortes"),
@@ -51,6 +51,6 @@ export const generatePdfSchema = z.object({
 });
 
 export type JoinEventInput = z.infer<typeof joinEventSchema>;
-export type CreateEventInput = z.infer<typeof createEventSchema>;
+export type CreateEventInput = z.output<typeof createEventSchema>;
 export type QuizResponseInput = z.infer<typeof quizResponseSchema>;
 export type UpdatePrognosticInput = z.infer<typeof updatePrognosticSchema>;

@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import type { Event } from "@/types/database";
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "Rascunho",
@@ -23,7 +24,7 @@ export default async function EventsPage() {
   const { data: events } = await supabase
     .from("events")
     .select("id, name, event_code, event_date, status, max_participants")
-    .order("event_date", { ascending: false });
+    .order("event_date", { ascending: false }) as { data: Pick<Event, "id" | "name" | "event_code" | "event_date" | "status" | "max_participants">[] | null; error: unknown };
 
   return (
     <div className="min-h-screen bg-background p-4 lg:p-8">
@@ -33,9 +34,14 @@ export default async function EventsPage() {
             <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Admin</p>
             <h1 className="font-display text-2xl text-foreground mt-1">Eventos</h1>
           </div>
-          <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
-            <Link href="/admin/events/new">Novo evento</Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button asChild variant="outline" className="border-border text-muted-foreground hover:text-foreground">
+              <Link href="/admin/settings">Configurações</Link>
+            </Button>
+            <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
+              <Link href="/admin/events/new">Novo evento</Link>
+            </Button>
+          </div>
         </div>
 
         <div className="space-y-3">

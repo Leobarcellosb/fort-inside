@@ -5,9 +5,12 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import type { QuizStage } from "@/types/database";
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
+import { CinematicHero } from "@/components/features/participant/CinematicHero";
+import { getStageImage } from "@/lib/cinematic-map";
 
 interface Props {
   params: Promise<{ stageId: string }>;
@@ -88,11 +91,9 @@ export default function QuizPage({ params }: Props) {
     try {
       const supabase = createClient();
 
-      const { error } = await supabase.from("quiz_responses").upsert({
-        participant_id: participantId,
-        stage_id: stageNum,
-        answers,
-      });
+      const { error } = await (supabase.from("quiz_responses") as unknown as {
+        upsert(values: Record<string, unknown>): Promise<{ data: unknown; error: { message: string } | null }>;
+      }).upsert({ participant_id: participantId, stage_id: stageNum, answers });
 
       if (error) throw new Error(error.message);
 
@@ -103,12 +104,21 @@ export default function QuizPage({ params }: Props) {
         payload: { participant_id: participantId, stage_id: stageNum },
       });
 
-      // If stage 5 complete, mark participant as done
+      // If stage 5 complete, mark participant as done and trigger prognostic + PDF
       if (stageNum === 5) {
-        await supabase
-          .from("participants")
-          .update({ completed_at: new Date().toISOString() })
-          .eq("id", participantId);
+        await ((supabase.from("participants") as unknown as {
+          update(values: Record<string, unknown>): { eq(col: string, val: string): Promise<unknown> };
+        }).update({ completed_at: new Date().toISOString() }).eq("id", participantId));
+
+        // Fire-and-forget: prognostic generation chains into PDF generation server-side
+        fetch("/api/generate-prognostic", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ participant_id: participantId, event_id: eventId }),
+          keepalive: true,
+        }).catch(() => {
+          // Admin can re-run via "Processar prognósticos" if this fails
+        });
       }
 
       localStorage.removeItem(`fort_answers_${stageNum}`);
@@ -135,16 +145,30 @@ export default function QuizPage({ params }: Props) {
 
   return (
     <main className="min-h-screen flex flex-col bg-background">
-      {/* Header */}
-      <div className="px-6 pt-8 pb-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-            Etapa {stageNum} de 5
-          </p>
-          <p className="text-xs text-muted-foreground">{stage.ambient_name}</p>
+      {/* Cinematic hero — top 40vh with ambient image + stage title in Playfair */}
+      <CinematicHero
+        image={getStageImage(stageNum)}
+        alt={`${stage.title} — ${stage.ambient_name}`}
+        overlay="medium"
+        height="split"
+        priority
+      >
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs uppercase tracking-[0.2em] text-white/70">
+              Etapa {stageNum} de 5
+            </p>
+            <p className="text-xs text-white/70">{stage.ambient_name}</p>
+          </div>
+          <h2 className="font-playfair text-3xl md:text-5xl font-light text-white leading-tight tracking-tight">
+            {stage.title}
+          </h2>
         </div>
+      </CinematicHero>
+
+      {/* Progress bar bridge */}
+      <div className="px-6 pt-4">
         <Progress value={progress} className="h-0.5 bg-border" />
-        <h2 className="font-display text-xl text-foreground">{stage.title}</h2>
       </div>
 
       {/* Question */}
@@ -182,7 +206,7 @@ export default function QuizPage({ params }: Props) {
             <Textarea
               placeholder="Escreva sua resposta..."
               value={answers[question.id] ?? ""}
-              onChange={(e) => setAnswer(question.id, e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setAnswer(question.id, e.target.value)}
               className="min-h-[140px] bg-card border-border text-foreground placeholder:text-muted-foreground resize-none focus-visible:ring-primary/40"
               autoFocus
             />

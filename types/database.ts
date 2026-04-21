@@ -102,26 +102,44 @@ export interface Database {
         Row: Event;
         Insert: Omit<Event, "id" | "created_at" | "updated_at">;
         Update: Partial<Omit<Event, "id" | "created_at">>;
+        Relationships: [];
       };
       participants: {
         Row: Participant;
         Insert: Omit<Participant, "id" | "joined_at">;
         Update: Partial<Omit<Participant, "id" | "event_id">>;
+        Relationships: [];
       };
       quiz_stages: {
         Row: QuizStage;
         Insert: QuizStage;
         Update: Partial<QuizStage>;
+        Relationships: [];
       };
       quiz_responses: {
         Row: QuizResponse;
         Insert: Omit<QuizResponse, "id" | "submitted_at">;
         Update: Partial<QuizResponse>;
+        Relationships: [];
       };
       prognostics: {
         Row: Prognostic;
         Insert: Omit<Prognostic, "id" | "public_share_token">;
         Update: Partial<Omit<Prognostic, "id" | "participant_id">>;
+        Relationships: [];
+      };
+      event_logs: {
+        Row: {
+          id: string;
+          event_id: string;
+          participant_id: string | null;
+          action: string;
+          payload: Record<string, unknown> | null;
+          created_at: string;
+        };
+        Insert: Omit<{ id: string; event_id: string; participant_id: string | null; action: string; payload: Record<string, unknown> | null; created_at: string; }, "id" | "created_at">;
+        Update: Partial<{ event_id: string; participant_id: string | null; action: string; payload: Record<string, unknown> | null; }>;
+        Relationships: [];
       };
     };
     Views: {
@@ -129,5 +147,8 @@ export interface Database {
         Row: ParticipantProfile;
       };
     };
+    Functions: Record<string, never>;
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
 }

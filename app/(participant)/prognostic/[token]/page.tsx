@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
-import type { PrognosticContent } from "@/types/database";
+import type { PrognosticContent, Prognostic, Event } from "@/types/database";
 import { PrognosticView } from "@/components/features/prognostic/PrognosticView";
 
 interface Props {
@@ -16,7 +16,7 @@ export default async function PrognosticPage({ params }: Props) {
     .select("*, participants(full_name, event_id)")
     .eq("public_share_token", token)
     .eq("status", "delivered")
-    .single();
+    .single() as { data: (Prognostic & { participants: { full_name: string; event_id: string } | null }) | null; error: unknown };
 
   if (!prognostic) notFound();
 
@@ -26,7 +26,7 @@ export default async function PrognosticPage({ params }: Props) {
     .from("events")
     .select("name, event_date, host_name")
     .eq("id", participant?.event_id ?? "")
-    .single();
+    .single() as { data: Pick<Event, "name" | "event_date" | "host_name"> | null; error: unknown };
 
   const content = (prognostic.final_content ?? prognostic.raw_ai_output) as PrognosticContent;
 

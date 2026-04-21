@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import { CinematicHero } from "@/components/features/participant/CinematicHero";
+import { AMBIENT_IMAGES } from "@/lib/cinematic-map";
 
 interface Props {
   participantName: string;
@@ -93,23 +95,29 @@ export function PrognosticView({
         </Button>
       </div>
 
-      {/* Header */}
-      <div className="px-6 py-16 max-w-2xl mx-auto text-center space-y-4">
-        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-          Mapa da Sua Próxima Construção
-        </p>
-        <h1 className="font-display text-4xl md:text-5xl text-foreground leading-tight">
-          {participantName}
-        </h1>
-        <p className="text-muted-foreground text-sm">
-          {eventName} · {formattedDate}
-        </p>
+      {/* Cinematic header */}
+      <CinematicHero
+        image={AMBIENT_IMAGES.prognostic}
+        alt="Mapa da Sua Próxima Construção"
+        overlay="medium"
+      >
+        <div className="mx-auto w-full max-w-2xl text-center space-y-5">
+          <p className="text-xs uppercase tracking-[0.25em] text-white/70">
+            Mapa da Sua Próxima Construção
+          </p>
+          <h1 className="font-playfair text-5xl md:text-7xl font-light text-white leading-[1.05] tracking-tight">
+            {participantName}
+          </h1>
+          <p className="text-white/75 text-sm">
+            {eventName} · {formattedDate}
+          </p>
 
-        <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full border ${trailColor} mt-2`}>
-          <span className="text-xs uppercase tracking-[0.12em]">Trilha</span>
-          <span className="text-sm font-medium">{content.trilha_recomendada}</span>
+          <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-black/30 backdrop-blur-sm ${trailColor} mt-2`}>
+            <span className="text-xs uppercase tracking-[0.12em]">Trilha</span>
+            <span className="text-sm font-medium">{content.trilha_recomendada}</span>
+          </div>
         </div>
-      </div>
+      </CinematicHero>
 
       <Separator className="bg-border max-w-2xl mx-auto" />
 
