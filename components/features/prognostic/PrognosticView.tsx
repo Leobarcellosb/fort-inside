@@ -53,16 +53,18 @@ export function PrognosticView({
 
   // Poll for the background-generated PDF when it's not yet available on load.
   // generate-prognostic triggers PDF via after(), so participants can arrive here
-  // before the PDF finishes rendering (~10-30s). Polls every 5s, gives up after 2min.
+  // before the PDF finishes rendering (~10-30s). Polls immediately, then every 3s,
+  // gives up after 2min. Immediate first poll prevents the "why is nothing happening"
+  // window that makes users click the manual-generate fallback prematurely.
   useEffect(() => {
     if (pdfUrl) return;
     if (pollingTimedOut) return;
 
-    const POLL_INTERVAL_MS = 5000;
+    const POLL_INTERVAL_MS = 3000;
     const POLL_MAX_MS = 120_000;
     const startedAt = Date.now();
 
-    const interval = setInterval(async () => {
+    async function pollOnce() {
       if (Date.now() - startedAt > POLL_MAX_MS) {
         setPollingTimedOut(true);
         return;
@@ -75,7 +77,11 @@ export function PrognosticView({
       } catch {
         // swallow — next tick retries
       }
-    }, POLL_INTERVAL_MS);
+    }
+
+    // First poll immediately (may resolve within ms if PDF already finished)
+    pollOnce();
+    const interval = setInterval(pollOnce, POLL_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, [pdfUrl, pollingTimedOut, token]);
@@ -166,7 +172,7 @@ export function PrognosticView({
             >
               <path d="M21 12a9 9 0 1 1-6.219-8.56" />
             </svg>
-            <span>Gerando PDF...</span>
+            <span>Preparando PDF...</span>
           </div>
         ) : (
           <Button
