@@ -40,6 +40,7 @@ export default async function PrognosticPage({ params }: Props) {
       yuriNote={prognostic.yuri_note ?? null}
       prognosticId={prognostic.id}
       token={token}
+      pdfUrl={prognostic.pdf_url ?? null}
     />
   );
 }
