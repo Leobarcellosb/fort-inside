@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generatePrognosticSchema } from "@/lib/schemas";
@@ -136,31 +136,28 @@ export async function POST(req: NextRequest) {
     insert(v: Record<string, unknown>): Promise<unknown>;
   }).insert({ event_id, participant_id, action: "prognostic_generated", payload: { trail: content.trilha_recomendada } }));
 
-  // Chain PDF generation — await so result is persisted before response
-  let pdfUrl: string | null = null;
+  // Background PDF generation via Next 16 `after()`:
+  // runs after response is sent, keeps runtime alive until completion or maxDuration.
+  // Failure is non-fatal — participant can generate PDF on-demand from the UI (fallback).
   if (prognosticId) {
-    try {
-      const baseUrl =
-        process.env.NEXT_PUBLIC_APP_URL ??
-        (req.headers.get("origin") || `http://${req.headers.get("host") ?? "localhost:3000"}`);
-      const pdfRes = await fetch(`${baseUrl}/api/generate-pdf`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prognostic_id: prognosticId }),
-      });
-      if (pdfRes.ok) {
-        const pdfJson = (await pdfRes.json()) as { pdf_url?: string };
-        pdfUrl = pdfJson.pdf_url ?? null;
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? req.nextUrl.origin;
+    after(async () => {
+      try {
+        await fetch(`${baseUrl}/api/generate-pdf`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prognostic_id: prognosticId }),
+        });
+      } catch (err) {
+        console.error("[background PDF generation failed]", err);
       }
-    } catch {
-      // PDF failure should not break prognostic generation
-    }
+    });
   }
 
   return NextResponse.json({
     success: true,
     prognostic_id: prognosticId,
     trail: content.trilha_recomendada,
-    pdf_url: pdfUrl,
+    pdf_pending: true,
   });
 }

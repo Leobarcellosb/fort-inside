@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { PrognosticContent, TrailRecommendation } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -44,10 +44,43 @@ export function PrognosticView({
   content,
   yuriNote,
   prognosticId,
+  token,
   pdfUrl: initialPdfUrl,
 }: Props) {
   const [pdfUrl, setPdfUrl] = useState<string | null>(initialPdfUrl);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [pollingTimedOut, setPollingTimedOut] = useState(false);
+
+  // Poll for the background-generated PDF when it's not yet available on load.
+  // generate-prognostic triggers PDF via after(), so participants can arrive here
+  // before the PDF finishes rendering (~10-30s). Polls every 5s, gives up after 2min.
+  useEffect(() => {
+    if (pdfUrl) return;
+    if (pollingTimedOut) return;
+
+    const POLL_INTERVAL_MS = 5000;
+    const POLL_MAX_MS = 120_000;
+    const startedAt = Date.now();
+
+    const interval = setInterval(async () => {
+      if (Date.now() - startedAt > POLL_MAX_MS) {
+        setPollingTimedOut(true);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/prognostic-status/${token}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const data = (await res.json()) as { pdf_url: string | null };
+        if (data.pdf_url) setPdfUrl(data.pdf_url);
+      } catch {
+        // swallow — next tick retries
+      }
+    }, POLL_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [pdfUrl, pollingTimedOut, token]);
+
+  const isPolling = !pdfUrl && !pollingTimedOut;
 
   const trailColor =
     TRAIL_COLORS[content.trilha_recomendada] ?? "border-border text-muted-foreground";
@@ -113,6 +146,28 @@ export function PrognosticView({
             </svg>
             <span>PDF</span>
           </a>
+        ) : isPolling ? (
+          <div
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-background/70 border border-primary/20 text-primary/70 text-xs uppercase tracking-[0.12em] backdrop-blur-md shadow-lg"
+            aria-live="polite"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="animate-spin"
+              aria-hidden
+            >
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+            <span>Gerando PDF...</span>
+          </div>
         ) : (
           <Button
             onClick={generateAndOpenPdf}
