@@ -45,11 +45,12 @@ interface Props {
   participants: Participant[];
   initialResponses: ResponseRecord[];
   initialLogs: LogRecord[];
+  headerAction?: React.ReactNode;
 }
 
 const STAGE_LABELS = ["—", "Entrada", "Sala Principal", "Cozinha", "Varanda", "Suíte"];
 
-export function LiveControlPanel({ event, stages, participants: initialParticipants, initialResponses, initialLogs }: Props) {
+export function LiveControlPanel({ event, stages, participants: initialParticipants, initialResponses, initialLogs, headerAction }: Props) {
   const router = useRouter();
   const [currentStage, setCurrentStage] = useState(event.current_stage);
   const [eventStatus, setEventStatus] = useState(event.status);
@@ -245,17 +246,20 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
   return (
     <div className="min-h-screen bg-background p-4 lg:p-8">
       {/* Header */}
-      <div className="mb-8 space-y-1">
-        <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Painel ao vivo</p>
-        <h1 className="font-display text-2xl text-foreground">{event.name}</h1>
-        <div className="flex items-center gap-3">
-          <Badge variant={eventStatus === "live" ? "default" : "secondary"} className="text-xs">
-            {eventStatus === "live" ? "🔴 Ao vivo" : eventStatus === "processing" ? "⚙️ Processando" : eventStatus}
-          </Badge>
-          <span className="text-muted-foreground text-sm">
-            {participants.length} participante{participants.length !== 1 ? "s" : ""}
-          </span>
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Painel ao vivo</p>
+          <h1 className="font-display text-2xl text-foreground">{event.name}</h1>
+          <div className="flex items-center gap-3">
+            <Badge variant={eventStatus === "live" ? "default" : "secondary"} className="text-xs">
+              {eventStatus === "live" ? "🔴 Ao vivo" : eventStatus === "processing" ? "⚙️ Processando" : eventStatus}
+            </Badge>
+            <span className="text-muted-foreground text-sm">
+              {participants.length} participante{participants.length !== 1 ? "s" : ""}
+            </span>
+          </div>
         </div>
+        {headerAction && <div className="shrink-0">{headerAction}</div>}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

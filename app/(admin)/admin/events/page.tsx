@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DeleteEventDialog } from "@/components/features/admin/DeleteEventDialog";
 import type { Event } from "@/types/database";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -63,7 +64,7 @@ export default async function EventsPage() {
                   })}
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
                 {event.status === "live" || event.status === "draft" ? (
                   <Button asChild size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs">
                     <Link href={`/admin/events/${event.id}`}>Painel</Link>
@@ -82,6 +83,15 @@ export default async function EventsPage() {
                     <Link href={`/admin/events/${event.id}`}>Ver</Link>
                   </Button>
                 )}
+                <DeleteEventDialog
+                  event={{
+                    id: event.id,
+                    name: event.name,
+                    event_code: event.event_code,
+                    status: event.status,
+                  }}
+                  variant="icon"
+                />
               </div>
             </div>
           ))}

@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import { LiveControlPanel } from "@/components/features/admin/LiveControlPanel";
+import { DeleteEventDialog } from "@/components/features/admin/DeleteEventDialog";
 import type { Event, QuizStage, Participant, QuizResponse } from "@/types/database";
 
 interface EventLog {
@@ -57,6 +58,17 @@ export default async function EventControlPage({ params }: Props) {
       participants={participants ?? []}
       initialResponses={responses ?? []}
       initialLogs={logs ?? []}
+      headerAction={
+        <DeleteEventDialog
+          event={{
+            id: event.id,
+            name: event.name,
+            event_code: event.event_code,
+            status: event.status,
+          }}
+          variant="button"
+        />
+      }
     />
   );
 }
