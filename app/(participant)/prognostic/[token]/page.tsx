@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { notFound } from "next/navigation";
 import type { PrognosticContent, Prognostic, Event } from "@/types/database";
 import { PrognosticView } from "@/components/features/prognostic/PrognosticView";
@@ -7,9 +7,12 @@ interface Props {
   params: Promise<{ token: string }>;
 }
 
+// Public share route — participant accesses via unguessable token, no session.
+// Uses service_role to bypass RLS; safe because access requires the UUID token
+// and every query is filtered by public_share_token + status="delivered".
 export default async function PrognosticPage({ params }: Props) {
   const { token } = await params;
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data: prognostic } = await supabase
     .from("prognostics")
