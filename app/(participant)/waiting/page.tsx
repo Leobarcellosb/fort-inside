@@ -48,8 +48,8 @@ export default function WaitingPage() {
         }
       });
 
-    // Subscribe to event stage changes
-    const channel = supabase
+    // Channel 1: event stage progression (redirects to /quiz/[stageId] when admin advances)
+    const eventChannel = supabase
       .channel(`event:${eventId}`)
       .on(
         "postgres_changes",
@@ -69,8 +69,29 @@ export default function WaitingPage() {
       )
       .subscribe();
 
+    // Channel 2: prognostic delivery (redirects to /prognostic/[token] when admin clicks "Entregar")
+    const deliveryChannel = supabase
+      .channel(`prognostic-delivery-${participantId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "prognostics",
+          filter: `participant_id=eq.${participantId}`,
+        },
+        (payload) => {
+          const prog = payload.new as { status: string; public_share_token: string | null };
+          if (prog.status === "delivered" && prog.public_share_token) {
+            router.push(`/prognostic/${prog.public_share_token}`);
+          }
+        }
+      )
+      .subscribe();
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(eventChannel);
+      supabase.removeChannel(deliveryChannel);
     };
   }, [router]);
 
