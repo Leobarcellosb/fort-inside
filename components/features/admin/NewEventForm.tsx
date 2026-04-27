@@ -131,7 +131,7 @@ export function NewEventForm() {
         <Input
           placeholder="FORT28ABR"
           className="bg-transparent border-0 border-b border-border rounded-none focus-visible:ring-0 focus-visible:border-primary px-0 uppercase font-mono"
-          {...register("event_code")}
+          {...register("event_code", { setValueAs: (v: string) => (v ?? "").toUpperCase() })}
         />
         {errors.event_code && <p className="text-xs text-destructive">{errors.event_code.message}</p>}
       </div>
