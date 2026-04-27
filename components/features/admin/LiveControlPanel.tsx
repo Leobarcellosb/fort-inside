@@ -19,6 +19,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { EventQRDialog } from "@/components/features/admin/EventQRDialog";
 
 interface Participant {
   id: string;
@@ -247,7 +248,10 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
       {/* Header */}
       <div className="mb-8 space-y-1">
         <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Painel ao vivo</p>
-        <h1 className="font-display text-2xl text-foreground">{event.name}</h1>
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="font-display text-2xl text-foreground">{event.name}</h1>
+          <EventQRDialog event={{ event_code: event.event_code }} />
+        </div>
         <div className="flex items-center gap-3">
           <Badge variant={eventStatus === "live" ? "default" : "secondary"} className="text-xs">
             {eventStatus === "live" ? "🔴 Ao vivo" : eventStatus === "processing" ? "⚙️ Processando" : eventStatus}
