@@ -8,9 +8,9 @@ import type { QuizStage } from "@/types/database";
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Progress } from "@/components/ui/progress";
 import { CinematicHero } from "@/components/features/participant/CinematicHero";
 import { getStageImage } from "@/lib/cinematic-map";
+import { cn } from "@/lib/utils";
 
 interface Props {
   params: Promise<{ stageId: string }>;
@@ -24,7 +24,6 @@ export default function QuizPage({ params }: Props) {
   const [stage, setStage] = useState<QuizStage | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [currentQ, setCurrentQ] = useState(0);
   const [participantId, setParticipantId] = useState<string | null>(null);
   const [eventId, setEventId] = useState<string | null>(null);
 
@@ -54,7 +53,6 @@ export default function QuizPage({ params }: Props) {
       });
   }, [stageNum, participantId]);
 
-  // Autosave debounced
   const autosave = useCallback(
     (updated: Record<string, string>) => {
       localStorage.setItem(`fort_answers_${stageNum}`, JSON.stringify(updated));
@@ -68,24 +66,14 @@ export default function QuizPage({ params }: Props) {
     autosave(updated);
   }
 
-  function handleSelectOption(questionId: string, option: string) {
-    setAnswer(questionId, option);
-    // Auto-advance after short delay for select questions
-    setTimeout(() => {
-      if (stage && currentQ < stage.questions.length - 1) {
-        setCurrentQ((q) => q + 1);
-      }
-    }, 300);
-  }
+  const allValid = !!stage && stage.questions.every((q) => {
+    const min = q.min_chars ?? 0;
+    const val = answers[q.id] ?? "";
+    return val.trim().length >= min;
+  });
 
   async function handleSubmit() {
-    if (!stage || !participantId || !eventId) return;
-
-    const unanswered = stage.questions.filter((q) => !answers[q.id]?.trim());
-    if (unanswered.length > 0) {
-      toast.error("Responda todas as perguntas antes de continuar.");
-      return;
-    }
+    if (!stage || !participantId || !eventId || !allValid) return;
 
     setSubmitting(true);
     try {
@@ -138,11 +126,6 @@ export default function QuizPage({ params }: Props) {
     );
   }
 
-  const question = stage.questions[currentQ];
-  const progress = (currentQ / stage.questions.length) * 100;
-  const isLast = currentQ === stage.questions.length - 1;
-  const canAdvance = !!answers[question.id]?.trim();
-
   return (
     <main className="min-h-screen flex flex-col bg-background">
       {/* Cinematic hero — top 40vh with ambient image + stage title in Playfair */}
@@ -166,83 +149,58 @@ export default function QuizPage({ params }: Props) {
         </div>
       </CinematicHero>
 
-      {/* Progress bar bridge */}
-      <div className="px-6 pt-4">
-        <Progress value={progress} className="h-0.5 bg-border" />
-      </div>
+      {/* Questions — all visible, single submit at bottom */}
+      <div className="flex-1 px-6 py-10 space-y-12 max-w-xl w-full mx-auto">
+        {stage.questions.map((question, idx) => {
+          const value = answers[question.id] ?? "";
+          const minChars = question.min_chars ?? 0;
+          const currentLen = value.trim().length;
+          const tooShort = minChars > 0 && currentLen < minChars;
 
-      {/* Question */}
-      <div className="flex-1 px-6 py-6 flex flex-col justify-between">
-        <div className="space-y-6">
-          <div className="space-y-1">
-            <p className="text-xs text-muted-foreground">
-              {currentQ + 1} / {stage.questions.length}
-            </p>
-            <p className="text-foreground text-base leading-relaxed font-medium">
-              {question.text}
-            </p>
-          </div>
-
-          {question.type === "select" && question.options ? (
-            <div className="space-y-2">
-              {question.options.map((option) => {
-                const selected = answers[question.id] === option;
-                return (
-                  <button
-                    key={option}
-                    onClick={() => handleSelectOption(question.id, option)}
-                    className={`w-full text-left px-4 py-3 rounded-md border text-sm transition-all duration-200
-                      ${selected
-                        ? "border-primary bg-primary/10 text-foreground"
-                        : "border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                      }`}
-                  >
-                    {option}
-                  </button>
-                );
-              })}
+          return (
+            <div key={question.id} className="space-y-3">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+                Pergunta {idx + 1} de {stage.questions.length}
+              </p>
+              <p className="text-foreground text-[16px] leading-relaxed font-medium">
+                {question.text}
+              </p>
+              <Textarea
+                placeholder={question.placeholder ?? "Responda com suas palavras..."}
+                value={value}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                  setAnswer(question.id, e.target.value)
+                }
+                rows={6}
+                className={cn(
+                  "min-h-[140px] text-[16px] bg-card text-foreground placeholder:text-muted-foreground resize-none focus-visible:ring-0 transition-colors",
+                  tooShort
+                    ? "border-primary/20 focus-visible:border-primary"
+                    : "border-primary/40 focus-visible:border-primary"
+                )}
+              />
+              {minChars > 0 && (
+                <p
+                  className={cn(
+                    "text-xs transition-colors",
+                    tooShort ? "text-destructive" : "text-primary/60"
+                  )}
+                  aria-live="polite"
+                >
+                  {currentLen}/{minChars} {tooShort ? "mínimo" : "caracteres"}
+                </p>
+              )}
             </div>
-          ) : (
-            <Textarea
-              placeholder="Escreva sua resposta..."
-              value={answers[question.id] ?? ""}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setAnswer(question.id, e.target.value)}
-              className="min-h-[140px] bg-card border-border text-foreground placeholder:text-muted-foreground resize-none focus-visible:ring-primary/40"
-              autoFocus
-            />
-          )}
-        </div>
+          );
+        })}
 
-        {/* Navigation */}
-        <div className="flex gap-3 mt-8">
-          {currentQ > 0 && (
-            <Button
-              variant="outline"
-              onClick={() => setCurrentQ((q) => q - 1)}
-              className="flex-1 border-border text-muted-foreground hover:text-foreground"
-            >
-              Voltar
-            </Button>
-          )}
-
-          {isLast ? (
-            <Button
-              onClick={handleSubmit}
-              disabled={submitting || !canAdvance}
-              className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 uppercase tracking-[0.06em] h-12"
-            >
-              {submitting ? "Enviando..." : "Concluir etapa"}
-            </Button>
-          ) : (
-            <Button
-              onClick={() => setCurrentQ((q) => q + 1)}
-              disabled={!canAdvance}
-              className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 h-12"
-            >
-              Próxima
-            </Button>
-          )}
-        </div>
+        <Button
+          onClick={handleSubmit}
+          disabled={submitting || !allValid}
+          className="w-full h-12 bg-primary text-primary-foreground hover:bg-primary/90 uppercase tracking-[0.08em] disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {submitting ? "Enviando..." : "Enviar esta etapa"}
+        </Button>
       </div>
     </main>
   );

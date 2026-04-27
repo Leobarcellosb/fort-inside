@@ -14,6 +14,9 @@ export interface QuizQuestion {
   type: QuestionType;
   text: string;
   options?: string[];
+  placeholder?: string;
+  min_chars?: number;
+  required?: boolean;
 }
 
 export interface QuizStage {

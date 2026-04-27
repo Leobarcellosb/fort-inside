@@ -34,6 +34,24 @@ EXCEÇÃO — apenas aforismos permanecem universais (sem "você", sem "eu", sem
 
 NUNCA use o nome do participante dentro do texto. O nome só aparece no cabeçalho/título do PDF, já preenchido pelo template. Dentro das seções, sempre "você".
 
+## INPUT STRUCTURE
+
+Você recebe respostas 100% discursivas de 5 etapas. Cada etapa tem 2 respostas: uma principal (mínimo 100 caracteres) e uma de aprofundamento (mínimo 80 caracteres). Cada etapa corresponde a um ambiente físico da imersão e a um bloco temático:
+
+1. A Chegada (Entrada) — ponto de partida, autoavaliação crua
+2. A Força que Sustenta (Sala) — força central + origem da força
+3. A Fricção Invisível (Cozinha) — decisão adiada + benefício oculto da paralisia
+4. O Horizonte Visível (Varanda) — visão de 10 anos + versão que precisa ser deixada
+5. A Decisão que Arrisca (Suíte) — primeiro movimento dos próximos 30 dias + ancoragem anti-recuo
+
+## ANALYSIS INSTRUCTIONS
+
+- LEIA as respostas como diagnóstico. Cada resposta é camada nova do perfil, não dado isolado.
+- CRUZE respostas de etapas diferentes. Contradições entre etapa 2 (força) e etapa 3 (gargalo) revelam armadilha. Convergências entre etapa 4 (visão) e etapa 5 (decisão) mostram coerência. Rupturas mostram autoengano.
+- QUANDO A RESPOSTA É EVASIVA, CURTA OU GENÉRICA, isso é dado também. Diagnostique a evasão sem julgamento. Nomeie o padrão de fuga. Exemplo: "Você respondeu essa pergunta com uma frase que não diz nada. Isso também é resposta."
+- NÃO use uma única resposta como oráculo. Use o conjunto.
+- ESCOLHA A TRILHA baseada em análise do conjunto — a trilha não é escolhida pelo participante, é consequência da sua leitura. Trilhas disponíveis: Exploração, Direção, Aproximação, Aceleração, Sessão Privada (definições na seção SOBRE AS TRILHAS abaixo).
+
 LINGUAGEM PROIBIDA — NUNCA use essas construções. Elas soam a coach genérico e destroem a voz de Yuri:
 - "ambiente que opere no nível"
 - "contornos mais definidos"
@@ -167,8 +185,7 @@ function formatResponsesForAI({ responses, stages }: ConsolidatedResponses): str
           const answer = response.answers[q.id];
           if (answer === undefined || answer === null || answer === "") return null;
           const answerStr = Array.isArray(answer) ? answer.join(", ") : String(answer);
-          const typeHint = q.type === "select" ? "(escolha)" : "(texto livre)";
-          return `  [${typeHint}] ${q.text}\n  → ${answerStr}`;
+          return `  ${q.text}\n  → ${answerStr}`;
         })
         .filter(Boolean)
         .join("\n\n");
@@ -190,7 +207,7 @@ export function buildUserPrompt(
   return `PARTICIPANTE: ${participantName}
 ETAPAS CONCLUÍDAS: ${completedStages} de ${totalStages}
 
-A seguir estão todas as respostas de ${participantName} organizadas por etapa. Cada etapa corresponde a um ambiente físico da imersão e um bloco temático. Use TUDO que foi respondido para construir a análise — especialmente as respostas abertas (texto livre), que são as mais reveladoras.
+A seguir estão todas as respostas de ${participantName} organizadas por etapa. Use TUDO que foi respondido para construir a análise. Cruze respostas entre etapas antes de concluir.
 
 ${formatResponsesForAI(data)}
 
