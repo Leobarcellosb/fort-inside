@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import type { Prognostic, PrognosticContent } from "@/types/database";
@@ -52,6 +52,62 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
   const [editData, setEditData] = useState<PrognosticContent | null>(null);
   const [yuriNote, setYuriNote] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Realtime: sincroniza localPrognostics quando IA gera novo prognostic ou
+  // outro admin edita/entrega. Filtra client-side por participant_id pra
+  // ignorar prognosticos de outros eventos (postgres_changes não suporta
+  // filtro por join com participants server-side).
+  useEffect(() => {
+    const supabase = createClient();
+    const participantIds = new Set(participants.map((p) => p.id));
+
+    const channel = supabase
+      .channel(`prognostics-review-${eventId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "prognostics",
+        },
+        (payload) => {
+          const newRow = payload.new as Prognostic | undefined;
+          const oldRow = payload.old as { id?: string; participant_id?: string } | undefined;
+
+          if (
+            payload.eventType === "INSERT" &&
+            newRow?.participant_id &&
+            participantIds.has(newRow.participant_id)
+          ) {
+            setLocalPrognostics((prev) => {
+              if (prev.some((p) => p.id === newRow.id)) return prev;
+              return [...prev, newRow];
+            });
+            return;
+          }
+
+          if (
+            payload.eventType === "UPDATE" &&
+            newRow?.participant_id &&
+            participantIds.has(newRow.participant_id)
+          ) {
+            setLocalPrognostics((prev) =>
+              prev.map((p) => (p.id === newRow.id ? newRow : p))
+            );
+            return;
+          }
+
+          if (payload.eventType === "DELETE" && oldRow?.id) {
+            setLocalPrognostics((prev) => prev.filter((p) => p.id !== oldRow.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [eventId, participants]);
 
   const selectedPrognostic = localPrognostics.find((p) => p.id === selected);
   const selectedParticipant = selectedPrognostic
