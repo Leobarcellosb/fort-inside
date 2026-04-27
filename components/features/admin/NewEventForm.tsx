@@ -17,6 +17,7 @@ export function NewEventForm() {
   const [loading, setLoading] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [eventCode, setEventCode] = useState<string | null>(null);
+  const [eventId, setEventId] = useState<string | null>(null);
   const [joinUrl, setJoinUrl] = useState<string | null>(null);
 
   const {
@@ -62,6 +63,7 @@ export function NewEventForm() {
 
       setQrDataUrl(qr);
       setEventCode(event.event_code);
+      setEventId(event.id);
       setJoinUrl(url);
       toast.success("Evento criado com sucesso!");
     } catch (err) {
@@ -71,7 +73,7 @@ export function NewEventForm() {
     }
   }
 
-  if (qrDataUrl && eventCode && joinUrl) {
+  if (qrDataUrl && eventCode && joinUrl && eventId) {
     return (
       <div className="space-y-6 text-center">
         <div className="space-y-2">
@@ -105,10 +107,10 @@ export function NewEventForm() {
             Copiar link
           </Button>
           <Button
-            onClick={() => router.push("/admin/events")}
+            onClick={() => router.push(`/admin/events/${eventId}`)}
             className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
           >
-            Ver eventos
+            Iniciar imersão
           </Button>
         </div>
       </div>
