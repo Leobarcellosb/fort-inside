@@ -98,20 +98,29 @@ export default function WaitingPage() {
   async function checkAndRedirect(
     supabase: ReturnType<typeof createClient>,
     participantId: string,
-    stage: number
+    currentStage: number
   ) {
-    // Check if participant already answered this stage
-    const { data } = await supabase
+    // Always redirect to the FIRST unanswered stage <= currentStage so the
+    // participant catches up sequentially even if admin advanced multiple
+    // stages while they were in transit (e.g. between submit and /waiting load).
+    // Without this, admin moving 2 -> 3 -> 4 fast caused stage 3 to be skipped.
+    const { data: answered } = await supabase
       .from("quiz_responses")
-      .select("id")
-      .eq("participant_id", participantId)
-      .eq("stage_id", stage)
-      .single() as { data: Pick<QuizResponse, "id"> | null; error: unknown };
+      .select("stage_id")
+      .eq("participant_id", participantId) as {
+        data: Pick<QuizResponse, "stage_id">[] | null;
+        error: unknown;
+      };
 
-    if (!data) {
-      router.push(`/quiz/${stage}`);
+    const answeredIds = new Set((answered ?? []).map((r) => r.stage_id));
+
+    for (let s = 1; s <= currentStage; s++) {
+      if (!answeredIds.has(s)) {
+        router.push(`/quiz/${s}`);
+        return;
+      }
     }
-    // If already answered, stay on waiting page (next stage will come)
+    // All stages up to currentStage already answered — stay on waiting.
   }
 
   return (
