@@ -52,7 +52,11 @@ export function NewEventForm() {
 
       if (error || !event) throw new Error(error?.message ?? "Erro ao criar evento");
 
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin;
+      // Use the current origin so the QR always matches where the admin is browsing.
+      // Production: admin on fort-inside.vercel.app → QR points to vercel.app.
+      // Local dev: admin on localhost:3002 (or LAN IP) → QR points to same.
+      // Avoids stale NEXT_PUBLIC_APP_URL env vars from blocking access.
+      const appUrl = window.location.origin;
       const url = `${appUrl}/join/${event.event_code}`;
       const qr = await QRCode.toDataURL(url, { width: 400, margin: 2, color: { dark: "#C9A961", light: "#0A0A0A" } });
 
