@@ -42,13 +42,26 @@ export async function POST(req: NextRequest) {
 
   if (createError) {
     if (createError.message.includes("already been registered")) {
-      // User exists — fetch their ID
+      // User exists — fetch their ID and reset password to the current
+      // event-scoped password so signInWithPassword on the client succeeds.
+      // Without this, returning users from a previous event hit "invalid
+      // credentials" because their stored password matches the old event_code.
       const { data: users } = await supabase.auth.admin.listUsers();
       const existing = users?.users.find((u) => u.email === email);
       if (!existing) {
         return NextResponse.json({ error: "Erro ao identificar usuário" }, { status: 500 });
       }
       userId = existing.id;
+      const { error: updateErr } = await supabase.auth.admin.updateUserById(userId, {
+        password,
+        email_confirm: true,
+      });
+      if (updateErr) {
+        return NextResponse.json(
+          { error: "Erro ao atualizar credenciais" },
+          { status: 500 }
+        );
+      }
     } else {
       return NextResponse.json({ error: createError.message }, { status: 500 });
     }
