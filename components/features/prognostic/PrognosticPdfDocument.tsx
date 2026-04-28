@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
 
   // SUBSECTION
   subsectionHeading: {
-    fontSize: 21,
+    fontSize: 16,
     color: CHARCOAL,
     fontFamily: "Helvetica-Bold",
     marginBottom: 8,
@@ -156,14 +156,9 @@ const styles = StyleSheet.create({
     fontFamily: "Helvetica-Bold",
   },
 
-  // ÁREAS-CHAVE — 3 columns
-  areasRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 30,
-  },
-  areaColumn: {
-    width: "31%",
+  // ÁREAS-CHAVE — vertical stacked blocks (full width)
+  areaBlock: {
+    marginBottom: 28,
   },
 
   // PLANO 30 DIAS — TABLE
@@ -214,26 +209,21 @@ const styles = StyleSheet.create({
     lineHeight: 1.6,
   },
 
-  // PILARES — 4 columns
-  pilaresRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 30,
-  },
-  pilarColumn: {
-    width: "23%",
+  // PILARES — vertical stacked blocks (full width, charcoal left rule)
+  pilarBlock: {
+    marginBottom: 22,
     borderLeftWidth: 2,
     borderLeftColor: CHARCOAL,
-    paddingLeft: 12,
+    paddingLeft: 14,
   },
   praticaName: {
-    fontSize: 19,
+    fontSize: 16,
     color: CHARCOAL,
     fontFamily: "Helvetica-Bold",
     marginBottom: 4,
   },
   praticaDescription: {
-    fontSize: 15,
+    fontSize: 13,
     color: DARK,
     lineHeight: 1.6,
   },
@@ -431,17 +421,16 @@ export function PrognosticPdfDocument({
         </View>
       </Page>
 
-      {/* PAGE 3 — ÁREAS-CHAVE */}
+      {/* PAGE 3 — ÁREAS-CHAVE (vertical stacked) */}
       <Page size="A4" orientation="portrait" style={styles.page}>
         <Text style={styles.sectionHeadline}>Áreas-Chave</Text>
-        <View style={styles.areasRow}>
-          {content.areas_chave.map((area, i) => (
-            <View key={i} style={styles.areaColumn}>
-              <Text style={styles.subsectionHeading}>{area.nome}</Text>
-              <Text style={styles.body}>{area.direcionamento}</Text>
-            </View>
-          ))}
-        </View>
+        <View style={styles.sectionGap} />
+        {content.areas_chave.map((area, i) => (
+          <View key={i} style={styles.areaBlock}>
+            <Text style={styles.subsectionHeading}>{area.nome}</Text>
+            <Text style={styles.body}>{area.direcionamento}</Text>
+          </View>
+        ))}
         <View style={styles.footer} fixed>
           <Text style={styles.footerText}>
             Prognóstico Inicial de Direção por {hostName}
@@ -477,17 +466,16 @@ export function PrognosticPdfDocument({
         </View>
       </Page>
 
-      {/* PAGE 5 — PILARES */}
+      {/* PAGE 5 — PILARES (vertical stacked) */}
       <Page size="A4" orientation="portrait" style={styles.page}>
         <Text style={styles.sectionHeadline}>Pilares</Text>
-        <View style={styles.pilaresRow}>
-          {content.praticas.map((p, i) => (
-            <View key={i} style={styles.pilarColumn}>
-              <Text style={styles.praticaName}>{p.nome}</Text>
-              <Text style={styles.praticaDescription}>{p.descricao}</Text>
-            </View>
-          ))}
-        </View>
+        <View style={styles.sectionGap} />
+        {content.praticas.map((p, i) => (
+          <View key={i} style={styles.pilarBlock}>
+            <Text style={styles.praticaName}>{p.nome}</Text>
+            <Text style={styles.praticaDescription}>{p.descricao}</Text>
+          </View>
+        ))}
         <View style={styles.footer} fixed>
           <Text style={styles.footerText}>
             Prognóstico Inicial de Direção por {hostName}
