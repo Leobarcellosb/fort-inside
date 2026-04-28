@@ -128,7 +128,7 @@ export function JoinForm({ eventId, eventCode }: Props) {
       <Button
         type="submit"
         disabled={loading}
-        className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-sans uppercase tracking-[0.08em] text-sm h-12 mt-2"
+        className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-display uppercase tracking-[0.08em] text-sm h-12 mt-2"
       >
         {loading ? "Entrando..." : "Entrar na imersão"}
       </Button>

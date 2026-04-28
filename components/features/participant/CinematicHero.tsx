@@ -1,80 +1,54 @@
-import Image from "next/image";
-import { CINEMATIC_BLUR_DATA_URL } from "@/lib/cinematic-map";
+import { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-type Overlay = "light" | "medium" | "heavy";
-type Height = "full" | "split";
+// Yuri Fortes brandbook hero — Sand background + Manrope giant typography.
+// Replaces the old image-based cinematic hero. No photos.
 
-interface CinematicHeroProps {
-  image: string;
-  alt: string;
-  children?: React.ReactNode;
-  overlay?: Overlay;
-  priority?: boolean;
-  height?: Height;
-  /** Extra classes for the outer container */
+interface Props {
+  eyebrow?: string;
+  title: string;
+  subtitle?: string;
+  children?: ReactNode;
   className?: string;
-  /** Extra classes for the foreground content wrapper */
-  contentClassName?: string;
+  /** "default" full-page hero | "compact" smaller for split layouts (quiz) */
+  variant?: "default" | "compact";
 }
 
-const OVERLAY_CLASSES: Record<Overlay, string> = {
-  light: "bg-gradient-to-t from-black/70 via-black/30 to-transparent",
-  medium: "bg-gradient-to-t from-black/90 via-black/50 to-black/20",
-  heavy: "bg-gradient-to-t from-black/95 via-black/70 to-black/40",
-};
-
 export function CinematicHero({
-  image,
-  alt,
+  eyebrow,
+  title,
+  subtitle,
   children,
-  overlay = "medium",
-  priority = true,
-  height = "full",
   className,
-  contentClassName,
-}: CinematicHeroProps) {
-  const isSplit = height === "split";
-
+  variant = "default",
+}: Props) {
   return (
     <section
       className={cn(
-        "relative w-full overflow-hidden",
-        isSplit ? "h-[40vh] min-h-[280px]" : "min-h-screen",
+        "bg-secondary px-6",
+        variant === "default" ? "py-24 md:py-32" : "py-16 md:py-20",
         className
       )}
-      aria-label={alt}
     >
-      {/* Image layer — fills the section. Fade-in via `animate-hero-fade`. */}
-      <div className="absolute inset-0 motion-safe:animate-hero-fade">
-        <Image
-          src={image}
-          alt={alt}
-          fill
-          priority={priority}
-          sizes="100vw"
-          placeholder="blur"
-          blurDataURL={CINEMATIC_BLUR_DATA_URL}
-          className="object-cover"
-        />
-      </div>
-
-      {/* Dark gradient overlay for text legibility */}
-      <div
-        aria-hidden
-        className={cn("absolute inset-0 pointer-events-none", OVERLAY_CLASSES[overlay])}
-      />
-
-      {/* Foreground content */}
-      <div
-        className={cn(
-          "relative z-10 flex flex-col h-full",
-          isSplit
-            ? "justify-end px-6 pb-6 pt-10 min-h-[280px]"
-            : "justify-end min-h-screen px-6 pb-12 pt-20",
-          contentClassName
+      <div className="max-w-3xl mx-auto text-center space-y-6">
+        {eyebrow && (
+          <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground font-display">
+            {eyebrow}
+          </p>
         )}
-      >
+        <h1
+          className={cn(
+            "font-display text-foreground font-bold tracking-tight leading-[1.05]",
+            variant === "default" ? "text-6xl md:text-8xl" : "text-5xl md:text-7xl"
+          )}
+        >
+          {title}
+        </h1>
+        {subtitle && (
+          <p className="text-base md:text-lg text-muted-foreground font-body">
+            {subtitle}
+          </p>
+        )}
         {children}
       </div>
     </section>

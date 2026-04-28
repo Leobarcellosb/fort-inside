@@ -1,14 +1,19 @@
-import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, Text, View, Image, StyleSheet } from "@react-pdf/renderer";
 import type { PrognosticContent } from "@/types/database";
 
 // Editorial deck-style layout — A4 LANDSCAPE (slide format).
-// Cover + section per page, dramatic typography hierarchy.
-// All-Helvetica (zero remote fetch). Gold #C9A961 accent on white paper.
-const GOLD = "#C9A961";
-const DARK = "#1A1A1A";
-const MID = "#5A5A5A";
+// Yuri Fortes brandbook: white paper + charcoal #232323 accents.
+// Logo embed via remote URL (deploy URL or env var).
+const CHARCOAL = "#232323";
+const DARK = "#232323";
+const MID = "#525252";
 const HAIRLINE = "#E0E0E0";
-const ALTERNATE_ROW = "#F8F8F8";
+const ALTERNATE_ROW = "#F5F4F0";
+
+// Logo loaded via absolute URL — react-pdf renders server-side and needs a
+// reachable URL. NEXT_PUBLIC_APP_URL is set in Vercel; fallback to prod URL.
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://fort-inside.vercel.app";
+const LOGO_URL = `${APP_URL}/logo-yuri.png`;
 
 const styles = StyleSheet.create({
   // PAGES — landscape A4 ≈ 792 × 595 pt
@@ -23,7 +28,7 @@ const styles = StyleSheet.create({
   coverPage: {
     backgroundColor: "#FFFFFF",
     color: DARK,
-    paddingTop: 60,
+    paddingTop: 50,
     paddingBottom: 50,
     paddingHorizontal: 80,
     fontFamily: "Helvetica",
@@ -41,7 +46,17 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
 
-  // COVER
+  // COVER LOGO (top)
+  coverLogoBlock: {
+    alignItems: "center",
+    marginBottom: 30,
+  },
+  coverLogo: {
+    width: 80,
+    height: 80,
+  },
+
+  // COVER content
   coverContent: {
     flex: 1,
     flexDirection: "column",
@@ -76,24 +91,24 @@ const styles = StyleSheet.create({
   // SECTION HEADLINES
   sectionHeadline: {
     fontSize: 36,
-    color: GOLD,
+    color: CHARCOAL,
     fontFamily: "Helvetica-Bold",
     marginBottom: 8,
   },
   sectionHeadlineSmall: {
     fontSize: 11,
     letterSpacing: 2.5,
-    color: GOLD,
+    color: CHARCOAL,
     textTransform: "uppercase",
     fontFamily: "Helvetica-Bold",
     marginBottom: 8,
   },
   sectionGap: { height: 30 },
 
-  // SUBSECTION (column titles in grid layouts)
+  // SUBSECTION
   subsectionHeading: {
     fontSize: 18,
-    color: GOLD,
+    color: CHARCOAL,
     fontFamily: "Helvetica-Bold",
     marginBottom: 8,
   },
@@ -102,7 +117,6 @@ const styles = StyleSheet.create({
   body: { fontSize: 13, color: DARK, lineHeight: 1.7 },
   bodySpaced: { fontSize: 13, color: DARK, lineHeight: 1.7, marginBottom: 12 },
 
-  // Single-column body containers (Análise, Por que esta trilha) — maxWidth caps line length
   contentColumn: {
     maxWidth: 600,
   },
@@ -110,7 +124,7 @@ const styles = StyleSheet.create({
   // TRAIL BADGES
   trailBadge: {
     borderWidth: 1,
-    borderColor: GOLD,
+    borderColor: CHARCOAL,
     paddingVertical: 5,
     paddingHorizontal: 12,
     borderRadius: 20,
@@ -120,13 +134,13 @@ const styles = StyleSheet.create({
   },
   trailText: {
     fontSize: 9,
-    color: GOLD,
+    color: CHARCOAL,
     letterSpacing: 1,
     textTransform: "uppercase",
   },
   trailBadgeBig: {
     borderWidth: 1.5,
-    borderColor: GOLD,
+    borderColor: CHARCOAL,
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 24,
@@ -136,13 +150,13 @@ const styles = StyleSheet.create({
   },
   trailTextBig: {
     fontSize: 13,
-    color: GOLD,
+    color: CHARCOAL,
     letterSpacing: 1.5,
     textTransform: "uppercase",
     fontFamily: "Helvetica-Bold",
   },
 
-  // ÁREAS-CHAVE — 3 columns side by side
+  // ÁREAS-CHAVE — 3 columns
   areasRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -156,12 +170,12 @@ const styles = StyleSheet.create({
   tableHeader: {
     flexDirection: "row",
     borderBottomWidth: 2,
-    borderBottomColor: GOLD,
+    borderBottomColor: CHARCOAL,
     paddingBottom: 8,
   },
   tableHeaderCellLeft: {
     fontSize: 11,
-    color: GOLD,
+    color: CHARCOAL,
     fontFamily: "Helvetica-Bold",
     letterSpacing: 1.5,
     textTransform: "uppercase",
@@ -170,7 +184,7 @@ const styles = StyleSheet.create({
   },
   tableHeaderCellRight: {
     fontSize: 11,
-    color: GOLD,
+    color: CHARCOAL,
     fontFamily: "Helvetica-Bold",
     letterSpacing: 1.5,
     textTransform: "uppercase",
@@ -200,7 +214,7 @@ const styles = StyleSheet.create({
     lineHeight: 1.6,
   },
 
-  // PILARES — 4 columns side by side
+  // PILARES — 4 columns
   pilaresRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -209,12 +223,12 @@ const styles = StyleSheet.create({
   pilarColumn: {
     width: "23%",
     borderLeftWidth: 2,
-    borderLeftColor: GOLD,
+    borderLeftColor: CHARCOAL,
     paddingLeft: 12,
   },
   praticaName: {
     fontSize: 16,
-    color: GOLD,
+    color: CHARCOAL,
     fontFamily: "Helvetica-Bold",
     marginBottom: 4,
   },
@@ -224,7 +238,7 @@ const styles = StyleSheet.create({
     lineHeight: 1.6,
   },
 
-  // FRASE DE ATIVAÇÃO — centralized vertical/horizontal
+  // FRASE DE ATIVAÇÃO
   fraseCenterContainer: {
     flex: 1,
     flexDirection: "column",
@@ -235,16 +249,16 @@ const styles = StyleSheet.create({
     paddingVertical: 35,
     paddingHorizontal: 30,
     borderTopWidth: 1.5,
-    borderTopColor: GOLD,
+    borderTopColor: CHARCOAL,
     borderBottomWidth: 1.5,
-    borderBottomColor: GOLD,
+    borderBottomColor: CHARCOAL,
     marginVertical: 20,
     maxWidth: 600,
     alignSelf: "center",
   },
   fraseQuoteMark: {
     fontSize: 72,
-    color: GOLD,
+    color: CHARCOAL,
     fontFamily: "Helvetica-Bold",
     lineHeight: 0.8,
     marginBottom: -10,
@@ -252,7 +266,7 @@ const styles = StyleSheet.create({
   },
   fraseQuote: {
     fontSize: 28,
-    color: GOLD,
+    color: CHARCOAL,
     fontStyle: "italic",
     lineHeight: 1.4,
     textAlign: "center",
@@ -283,22 +297,23 @@ const styles = StyleSheet.create({
   },
   closingThanks: {
     fontSize: 56,
-    color: GOLD,
+    color: CHARCOAL,
     fontFamily: "Helvetica-Bold",
     marginBottom: 16,
   },
   closingSignature: { fontSize: 14, color: MID },
-  closingFooterBrand: {
-    fontSize: 9,
-    color: DARK,
-    fontFamily: "Helvetica-Bold",
-    textAlign: "center",
+  closingFooterLogoBlock: {
+    alignItems: "center",
+  },
+  closingFooterLogo: {
+    width: 32,
+    height: 32,
   },
 
   // YURI NOTE (closing page)
   yuriNoteBox: {
     borderLeftWidth: 2,
-    borderLeftColor: GOLD,
+    borderLeftColor: CHARCOAL,
     paddingLeft: 14,
     marginBottom: 24,
     maxWidth: 600,
@@ -308,7 +323,7 @@ const styles = StyleSheet.create({
   yuriNoteLabel: {
     fontSize: 8,
     letterSpacing: 2,
-    color: GOLD,
+    color: CHARCOAL,
     textTransform: "uppercase",
     marginBottom: 5,
   },
@@ -333,7 +348,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   footerText: { fontSize: 9, color: MID },
-  footerBrand: { fontSize: 9, color: DARK, fontFamily: "Helvetica-Bold" },
+  footerLogo: {
+    width: 24,
+    height: 24,
+  },
 });
 
 interface Props {
@@ -373,6 +391,10 @@ export function PrognosticPdfDocument({
     >
       {/* PAGE 1 — COVER */}
       <Page size="A4" orientation="landscape" style={styles.coverPage}>
+        <View style={styles.coverLogoBlock}>
+          {/* eslint-disable-next-line jsx-a11y/alt-text */}
+          <Image src={LOGO_URL} style={styles.coverLogo} />
+        </View>
         <View style={styles.coverContent}>
           <Text style={styles.coverEyebrow}>Mapa da Sua Próxima Construção</Text>
           <Text style={styles.coverSubtitle}>
@@ -404,11 +426,12 @@ export function PrognosticPdfDocument({
           <Text style={styles.footerText}>
             Prognóstico Inicial de Direção por {hostName}
           </Text>
-          <Text style={styles.footerBrand}>Fort Inside</Text>
+          {/* eslint-disable-next-line jsx-a11y/alt-text */}
+          <Image src={LOGO_URL} style={styles.footerLogo} />
         </View>
       </Page>
 
-      {/* PAGE 3 — ÁREAS-CHAVE (3 columns) */}
+      {/* PAGE 3 — ÁREAS-CHAVE */}
       <Page size="A4" orientation="landscape" style={styles.page}>
         <Text style={styles.sectionHeadline}>Áreas-Chave</Text>
         <View style={styles.areasRow}>
@@ -423,11 +446,12 @@ export function PrognosticPdfDocument({
           <Text style={styles.footerText}>
             Prognóstico Inicial de Direção por {hostName}
           </Text>
-          <Text style={styles.footerBrand}>Fort Inside</Text>
+          {/* eslint-disable-next-line jsx-a11y/alt-text */}
+          <Image src={LOGO_URL} style={styles.footerLogo} />
         </View>
       </Page>
 
-      {/* PAGE 4 — PLANO 30 DIAS (table) */}
+      {/* PAGE 4 — PLANO 30 DIAS */}
       <Page size="A4" orientation="landscape" style={styles.page}>
         <Text style={styles.sectionHeadline}>Plano de 30 dias</Text>
         <View style={styles.sectionGap} />
@@ -448,11 +472,12 @@ export function PrognosticPdfDocument({
           <Text style={styles.footerText}>
             Prognóstico Inicial de Direção por {hostName}
           </Text>
-          <Text style={styles.footerBrand}>Fort Inside</Text>
+          {/* eslint-disable-next-line jsx-a11y/alt-text */}
+          <Image src={LOGO_URL} style={styles.footerLogo} />
         </View>
       </Page>
 
-      {/* PAGE 5 — PILARES (4 columns) */}
+      {/* PAGE 5 — PILARES */}
       <Page size="A4" orientation="landscape" style={styles.page}>
         <Text style={styles.sectionHeadline}>Pilares</Text>
         <View style={styles.pilaresRow}>
@@ -467,11 +492,12 @@ export function PrognosticPdfDocument({
           <Text style={styles.footerText}>
             Prognóstico Inicial de Direção por {hostName}
           </Text>
-          <Text style={styles.footerBrand}>Fort Inside</Text>
+          {/* eslint-disable-next-line jsx-a11y/alt-text */}
+          <Image src={LOGO_URL} style={styles.footerLogo} />
         </View>
       </Page>
 
-      {/* PAGE 6 — FRASE DE ATIVAÇÃO (centered) */}
+      {/* PAGE 6 — FRASE DE ATIVAÇÃO */}
       <Page size="A4" orientation="landscape" style={styles.page}>
         <Text style={styles.sectionHeadlineSmall}>Frase de ativação</Text>
         <View style={styles.fraseCenterContainer}>
@@ -489,7 +515,8 @@ export function PrognosticPdfDocument({
           <Text style={styles.footerText}>
             Prognóstico Inicial de Direção por {hostName}
           </Text>
-          <Text style={styles.footerBrand}>Fort Inside</Text>
+          {/* eslint-disable-next-line jsx-a11y/alt-text */}
+          <Image src={LOGO_URL} style={styles.footerLogo} />
         </View>
       </Page>
 
@@ -507,7 +534,8 @@ export function PrognosticPdfDocument({
           <Text style={styles.footerText}>
             Prognóstico Inicial de Direção por {hostName}
           </Text>
-          <Text style={styles.footerBrand}>Fort Inside</Text>
+          {/* eslint-disable-next-line jsx-a11y/alt-text */}
+          <Image src={LOGO_URL} style={styles.footerLogo} />
         </View>
       </Page>
 
@@ -528,8 +556,9 @@ export function PrognosticPdfDocument({
           <Text style={styles.closingThanks}>Obrigado!</Text>
           <Text style={styles.closingSignature}>{hostName}</Text>
         </View>
-        <View>
-          <Text style={styles.closingFooterBrand}>Fort Inside</Text>
+        <View style={styles.closingFooterLogoBlock}>
+          {/* eslint-disable-next-line jsx-a11y/alt-text */}
+          <Image src={LOGO_URL} style={styles.closingFooterLogo} />
         </View>
       </Page>
     </Document>

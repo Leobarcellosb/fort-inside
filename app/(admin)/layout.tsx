@@ -1,9 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { AdminLogoutButton } from "@/components/features/admin/AdminLogoutButton";
+import { Logo } from "@/components/ui/Logo";
 
-// Admin group layout — mounts a floating logout button on every page
-// within /admin/* when the user has an active session.
-// Hidden on /admin/login (no session) so the login form renders clean.
+// Admin group layout — Yuri Fortes brand logo top-left + floating logout button
+// top-right when authenticated. Hidden on /admin/login (no session).
 
 export default async function AdminLayout({
   children,
@@ -17,7 +17,14 @@ export default async function AdminLayout({
 
   return (
     <>
-      {session && <AdminLogoutButton />}
+      {session && (
+        <>
+          <div className="fixed top-4 left-4 z-30">
+            <Logo size="sm" />
+          </div>
+          <AdminLogoutButton />
+        </>
+      )}
       {children}
     </>
   );

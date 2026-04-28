@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Logo } from "@/components/ui/Logo";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -35,9 +36,12 @@ export default function AdminLoginPage() {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-8">
-        <div className="text-center space-y-2">
-          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Fort Inside</p>
-          <h1 className="font-display text-2xl text-foreground">Acesso restrito</h1>
+        <div className="flex flex-col items-center text-center space-y-4">
+          <Logo size="lg" />
+          <div className="space-y-2">
+            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-display">Yuri Fortes</p>
+            <h1 className="font-display text-2xl text-foreground font-bold">Acesso restrito</h1>
+          </div>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-5">

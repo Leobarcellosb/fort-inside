@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { PrognosticContent, TrailRecommendation } from "@/types/database";
+import type { PrognosticContent } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { CinematicHero } from "@/components/features/participant/CinematicHero";
-import { AMBIENT_IMAGES } from "@/lib/cinematic-map";
+import { Logo } from "@/components/ui/Logo";
 
 interface Props {
   participantName: string;
@@ -18,14 +18,6 @@ interface Props {
   token: string;
   pdfUrl: string | null;
 }
-
-const TRAIL_COLORS: Record<TrailRecommendation, string> = {
-  "Exploração": "border-chart-3/50 text-chart-3 bg-chart-3/5",
-  "Direção": "border-primary/60 text-primary bg-primary/10",
-  "Aproximação": "border-chart-2/50 text-chart-2 bg-chart-2/5",
-  "Aceleração": "border-chart-4/50 text-chart-4 bg-chart-4/5",
-  "Sessão Privada": "border-primary/70 text-primary bg-primary/10",
-};
 
 export function PrognosticView({
   participantName,
@@ -70,8 +62,6 @@ export function PrognosticView({
   }, [pdfUrl, pollingTimedOut, token]);
 
   const isPolling = !pdfUrl && !pollingTimedOut;
-  const trailColor =
-    TRAIL_COLORS[content.trilha_recomendada] ?? "border-border text-muted-foreground";
   const firstName = participantName.trim().split(" ")[0];
   const formattedDate = eventDate
     ? new Date(eventDate).toLocaleDateString("pt-BR", {
@@ -107,6 +97,11 @@ export function PrognosticView({
 
   return (
     <main className="min-h-screen bg-background text-foreground relative">
+      {/* Logo top-left */}
+      <div className="fixed top-4 left-4 z-30">
+        <Logo size="md" />
+      </div>
+
       {/* Fixed PDF download — top-right */}
       <div className="fixed top-4 right-4 z-30">
         {pdfUrl ? (
@@ -114,7 +109,7 @@ export function PrognosticView({
             href={pdfUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-background/70 border border-primary/30 text-primary text-xs uppercase tracking-[0.12em] backdrop-blur-md hover:bg-background/90 hover:border-primary transition-all shadow-lg"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-background/90 border border-foreground text-foreground text-xs uppercase tracking-[0.12em] hover:bg-foreground hover:text-background transition-all shadow-sm"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -136,7 +131,7 @@ export function PrognosticView({
           </a>
         ) : isPolling ? (
           <div
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-background/70 border border-primary/20 text-primary/70 text-xs uppercase tracking-[0.12em] backdrop-blur-md shadow-lg"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-background/90 border border-border text-muted-foreground text-xs uppercase tracking-[0.12em] shadow-sm"
             aria-live="polite"
           >
             <svg
@@ -161,55 +156,44 @@ export function PrognosticView({
             onClick={generateAndOpenPdf}
             disabled={generatingPdf}
             variant="outline"
-            className="h-9 px-3 rounded-full bg-background/70 border border-primary/30 text-primary text-xs uppercase tracking-[0.12em] backdrop-blur-md hover:bg-background/90 shadow-lg"
+            className="h-9 px-3 rounded-full bg-background border border-foreground text-foreground text-xs uppercase tracking-[0.12em] hover:bg-foreground hover:text-background"
           >
             {generatingPdf ? "Gerando..." : "PDF"}
           </Button>
         )}
       </div>
 
-      {/* Cinematic hero */}
+      {/* Hero */}
       <CinematicHero
-        image={AMBIENT_IMAGES.prognostic}
-        alt="Mapa da Sua Próxima Construção"
-        overlay="medium"
+        eyebrow="Mapa da Sua Próxima Construção"
+        title={firstName}
+        subtitle={`${eventName}${formattedDate ? ` · ${formattedDate}` : ""}`}
       >
-        <div className="mx-auto w-full max-w-2xl text-center space-y-5">
-          <p className="text-xs uppercase tracking-[0.25em] text-white/70">
-            Mapa da Sua Próxima Construção
-          </p>
-          <h1 className="font-playfair text-5xl md:text-7xl font-light text-white leading-[1.05] tracking-tight">
-            {firstName}
-          </h1>
-          <p className="text-white/75 text-sm">
-            {eventName} · {formattedDate}
-          </p>
-          <div
-            className={`inline-flex items-center gap-3 px-5 py-2 rounded-full border backdrop-blur-sm ${trailColor} mt-3`}
-          >
-            <span className="text-[10px] uppercase tracking-[0.2em] font-sans">Trilha</span>
-            <span className="text-sm font-medium font-playfair">
-              {content.trilha_recomendada}
-            </span>
-          </div>
+        <div className="inline-flex items-center gap-3 px-5 py-2 rounded-full border border-foreground bg-background/50 mt-3">
+          <span className="text-[10px] uppercase tracking-[0.2em] font-display text-foreground">
+            Trilha
+          </span>
+          <span className="text-sm font-medium font-display text-foreground">
+            {content.trilha_recomendada}
+          </span>
         </div>
       </CinematicHero>
 
-      {/* Editorial content — 7 sections */}
+      {/* Editorial content */}
       <article className="mx-auto max-w-2xl px-6 py-16 md:py-24 space-y-20 md:space-y-24">
         {/* 1. Análise */}
         <section className="space-y-5">
           <div className="space-y-3">
-            <h2 className="font-playfair text-2xl md:text-3xl font-light text-foreground uppercase tracking-[0.15em]">
+            <h2 className="font-display text-2xl md:text-3xl font-bold text-foreground uppercase tracking-[0.15em]">
               Análise
             </h2>
-            <div className="h-px w-16 bg-primary/50" aria-hidden />
+            <div className="h-px w-16 bg-foreground" aria-hidden />
           </div>
           <div className="space-y-5">
             {analiseParagraphs.map((p, i) => (
               <p
                 key={i}
-                className="text-[17px] md:text-lg leading-[1.7] text-foreground/85 font-sans"
+                className="text-[17px] md:text-lg leading-[1.7] text-foreground font-body"
               >
                 {p}
               </p>
@@ -220,18 +204,18 @@ export function PrognosticView({
         {/* 2. Áreas-chave */}
         <section className="space-y-8">
           <div className="space-y-3">
-            <h2 className="font-playfair text-2xl md:text-3xl font-light text-foreground uppercase tracking-[0.15em]">
+            <h2 className="font-display text-2xl md:text-3xl font-bold text-foreground uppercase tracking-[0.15em]">
               Áreas-chave
             </h2>
-            <div className="h-px w-16 bg-primary/50" aria-hidden />
+            <div className="h-px w-16 bg-foreground" aria-hidden />
           </div>
           <div className="space-y-10">
             {content.areas_chave.map((area, i) => (
               <div key={i} className="space-y-3">
-                <h3 className="font-playfair text-xl md:text-2xl text-primary font-light tracking-tight">
+                <h3 className="font-display text-xl md:text-2xl text-foreground font-bold tracking-tight">
                   {area.nome}
                 </h3>
-                <p className="text-[17px] md:text-lg leading-[1.7] text-foreground/85 font-sans">
+                <p className="text-[17px] md:text-lg leading-[1.7] text-foreground font-body">
                   {area.direcionamento}
                 </p>
               </div>
@@ -242,24 +226,24 @@ export function PrognosticView({
         {/* 3. Plano 30 dias */}
         <section className="space-y-8">
           <div className="space-y-3">
-            <h2 className="font-playfair text-2xl md:text-3xl font-light text-foreground uppercase tracking-[0.15em]">
+            <h2 className="font-display text-2xl md:text-3xl font-bold text-foreground uppercase tracking-[0.15em]">
               Plano de 30 dias
             </h2>
-            <div className="h-px w-16 bg-primary/50" aria-hidden />
+            <div className="h-px w-16 bg-foreground" aria-hidden />
           </div>
           <div className="space-y-8">
             {content.plano_30_dias.map((step, i) => (
               <div key={i} className="flex gap-5">
                 <div className="shrink-0">
-                  <span className="font-playfair text-3xl md:text-4xl text-primary font-light leading-none">
+                  <span className="font-display text-3xl md:text-4xl text-foreground font-bold leading-none">
                     {String(i + 1).padStart(2, "0")}
                   </span>
                 </div>
                 <div className="space-y-2">
-                  <h3 className="font-playfair text-lg md:text-xl text-foreground tracking-tight">
+                  <h3 className="font-display text-lg md:text-xl text-foreground font-bold tracking-tight">
                     {step.comportamento}
                   </h3>
-                  <p className="text-[17px] leading-[1.7] text-foreground/85 font-sans">
+                  <p className="text-[17px] leading-[1.7] text-foreground font-body">
                     {step.microacao}
                   </p>
                 </div>
@@ -271,16 +255,16 @@ export function PrognosticView({
         {/* 4. Pilares */}
         <section className="space-y-8">
           <div className="space-y-3">
-            <h2 className="font-playfair text-2xl md:text-3xl font-light text-foreground uppercase tracking-[0.15em]">
+            <h2 className="font-display text-2xl md:text-3xl font-bold text-foreground uppercase tracking-[0.15em]">
               Pilares
             </h2>
-            <div className="h-px w-16 bg-primary/50" aria-hidden />
+            <div className="h-px w-16 bg-foreground" aria-hidden />
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {content.praticas.map((p, i) => (
-              <div key={i} className="space-y-2 border-l-2 border-primary/40 pl-4">
-                <h3 className="font-playfair text-lg text-primary tracking-tight">{p.nome}</h3>
-                <p className="text-sm leading-[1.6] text-foreground/80 font-sans">
+              <div key={i} className="space-y-2 border-l-2 border-foreground pl-4">
+                <h3 className="font-display text-lg text-foreground font-bold tracking-tight">{p.nome}</h3>
+                <p className="text-sm leading-[1.6] text-muted-foreground font-body">
                   {p.descricao}
                 </p>
               </div>
@@ -291,13 +275,13 @@ export function PrognosticView({
         {/* 5. Frase de ativação */}
         <section className="space-y-10">
           <div className="space-y-3">
-            <h2 className="font-playfair text-2xl md:text-3xl font-light text-foreground uppercase tracking-[0.15em]">
+            <h2 className="font-display text-2xl md:text-3xl font-bold text-foreground uppercase tracking-[0.15em]">
               Frase de ativação
             </h2>
-            <div className="h-px w-16 bg-primary/50" aria-hidden />
+            <div className="h-px w-16 bg-foreground" aria-hidden />
           </div>
-          <div className="relative px-6 py-8 md:px-10 md:py-10 border-y-2 border-primary/40 bg-card/30 rounded-sm">
-            <blockquote className="font-playfair italic text-2xl md:text-3xl text-foreground/95 leading-[1.4] text-center font-light tracking-tight">
+          <div className="relative px-6 py-10 md:px-10 md:py-14 border-y-2 border-foreground bg-secondary/40">
+            <blockquote className="font-display italic text-2xl md:text-3xl text-foreground leading-[1.4] text-center font-medium tracking-tight">
               &ldquo;{content.frase_ativacao.frase}&rdquo;
             </blockquote>
           </div>
@@ -305,7 +289,7 @@ export function PrognosticView({
             {contextoParagraphs.map((p, i) => (
               <p
                 key={i}
-                className="text-[17px] md:text-lg leading-[1.7] text-foreground/85 font-sans"
+                className="text-[17px] md:text-lg leading-[1.7] text-foreground font-body"
               >
                 {p}
               </p>
@@ -316,34 +300,34 @@ export function PrognosticView({
         {/* 6. Por que esta trilha */}
         <section className="space-y-5">
           <div className="space-y-3">
-            <h2 className="font-playfair text-2xl md:text-3xl font-light text-foreground uppercase tracking-[0.15em]">
+            <h2 className="font-display text-2xl md:text-3xl font-bold text-foreground uppercase tracking-[0.15em]">
               Por que esta trilha
             </h2>
-            <div className="h-px w-16 bg-primary/50" aria-hidden />
+            <div className="h-px w-16 bg-foreground" aria-hidden />
           </div>
-          <p className="text-[17px] md:text-lg leading-[1.7] text-foreground/85 font-sans">
+          <p className="text-[17px] md:text-lg leading-[1.7] text-foreground font-body">
             {content.justificativa_trilha}
           </p>
         </section>
 
         {/* 7. Yuri's note (opcional) */}
         {yuriNote && (
-          <section className="space-y-4 border-l-2 border-primary/50 pl-6 py-2">
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+          <section className="space-y-4 border-l-2 border-foreground pl-6 py-2">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-display">
               Observação de {hostName}
             </p>
-            <p className="font-playfair text-xl md:text-2xl text-foreground/90 leading-[1.5] italic font-light">
+            <p className="font-display text-xl md:text-2xl text-foreground leading-[1.5] italic">
               &ldquo;{yuriNote}&rdquo;
             </p>
           </section>
         )}
 
         {/* Footer */}
-        <footer className="pt-10 border-t border-border/50 text-center">
-          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+        <footer className="pt-10 border-t border-border text-center space-y-2">
+          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-display">
             Prognóstico Inicial de Direção
           </p>
-          <p className="text-sm text-foreground/70 mt-2 font-playfair">por {hostName}</p>
+          <p className="text-sm text-foreground font-display">por {hostName}</p>
         </footer>
       </article>
     </main>

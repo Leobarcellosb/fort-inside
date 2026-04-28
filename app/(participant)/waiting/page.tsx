@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { CinematicHero } from "@/components/features/participant/CinematicHero";
-import { AMBIENT_IMAGES } from "@/lib/cinematic-map";
 import type { Event, QuizResponse } from "@/types/database";
 
 export default function WaitingPage() {
@@ -48,7 +47,6 @@ export default function WaitingPage() {
         }
       });
 
-    // Channel 1: event stage progression (redirects to /quiz/[stageId] when admin advances)
     const eventChannel = supabase
       .channel(`event:${eventId}`)
       .on(
@@ -69,7 +67,6 @@ export default function WaitingPage() {
       )
       .subscribe();
 
-    // Channel 2: prognostic delivery (redirects to /prognostic/[token] when admin clicks "Entregar")
     const deliveryChannel = supabase
       .channel(`prognostic-delivery-${participantId}`)
       .on(
@@ -100,10 +97,6 @@ export default function WaitingPage() {
     participantId: string,
     currentStage: number
   ) {
-    // Always redirect to the FIRST unanswered stage <= currentStage so the
-    // participant catches up sequentially even if admin advanced multiple
-    // stages while they were in transit (e.g. between submit and /waiting load).
-    // Without this, admin moving 2 -> 3 -> 4 fast caused stage 3 to be skipped.
     const { data: answered } = await supabase
       .from("quiz_responses")
       .select("stage_id")
@@ -120,55 +113,43 @@ export default function WaitingPage() {
         return;
       }
     }
-    // All stages up to currentStage already answered — stay on waiting.
   }
 
   return (
     <main className="min-h-screen bg-background">
       <CinematicHero
-        image={AMBIENT_IMAGES.waiting}
-        alt="Aguardando a próxima etapa"
-        overlay="heavy"
-        contentClassName="pb-24 [padding-bottom:calc(env(safe-area-inset-bottom)+6rem)]"
-      >
-        <div className="mx-auto w-full max-w-md text-center space-y-10">
-          <div className="space-y-4">
-            <p className="text-xs uppercase tracking-[0.2em] text-white/70">Fort Inside</p>
-            <h1 className="font-playfair text-5xl md:text-7xl font-light text-white leading-tight tracking-tight">
-              Em silêncio até o próximo convite
-            </h1>
-            {eventName && (
-              <p className="text-white/75 text-sm">
-                {eventName} · com {hostName}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-5 py-4">
-            <div className="relative mx-auto w-16 h-16">
-              <div className="absolute inset-0 rounded-full border border-primary/30 animate-ping" />
-              <div className="absolute inset-2 rounded-full border border-primary/50" />
-              <div className="absolute inset-4 rounded-full bg-primary/40" />
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-white/90 text-base font-medium">
-                Aguardando próxima etapa{dots}
-              </p>
-              {currentStage > 0 && (
-                <p className="text-xs text-white/60">
-                  Etapa {currentStage} em andamento
-                </p>
-              )}
-            </div>
-          </div>
-
-          <p className="text-xs text-white/50 leading-relaxed">
-            Quando {hostName} liberar a próxima etapa,<br />
-            você será redirecionado automaticamente.
-          </p>
+        eyebrow="Próxima etapa"
+        title="Aguarde"
+        subtitle="Em instantes"
+      />
+      <section className="px-6 py-16 max-w-md mx-auto text-center space-y-10">
+        <div className="relative mx-auto w-16 h-16">
+          <div className="absolute inset-0 rounded-full border border-foreground/30 animate-ping" />
+          <div className="absolute inset-2 rounded-full border border-foreground/50" />
+          <div className="absolute inset-4 rounded-full bg-foreground/40" />
         </div>
-      </CinematicHero>
+
+        <div className="space-y-2">
+          <p className="text-foreground text-base font-medium">
+            Aguardando próxima etapa{dots}
+          </p>
+          {currentStage > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Etapa {currentStage} em andamento
+            </p>
+          )}
+          {eventName && (
+            <p className="text-xs text-muted-foreground">
+              {eventName} · com {hostName}
+            </p>
+          )}
+        </div>
+
+        <p className="text-xs text-muted-foreground/80 leading-relaxed">
+          Quando {hostName} liberar a próxima etapa,<br />
+          você será redirecionado automaticamente.
+        </p>
+      </section>
     </main>
   );
 }

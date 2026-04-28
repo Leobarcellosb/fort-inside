@@ -210,7 +210,7 @@ export function KnowledgeBaseManager() {
 
             {expanded === entry.id && (
               <div className="px-4 pb-4 border-t border-border pt-3">
-                <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-sans leading-relaxed max-h-64 overflow-y-auto">
+                <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-body leading-relaxed max-h-64 overflow-y-auto">
                   {entry.content}
                 </pre>
               </div>

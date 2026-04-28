@@ -1,34 +1,36 @@
 import type { Metadata } from "next";
-import { Inter, Fraunces, Geist, Playfair_Display } from "next/font/google";
+import { Manrope, Mulish, Roboto } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
-
-const inter = Inter({
-  variable: "--font-inter",
+// Yuri Fortes brandbook fonts — Manrope (display) + Mulish (body) via Google Fonts.
+// Sohne Breit + Avenir Next official files come later; class names stay stable.
+const manrope = Manrope({
   subsets: ["latin"],
   display: "swap",
+  variable: "--font-display",
+  weight: ["200", "300", "400", "500", "600", "700", "800"],
 });
 
-const fraunces = Fraunces({
-  variable: "--font-fraunces",
+const mulish = Mulish({
   subsets: ["latin"],
   display: "swap",
-  axes: ["opsz", "SOFT", "WONK"],
+  variable: "--font-body",
+  weight: ["300", "400", "500", "600", "700", "800"],
 });
 
-const playfair = Playfair_Display({
-  variable: "--font-playfair",
+const roboto = Roboto({
   subsets: ["latin"],
   display: "swap",
-  weight: ["400", "500", "600", "700", "900"],
+  variable: "--font-system",
+  weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {
-  title: "Fort Inside — Imersão Diagnóstica",
-  description: "Mapa da Sua Próxima Construção por Yuri Fortes",
+  title: "Fort Inside — Yuri Fortes",
+  description: "Mapa da Sua Próxima Construção",
+  icons: { icon: "/icon.png" },
 };
 
 export default function RootLayout({
@@ -39,7 +41,13 @@ export default function RootLayout({
   return (
     <html
       lang="pt-BR"
-      className={cn("dark", "h-full", inter.variable, fraunces.variable, playfair.variable, "font-sans", geist.variable)}
+      className={cn(
+        "h-full",
+        manrope.variable,
+        mulish.variable,
+        roboto.variable,
+        "font-body"
+      )}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         {children}

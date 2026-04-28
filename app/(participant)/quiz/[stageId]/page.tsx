@@ -9,7 +9,6 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { CinematicHero } from "@/components/features/participant/CinematicHero";
-import { getStageImage } from "@/lib/cinematic-map";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -129,26 +128,12 @@ export default function QuizPage({ params }: Props) {
 
   return (
     <main className="min-h-screen flex flex-col bg-background">
-      {/* Cinematic hero — top 40vh with ambient image + stage title in Playfair */}
       <CinematicHero
-        image={getStageImage(stageNum)}
-        alt={`${stage.title} — ${stage.ambient_name}`}
-        overlay="medium"
-        height="split"
-        priority
-      >
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-xs uppercase tracking-[0.2em] text-white/70">
-              Etapa {stageNum} de 6
-            </p>
-            <p className="text-xs text-white/70">{stage.ambient_name}</p>
-          </div>
-          <h2 className="font-playfair text-3xl md:text-5xl font-light text-white leading-tight tracking-tight">
-            {stage.title}
-          </h2>
-        </div>
-      </CinematicHero>
+        variant="compact"
+        eyebrow={`Etapa ${stageNum} de 6`}
+        title={stage.ambient_name.toUpperCase()}
+        subtitle={stage.title}
+      />
 
       {/* Questions — all visible, single submit at bottom */}
       <div className="flex-1 px-6 py-10 space-y-12 max-w-xl w-full mx-auto">

@@ -4,13 +4,18 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  /* Fonts — literal names for Tailwind v4 parse-time resolution */
-  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Fraunces", ui-serif, Georgia, serif;
-  --font-playfair: "Playfair Display", "Playfair Display Fallback", ui-serif, Georgia, serif;
+  /* Fonts — Yuri Fortes brandbook: Manrope (display) + Mulish (body).
+     Sohne Breit (Manrope fallback) and Avenir Next (Mulish fallback) wired in
+     when arquivos oficiais chegarem — só trocar font-family interna aqui.
+     --font-display, --font-playfair, --font-sans, --font-body all resolve to
+     brand fonts so existing class usage doesn't break. */
+  --font-sans: "Mulish", "Mulish Fallback", "Roboto", system-ui, sans-serif;
+  --font-body: "Mulish", "Mulish Fallback", "Roboto", system-ui, sans-serif;
+  --font-display: "Manrope", "Manrope Fallback", "Roboto", system-ui, sans-serif;
+  --font-playfair: "Manrope", "Manrope Fallback", "Roboto", system-ui, sans-serif;
   --font-mono: ui-monospace, monospace;
+  --font-heading: var(--font-display);
 
-  /* Colors — Fort Inside dark theme */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -32,79 +37,86 @@
   --color-success: var(--success);
   --color-gold: var(--gold);
   --color-gold-muted: var(--gold-muted);
+  --color-sand: var(--sand);
+  --color-charcoal: var(--charcoal);
 
-  /* Charts */
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
 
-  /* Radius */
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
   --radius-2xl: calc(var(--radius) * 1.8);
-  --font-heading: var(--font-sans);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
 }
 
-/* Fort Inside — always dark, gold accent, no light mode */
-:root,
-.dark {
-  --background: oklch(0.06 0 0);
-  --foreground: oklch(0.96 0.01 83);
-  --card: oklch(0.13 0 0);
-  --card-foreground: oklch(0.96 0.01 83);
-  --popover: oklch(0.10 0 0);
-  --popover-foreground: oklch(0.96 0.01 83);
+/* Yuri Fortes brandbook — LIGHT MODE ONLY (no .dark class).
+   Charcoal #232323 substitui o gold antigo em todos os acentos.
+   Sand #CBCAC4 vira fundo neutro/secundário. */
+:root {
+  --background: #FFFFFF;
+  --foreground: #232323;
+  --card: #FFFFFF;
+  --card-foreground: #232323;
+  --popover: #FFFFFF;
+  --popover-foreground: #232323;
 
-  /* Gold as primary */
-  --primary: oklch(0.74 0.11 79);
-  --primary-foreground: oklch(0.06 0 0);
+  --primary: #232323;
+  --primary-foreground: #FFFFFF;
 
-  --secondary: oklch(0.09 0 0);
-  --secondary-foreground: oklch(0.96 0.01 83);
-  --muted: oklch(0.09 0 0);
-  --muted-foreground: oklch(0.67 0.02 60);
-  --accent: oklch(0.74 0.11 79);
-  --accent-foreground: oklch(0.06 0 0);
+  --secondary: #CBCAC4;
+  --secondary-foreground: #232323;
+  --muted: #CBCAC4;
+  --muted-foreground: #525252;
+  --accent: #232323;
+  --accent-foreground: #FFFFFF;
 
-  --destructive: oklch(0.47 0.10 20);
-  --border: oklch(0.19 0 0);
-  --input: oklch(0.16 0 0);
-  --ring: oklch(0.74 0.11 79);
+  --destructive: #B00020;
+  --border: #E0E0E0;
+  --input: #E0E0E0;
+  --ring: #232323;
 
-  --gold: oklch(0.74 0.11 79);
-  --gold-muted: oklch(0.52 0.09 79);
-  --success: oklch(0.59 0.09 140);
+  /* Brand neutrals */
+  --sand: #CBCAC4;
+  --charcoal: #232323;
+  --hairline: #E0E0E0;
+
+  /* Legacy gold tokens — mapped to charcoal so any unmigrated `bg-gold` etc.
+     still renders sensible color. Será removido em cleanup futuro. */
+  --gold: #232323;
+  --gold-muted: #525252;
+  --success: #2E7D32;
 
   --radius: 0.5rem;
 
-  --chart-1: oklch(0.74 0.11 79);
-  --chart-2: oklch(0.67 0.09 140);
-  --chart-3: oklch(0.60 0.10 220);
-  --chart-4: oklch(0.65 0.08 30);
-  --chart-5: oklch(0.45 0 0);
+  --chart-1: #232323;
+  --chart-2: #525252;
+  --chart-3: #777777;
+  --chart-4: #9A9A9A;
+  --chart-5: #CBCAC4;
 
-  --sidebar: oklch(0.09 0 0);
-  --sidebar-foreground: oklch(0.96 0.01 83);
-  --sidebar-primary: oklch(0.74 0.11 79);
-  --sidebar-primary-foreground: oklch(0.06 0 0);
-  --sidebar-accent: oklch(0.13 0 0);
-  --sidebar-accent-foreground: oklch(0.96 0.01 83);
-  --sidebar-border: oklch(0.19 0 0);
-  --sidebar-ring: oklch(0.74 0.11 79);
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #232323;
+  --sidebar-primary: #232323;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F5F5F5;
+  --sidebar-accent-foreground: #232323;
+  --sidebar-border: #E0E0E0;
+  --sidebar-ring: #232323;
 }
 
 @layer base {
@@ -119,7 +131,6 @@
   }
 }
 
-/* Transitions */
 @layer utilities {
   .transition-page {
     @apply transition-all duration-300 ease-in-out;
@@ -129,6 +140,9 @@
   }
   .font-playfair {
     font-family: var(--font-playfair);
+  }
+  .font-body {
+    font-family: var(--font-body);
   }
   .animate-hero-fade {
     animation: hero-fade 800ms ease-out both;
