@@ -42,8 +42,14 @@ export function JoinForm({ eventId, eventCode }: Props) {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Erro ao entrar na imersão.");
 
-      // Sign in client-side to establish the session
       const supabase = createClient();
+      // Clear any stale session from previous tests/users on this browser before
+      // signing in. Without this, Safari iOS can keep a previous user's cookies
+      // briefly and queries hit RLS with the wrong auth.uid() — INSERT into
+      // quiz_responses fails because participants.user_id doesn't match.
+      await supabase.auth.signOut();
+
+      // Sign in client-side to establish the new session
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: data.email,
         password: json.password,
