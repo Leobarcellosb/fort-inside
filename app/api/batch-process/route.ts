@@ -39,7 +39,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Nenhum participante completou o quiz" }, { status: 400 });
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  // Use req.nextUrl.origin as fallback so production self-fetch works without
+  // requiring NEXT_PUBLIC_APP_URL env var.
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? req.nextUrl.origin;
+
+  type GenResult = { ok: boolean; status: number; body: { success?: boolean; error?: string } };
 
   const results = await Promise.allSettled(
     participants.map((p) =>
@@ -47,12 +51,36 @@ export async function POST(req: NextRequest) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ participant_id: p.id, event_id }),
-      }).then((r) => r.json())
+      }).then(async (r): Promise<GenResult> => {
+        const body = (await r.json().catch(() => ({}))) as GenResult["body"];
+        return { ok: r.ok, status: r.status, body };
+      })
     )
   );
 
-  const succeeded = results.filter((r) => r.status === "fulfilled").length;
-  const failed = results.filter((r) => r.status === "rejected").length;
+  // Count actual successes — Promise.allSettled fulfills even when fetch returns
+  // 500, so checking only `r.status === "fulfilled"` is misleading.
+  const succeeded = results.filter(
+    (r) => r.status === "fulfilled" && r.value.ok && r.value.body?.success === true
+  ).length;
+  const failed = results.length - succeeded;
+
+  // Per-participant failure log for debugging silent generation failures.
+  results.forEach((r, idx) => {
+    const participantId = participants[idx]?.id;
+    if (r.status === "rejected") {
+      console.error("[batch-process] fetch rejected", {
+        participant_id: participantId,
+        reason: r.reason instanceof Error ? r.reason.message : String(r.reason),
+      });
+    } else if (!r.value.ok || r.value.body?.success !== true) {
+      console.error("[batch-process] generation failed", {
+        participant_id: participantId,
+        status: r.value.status,
+        body: r.value.body,
+      });
+    }
+  });
 
   await ((supabase.from("events") as unknown as {
     update(v: Record<string, unknown>): { eq(c: string, v: string): Promise<unknown> };

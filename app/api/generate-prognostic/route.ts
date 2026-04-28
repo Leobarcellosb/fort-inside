@@ -1,11 +1,40 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generatePrognosticSchema } from "@/lib/schemas";
 import { buildSystemPrompt, buildUserPrompt } from "@/lib/ai/prognostic-prompt";
 import type { PrognosticContent, QuizResponse, QuizStage, Participant, Prognostic } from "@/types/database";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// Runtime schema validating IA output. Mirrors PrognosticContent shape with
+// strict cardinality (areas_chave=3, plano_30_dias=3, praticas=4) so we catch
+// IA drift early with a clear error instead of inserting malformed data.
+const prognosticContentSchema = z.object({
+  analise_geral: z.string().min(1),
+  areas_chave: z
+    .array(z.object({ nome: z.string().min(1), direcionamento: z.string().min(1) }))
+    .length(3),
+  plano_30_dias: z
+    .array(z.object({ comportamento: z.string().min(1), microacao: z.string().min(1) }))
+    .length(3),
+  praticas: z
+    .array(z.object({ nome: z.string().min(1), descricao: z.string().min(1) }))
+    .length(4),
+  frase_ativacao: z.object({
+    frase: z.string().min(1),
+    contexto: z.string().min(1),
+  }),
+  trilha_recomendada: z.enum([
+    "Exploração",
+    "Direção",
+    "Aproximação",
+    "Aceleração",
+    "Sessão Privada",
+  ]),
+  justificativa_trilha: z.string().min(1),
+});
 
 const RATE_LIMIT_MAP = new Map<string, number>();
 
@@ -74,21 +103,51 @@ export async function POST(req: NextRequest) {
 
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 2048,
+    max_tokens: 4096,
     temperature: 0.7,
     system: systemPrompt,
     messages: [{ role: "user", content: userPrompt }],
   });
 
-  const rawText = message.content[0].type === "text" ? message.content[0].text : "";
+  const rawText = message.content[0]?.type === "text" ? message.content[0].text : "";
 
   let content: PrognosticContent;
   try {
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("JSON não encontrado");
-    content = JSON.parse(jsonMatch[0]);
-  } catch {
-    return NextResponse.json({ error: "Falha ao parsear resposta da IA" }, { status: 500 });
+    if (!jsonMatch) throw new Error("JSON não encontrado no output da IA");
+    const parsed: unknown = JSON.parse(jsonMatch[0]);
+
+    const validated = prognosticContentSchema.safeParse(parsed);
+    if (!validated.success) {
+      console.error("[generate-prognostic] schema validation failed", {
+        errors: validated.error.flatten(),
+        parsedPreview: JSON.stringify(parsed).slice(0, 800),
+      });
+      return NextResponse.json(
+        {
+          error: "IA retornou estrutura inválida",
+          detail: validated.error.flatten(),
+        },
+        { status: 500 }
+      );
+    }
+    content = validated.data as PrognosticContent;
+  } catch (err) {
+    console.error("[generate-prognostic] parse failure", {
+      err: err instanceof Error ? err.message : String(err),
+      rawTextPreview: rawText.slice(0, 800),
+      rawTextLength: rawText.length,
+      anthropicUsage: message.usage,
+      stopReason: message.stop_reason,
+    });
+    return NextResponse.json(
+      {
+        error: "Falha ao parsear resposta da IA",
+        detail: err instanceof Error ? err.message : "unknown",
+        stop_reason: message.stop_reason,
+      },
+      { status: 500 }
+    );
   }
 
   const { data: existing } = await supabase
@@ -114,7 +173,16 @@ export async function POST(req: NextRequest) {
       pdf_url: null,
     }).eq("participant_id", participant_id));
 
-    if (uErr) return NextResponse.json({ error: "Erro ao salvar prognóstico" }, { status: 500 });
+    if (uErr) {
+      console.error("[generate-prognostic] update failure", {
+        err: uErr,
+        participant_id,
+      });
+      return NextResponse.json(
+        { error: "Erro ao salvar prognóstico", detail: uErr.message },
+        { status: 500 }
+      );
+    }
   } else {
     const { data: inserted, error: iErr } = await ((supabase.from("prognostics") as unknown as {
       insert(v: Record<string, unknown>): {
@@ -128,7 +196,19 @@ export async function POST(req: NextRequest) {
       generated_at: new Date().toISOString(),
     }).select("id").single());
 
-    if (iErr || !inserted) return NextResponse.json({ error: "Erro ao salvar prognóstico" }, { status: 500 });
+    if (iErr || !inserted) {
+      console.error("[generate-prognostic] insert failure", {
+        err: iErr,
+        participant_id,
+      });
+      return NextResponse.json(
+        {
+          error: "Erro ao salvar prognóstico",
+          detail: iErr?.message ?? "no insert result",
+        },
+        { status: 500 }
+      );
+    }
     prognosticId = inserted.id;
   }
 
