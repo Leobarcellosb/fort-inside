@@ -64,19 +64,19 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
   },
   coverEyebrow: {
-    fontSize: 9,
+    fontSize: 11,
     letterSpacing: 3,
     color: DARK,
     textTransform: "uppercase",
     marginBottom: 12,
   },
   coverSubtitle: {
-    fontSize: 14,
+    fontSize: 17,
     color: MID,
     marginBottom: 30,
   },
   pageTitle: {
-    fontSize: 80,
+    fontSize: 76,
     color: DARK,
     fontFamily: "Helvetica-Bold",
     lineHeight: 1.05,
@@ -90,13 +90,13 @@ const styles = StyleSheet.create({
 
   // SECTION HEADLINES
   sectionHeadline: {
-    fontSize: 36,
+    fontSize: 42,
     color: CHARCOAL,
     fontFamily: "Helvetica-Bold",
     marginBottom: 8,
   },
   sectionHeadlineSmall: {
-    fontSize: 11,
+    fontSize: 13,
     letterSpacing: 2.5,
     color: CHARCOAL,
     textTransform: "uppercase",
@@ -107,15 +107,15 @@ const styles = StyleSheet.create({
 
   // SUBSECTION
   subsectionHeading: {
-    fontSize: 18,
+    fontSize: 21,
     color: CHARCOAL,
     fontFamily: "Helvetica-Bold",
     marginBottom: 8,
   },
 
   // BODY
-  body: { fontSize: 13, color: DARK, lineHeight: 1.7 },
-  bodySpaced: { fontSize: 13, color: DARK, lineHeight: 1.7, marginBottom: 12 },
+  body: { fontSize: 15, color: DARK, lineHeight: 1.7 },
+  bodySpaced: { fontSize: 15, color: DARK, lineHeight: 1.7, marginBottom: 12 },
 
   contentColumn: {
     maxWidth: 600,
@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   trailText: {
-    fontSize: 9,
+    fontSize: 11,
     color: CHARCOAL,
     letterSpacing: 1,
     textTransform: "uppercase",
@@ -149,7 +149,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   trailTextBig: {
-    fontSize: 13,
+    fontSize: 15,
     color: CHARCOAL,
     letterSpacing: 1.5,
     textTransform: "uppercase",
@@ -174,7 +174,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   tableHeaderCellLeft: {
-    fontSize: 11,
+    fontSize: 13,
     color: CHARCOAL,
     fontFamily: "Helvetica-Bold",
     letterSpacing: 1.5,
@@ -183,7 +183,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   tableHeaderCellRight: {
-    fontSize: 11,
+    fontSize: 13,
     color: CHARCOAL,
     fontFamily: "Helvetica-Bold",
     letterSpacing: 1.5,
@@ -199,7 +199,7 @@ const styles = StyleSheet.create({
   },
   tableRowAlt: { backgroundColor: ALTERNATE_ROW },
   tableCellLeft: {
-    fontSize: 13,
+    fontSize: 15,
     color: DARK,
     fontFamily: "Helvetica-Bold",
     width: "30%",
@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
     lineHeight: 1.5,
   },
   tableCellRight: {
-    fontSize: 13,
+    fontSize: 15,
     color: DARK,
     width: "70%",
     paddingHorizontal: 12,
@@ -227,13 +227,13 @@ const styles = StyleSheet.create({
     paddingLeft: 12,
   },
   praticaName: {
-    fontSize: 16,
+    fontSize: 19,
     color: CHARCOAL,
     fontFamily: "Helvetica-Bold",
     marginBottom: 4,
   },
   praticaDescription: {
-    fontSize: 13,
+    fontSize: 15,
     color: DARK,
     lineHeight: 1.6,
   },
@@ -257,7 +257,7 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   fraseQuoteMark: {
-    fontSize: 72,
+    fontSize: 85,
     color: CHARCOAL,
     fontFamily: "Helvetica-Bold",
     lineHeight: 0.8,
@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   fraseQuote: {
-    fontSize: 28,
+    fontSize: 33,
     color: CHARCOAL,
     fontStyle: "italic",
     lineHeight: 1.4,
@@ -280,7 +280,7 @@ const styles = StyleSheet.create({
   // CLOSING
   closingTop: { paddingTop: 10 },
   closingMessage: {
-    fontSize: 14,
+    fontSize: 17,
     color: DARK,
     fontStyle: "italic",
     lineHeight: 1.6,
@@ -296,12 +296,12 @@ const styles = StyleSheet.create({
     paddingVertical: 30,
   },
   closingThanks: {
-    fontSize: 56,
+    fontSize: 66,
     color: CHARCOAL,
     fontFamily: "Helvetica-Bold",
     marginBottom: 16,
   },
-  closingSignature: { fontSize: 14, color: MID },
+  closingSignature: { fontSize: 17, color: MID },
   closingFooterLogoBlock: {
     alignItems: "center",
   },
@@ -321,14 +321,14 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   yuriNoteLabel: {
-    fontSize: 8,
+    fontSize: 9,
     letterSpacing: 2,
     color: CHARCOAL,
     textTransform: "uppercase",
     marginBottom: 5,
   },
   yuriNoteText: {
-    fontSize: 13,
+    fontSize: 15,
     color: DARK,
     lineHeight: 1.65,
     fontStyle: "italic",
@@ -347,7 +347,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  footerText: { fontSize: 9, color: MID },
+  footerText: { fontSize: 11, color: MID },
   footerLogo: {
     width: 24,
     height: 24,
@@ -390,7 +390,7 @@ export function PrognosticPdfDocument({
       subject="Fort Inside — Prognóstico Inicial de Direção"
     >
       {/* PAGE 1 — COVER */}
-      <Page size="A4" orientation="landscape" style={styles.coverPage}>
+      <Page size="A4" style={styles.coverPage}>
         <View style={styles.coverLogoBlock}>
           {/* eslint-disable-next-line jsx-a11y/alt-text */}
           <Image src={LOGO_URL} style={styles.coverLogo} />
@@ -414,7 +414,7 @@ export function PrognosticPdfDocument({
       </Page>
 
       {/* PAGE 2 — ANÁLISE */}
-      <Page size="A4" orientation="landscape" style={styles.page}>
+      <Page size="A4" style={styles.page}>
         <Text style={styles.sectionHeadline}>Análise</Text>
         <View style={styles.sectionGap} />
         <View style={styles.contentColumn}>
@@ -432,7 +432,7 @@ export function PrognosticPdfDocument({
       </Page>
 
       {/* PAGE 3 — ÁREAS-CHAVE */}
-      <Page size="A4" orientation="landscape" style={styles.page}>
+      <Page size="A4" style={styles.page}>
         <Text style={styles.sectionHeadline}>Áreas-Chave</Text>
         <View style={styles.areasRow}>
           {content.areas_chave.map((area, i) => (
@@ -452,7 +452,7 @@ export function PrognosticPdfDocument({
       </Page>
 
       {/* PAGE 4 — PLANO 30 DIAS */}
-      <Page size="A4" orientation="landscape" style={styles.page}>
+      <Page size="A4" style={styles.page}>
         <Text style={styles.sectionHeadline}>Plano de 30 dias</Text>
         <View style={styles.sectionGap} />
         <View style={styles.tableHeader}>
@@ -478,7 +478,7 @@ export function PrognosticPdfDocument({
       </Page>
 
       {/* PAGE 5 — PILARES */}
-      <Page size="A4" orientation="landscape" style={styles.page}>
+      <Page size="A4" style={styles.page}>
         <Text style={styles.sectionHeadline}>Pilares</Text>
         <View style={styles.pilaresRow}>
           {content.praticas.map((p, i) => (
@@ -498,7 +498,7 @@ export function PrognosticPdfDocument({
       </Page>
 
       {/* PAGE 6 — FRASE DE ATIVAÇÃO */}
-      <Page size="A4" orientation="landscape" style={styles.page}>
+      <Page size="A4" style={styles.page}>
         <Text style={styles.sectionHeadlineSmall}>Frase de ativação</Text>
         <View style={styles.fraseCenterContainer}>
           <View style={styles.quoteBox}>
@@ -521,7 +521,7 @@ export function PrognosticPdfDocument({
       </Page>
 
       {/* PAGE 7 — POR QUE ESTA TRILHA */}
-      <Page size="A4" orientation="landscape" style={styles.page}>
+      <Page size="A4" style={styles.page}>
         <Text style={styles.sectionHeadline}>Por que esta trilha</Text>
         <View style={styles.trailBadgeBig}>
           <Text style={styles.trailTextBig}>{content.trilha_recomendada}</Text>
@@ -540,7 +540,7 @@ export function PrognosticPdfDocument({
       </Page>
 
       {/* PAGE 8 — FECHAMENTO */}
-      <Page size="A4" orientation="landscape" style={styles.closingPage}>
+      <Page size="A4" style={styles.closingPage}>
         <View style={styles.closingTop}>
           {yuriNote ? (
             <View style={styles.yuriNoteBox}>
