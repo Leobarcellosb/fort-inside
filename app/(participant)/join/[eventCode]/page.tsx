@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import { JoinForm } from "@/components/features/participant/JoinForm";
 import { CinematicHero } from "@/components/features/participant/CinematicHero";
+import { AMBIENT_IMAGES } from "@/lib/cinematic-map";
 import type { Event } from "@/types/database";
 
 interface Props {
@@ -24,6 +25,8 @@ export default async function JoinPage({ params }: Props) {
     return (
       <main className="min-h-screen bg-background">
         <CinematicHero
+          imageSrc={AMBIENT_IMAGES.join}
+          imageAlt="Imersão encerrada"
           eyebrow="Imersão Fort Inside"
           title="Imersão encerrada"
           subtitle="Esta imersão já foi concluída."
@@ -42,6 +45,8 @@ export default async function JoinPage({ params }: Props) {
   return (
     <main className="min-h-screen bg-background">
       <CinematicHero
+        imageSrc={AMBIENT_IMAGES.join}
+        imageAlt="Entrada da imersão"
         eyebrow="Imersão Fort Inside"
         title="Entre"
         subtitle={`${event.name}${event.location_name ? ` · ${event.location_name}` : ""}`}

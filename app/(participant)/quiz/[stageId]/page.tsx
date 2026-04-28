@@ -9,6 +9,7 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { CinematicHero } from "@/components/features/participant/CinematicHero";
+import { getStageImage } from "@/lib/cinematic-map";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -130,6 +131,8 @@ export default function QuizPage({ params }: Props) {
     <main className="min-h-screen flex flex-col bg-background">
       <CinematicHero
         variant="compact"
+        imageSrc={getStageImage(stage.id)}
+        imageAlt={stage.ambient_name}
         eyebrow={`Etapa ${stageNum} de 6`}
         title={stage.ambient_name.toUpperCase()}
         subtitle={stage.title}

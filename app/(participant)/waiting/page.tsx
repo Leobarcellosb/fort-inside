@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { CinematicHero } from "@/components/features/participant/CinematicHero";
+import { AMBIENT_IMAGES } from "@/lib/cinematic-map";
 import type { Event, QuizResponse } from "@/types/database";
 
 export default function WaitingPage() {
@@ -118,9 +119,11 @@ export default function WaitingPage() {
   return (
     <main className="min-h-screen bg-background">
       <CinematicHero
+        imageSrc={AMBIENT_IMAGES.waiting}
+        imageAlt="Aguardando próxima etapa"
         eyebrow="Próxima etapa"
         title="Aguarde"
-        subtitle="Em instantes"
+        subtitle={`${hostName} vai liberar em instantes`}
       />
       <section className="px-6 py-16 max-w-md mx-auto text-center space-y-10">
         <div className="relative mx-auto w-16 h-16">
