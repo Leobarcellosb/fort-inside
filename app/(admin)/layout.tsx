@@ -19,13 +19,13 @@ export default async function AdminLayout({
     <>
       {session && (
         <>
-          <div className="fixed top-4 left-4 z-30">
+          <header className="fixed top-0 inset-x-0 h-14 bg-background border-b border-border z-30 flex items-center px-4 lg:px-8">
             <Logo size="sm" />
-          </div>
+          </header>
           <AdminLogoutButton />
         </>
       )}
-      {children}
+      <div className={session ? "pt-14" : ""}>{children}</div>
     </>
   );
 }

@@ -21,8 +21,11 @@ export default async function ReviewPage({ params }: Props) {
 
   const { data: participants } = await supabase
     .from("participants")
-    .select("id, full_name, email")
-    .eq("event_id", id) as { data: Pick<Participant, "id" | "full_name" | "email">[] | null; error: unknown };
+    .select("id, full_name, email, completed_at")
+    .eq("event_id", id) as {
+      data: Pick<Participant, "id" | "full_name" | "email" | "completed_at">[] | null;
+      error: unknown;
+    };
 
   const { data: prognostics } = await supabase
     .from("prognostics")
