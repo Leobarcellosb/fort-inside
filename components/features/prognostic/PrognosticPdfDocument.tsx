@@ -26,20 +26,20 @@ const styles = StyleSheet.create({
     borderBottomColor: HAIRLINE,
   },
   eyebrow: {
-    fontSize: 7,
+    fontSize: 8,
     letterSpacing: 2,
     color: GOLD,
     textTransform: "uppercase",
     marginBottom: 10,
   },
   title: {
-    fontSize: 28,
+    fontSize: 33,
     color: DARK,
     fontFamily: "Helvetica-Bold",
     marginBottom: 6,
   },
   subtitle: {
-    fontSize: 10,
+    fontSize: 12,
     color: MID,
     marginBottom: 3,
   },
@@ -53,7 +53,7 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
   },
   trailText: {
-    fontSize: 8,
+    fontSize: 9,
     color: GOLD,
     letterSpacing: 1,
     textTransform: "uppercase",
@@ -61,7 +61,7 @@ const styles = StyleSheet.create({
 
   // Section heading
   sectionHeading: {
-    fontSize: 9,
+    fontSize: 11,
     letterSpacing: 2.5,
     color: GOLD,
     textTransform: "uppercase",
@@ -79,23 +79,23 @@ const styles = StyleSheet.create({
   },
 
   // Body text
-  body: { fontSize: 11, color: DARK, lineHeight: 1.65 },
-  bodySpaced: { fontSize: 11, color: DARK, lineHeight: 1.65, marginBottom: 10 },
+  body: { fontSize: 13, color: DARK, lineHeight: 1.65 },
+  bodySpaced: { fontSize: 13, color: DARK, lineHeight: 1.65, marginBottom: 10 },
 
   // Áreas-chave
   itemBlock: { marginBottom: 16 },
   itemHeading: {
-    fontSize: 13,
+    fontSize: 15,
     color: GOLD,
     fontFamily: "Helvetica-Bold",
     marginBottom: 4,
   },
-  itemBody: { fontSize: 11, color: DARK, lineHeight: 1.65 },
+  itemBody: { fontSize: 13, color: DARK, lineHeight: 1.65 },
 
   // Plano numbered
   planoRow: { flexDirection: "row", marginBottom: 14 },
   planoNumber: {
-    fontSize: 22,
+    fontSize: 26,
     color: GOLD,
     fontFamily: "Helvetica-Bold",
     width: 36,
@@ -103,12 +103,12 @@ const styles = StyleSheet.create({
   },
   planoContent: { flex: 1 },
   planoComportamento: {
-    fontSize: 12,
+    fontSize: 14,
     color: DARK,
     fontFamily: "Helvetica-Bold",
     marginBottom: 3,
   },
-  planoMicroacao: { fontSize: 11, color: DARK, lineHeight: 1.55 },
+  planoMicroacao: { fontSize: 13, color: DARK, lineHeight: 1.55 },
 
   // Pilares grid (2 cols)
   praticasGrid: {
@@ -127,12 +127,12 @@ const styles = StyleSheet.create({
     paddingLeft: 10,
   },
   praticaNome: {
-    fontSize: 11,
+    fontSize: 13,
     color: GOLD,
     fontFamily: "Helvetica-Bold",
     marginBottom: 3,
   },
-  praticaDescricao: { fontSize: 10, color: DARK, lineHeight: 1.5 },
+  praticaDescricao: { fontSize: 12, color: DARK, lineHeight: 1.5 },
 
   // Frase ativação
   fraseBox: {
@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
     marginVertical: 16,
   },
   fraseText: {
-    fontSize: 14,
+    fontSize: 17,
     color: DARK,
     fontStyle: "italic",
     lineHeight: 1.5,
@@ -160,14 +160,14 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   yuriNoteLabel: {
-    fontSize: 7,
+    fontSize: 8,
     letterSpacing: 2,
     color: GOLD,
     textTransform: "uppercase",
     marginBottom: 5,
   },
   yuriNoteText: {
-    fontSize: 11,
+    fontSize: 13,
     color: DARK,
     lineHeight: 1.65,
     fontStyle: "italic",
@@ -186,8 +186,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  footerText: { fontSize: 8, color: MID },
-  footerBrand: { fontSize: 8, color: DARK, fontFamily: "Helvetica-Bold" },
+  footerText: { fontSize: 9, color: MID },
+  footerBrand: { fontSize: 9, color: DARK, fontFamily: "Helvetica-Bold" },
 });
 
 interface Props {
