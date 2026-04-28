@@ -1,7 +1,8 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { PrognosticContent } from "@/types/database";
 
-// Editorial deck-style layout: cover + section per page, dramatic typography hierarchy.
+// Editorial deck-style layout — A4 LANDSCAPE (slide format).
+// Cover + section per page, dramatic typography hierarchy.
 // All-Helvetica (zero remote fetch). Gold #C9A961 accent on white paper.
 const GOLD = "#C9A961";
 const DARK = "#1A1A1A";
@@ -10,21 +11,21 @@ const HAIRLINE = "#E0E0E0";
 const ALTERNATE_ROW = "#F8F8F8";
 
 const styles = StyleSheet.create({
-  // PAGES
+  // PAGES — landscape A4 ≈ 792 × 595 pt
   page: {
     backgroundColor: "#FFFFFF",
     color: DARK,
-    paddingTop: 60,
-    paddingBottom: 80,
-    paddingHorizontal: 56,
+    paddingTop: 50,
+    paddingBottom: 60,
+    paddingHorizontal: 80,
     fontFamily: "Helvetica",
   },
   coverPage: {
     backgroundColor: "#FFFFFF",
     color: DARK,
-    paddingTop: 80,
-    paddingBottom: 60,
-    paddingHorizontal: 56,
+    paddingTop: 60,
+    paddingBottom: 50,
+    paddingHorizontal: 80,
     fontFamily: "Helvetica",
     flexDirection: "column",
     justifyContent: "space-between",
@@ -32,9 +33,9 @@ const styles = StyleSheet.create({
   closingPage: {
     backgroundColor: "#FFFFFF",
     color: DARK,
-    paddingTop: 60,
-    paddingBottom: 60,
-    paddingHorizontal: 56,
+    paddingTop: 50,
+    paddingBottom: 50,
+    paddingHorizontal: 80,
     fontFamily: "Helvetica",
     flexDirection: "column",
     justifyContent: "space-between",
@@ -60,11 +61,11 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   pageTitle: {
-    fontSize: 64,
+    fontSize: 80,
     color: DARK,
     fontFamily: "Helvetica-Bold",
     lineHeight: 1.05,
-    marginBottom: 30,
+    marginBottom: 0,
   },
   coverFooter: {
     paddingTop: 20,
@@ -89,7 +90,7 @@ const styles = StyleSheet.create({
   },
   sectionGap: { height: 30 },
 
-  // SUBSECTION
+  // SUBSECTION (column titles in grid layouts)
   subsectionHeading: {
     fontSize: 18,
     color: GOLD,
@@ -100,6 +101,11 @@ const styles = StyleSheet.create({
   // BODY
   body: { fontSize: 13, color: DARK, lineHeight: 1.7 },
   bodySpaced: { fontSize: 13, color: DARK, lineHeight: 1.7, marginBottom: 12 },
+
+  // Single-column body containers (Análise, Por que esta trilha) — maxWidth caps line length
+  contentColumn: {
+    maxWidth: 600,
+  },
 
   // TRAIL BADGES
   trailBadge: {
@@ -136,8 +142,15 @@ const styles = StyleSheet.create({
     fontFamily: "Helvetica-Bold",
   },
 
-  // ÁREAS-CHAVE
-  areaBlock: { marginBottom: 28 },
+  // ÁREAS-CHAVE — 3 columns side by side
+  areasRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 30,
+  },
+  areaColumn: {
+    width: "31%",
+  },
 
   // PLANO 30 DIAS — TABLE
   tableHeader: {
@@ -152,8 +165,8 @@ const styles = StyleSheet.create({
     fontFamily: "Helvetica-Bold",
     letterSpacing: 1.5,
     textTransform: "uppercase",
-    width: "35%",
-    paddingHorizontal: 10,
+    width: "30%",
+    paddingHorizontal: 12,
   },
   tableHeaderCellRight: {
     fontSize: 11,
@@ -161,12 +174,12 @@ const styles = StyleSheet.create({
     fontFamily: "Helvetica-Bold",
     letterSpacing: 1.5,
     textTransform: "uppercase",
-    width: "65%",
-    paddingHorizontal: 10,
+    width: "70%",
+    paddingHorizontal: 12,
   },
   tableRow: {
     flexDirection: "row",
-    paddingVertical: 14,
+    paddingVertical: 18,
     borderBottomWidth: 0.5,
     borderBottomColor: HAIRLINE,
   },
@@ -175,24 +188,29 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: DARK,
     fontFamily: "Helvetica-Bold",
-    width: "35%",
-    paddingHorizontal: 10,
+    width: "30%",
+    paddingHorizontal: 12,
     lineHeight: 1.5,
   },
   tableCellRight: {
     fontSize: 13,
     color: DARK,
-    width: "65%",
-    paddingHorizontal: 10,
+    width: "70%",
+    paddingHorizontal: 12,
     lineHeight: 1.6,
   },
 
-  // PILARES
-  pilarBlock: {
-    marginBottom: 22,
+  // PILARES — 4 columns side by side
+  pilaresRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 30,
+  },
+  pilarColumn: {
+    width: "23%",
     borderLeftWidth: 2,
     borderLeftColor: GOLD,
-    paddingLeft: 14,
+    paddingLeft: 12,
   },
   praticaName: {
     fontSize: 16,
@@ -206,15 +224,23 @@ const styles = StyleSheet.create({
     lineHeight: 1.6,
   },
 
-  // FRASE DE ATIVAÇÃO
+  // FRASE DE ATIVAÇÃO — centralized vertical/horizontal
+  fraseCenterContainer: {
+    flex: 1,
+    flexDirection: "column",
+    justifyContent: "center",
+    alignItems: "center",
+  },
   quoteBox: {
-    paddingVertical: 40,
+    paddingVertical: 35,
     paddingHorizontal: 30,
     borderTopWidth: 1.5,
     borderTopColor: GOLD,
     borderBottomWidth: 1.5,
     borderBottomColor: GOLD,
     marginVertical: 20,
+    maxWidth: 600,
+    alignSelf: "center",
   },
   fraseQuoteMark: {
     fontSize: 72,
@@ -231,22 +257,29 @@ const styles = StyleSheet.create({
     lineHeight: 1.4,
     textAlign: "center",
   },
+  fraseContextoContainer: {
+    maxWidth: 500,
+    alignSelf: "center",
+    marginTop: 24,
+  },
 
   // CLOSING
-  closingTop: { paddingTop: 20 },
+  closingTop: { paddingTop: 10 },
   closingMessage: {
     fontSize: 14,
     color: DARK,
     fontStyle: "italic",
     lineHeight: 1.6,
     textAlign: "center",
-    marginTop: 40,
+    marginTop: 30,
+    maxWidth: 600,
+    alignSelf: "center",
   },
   closingCenter: {
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 60,
+    paddingVertical: 30,
   },
   closingThanks: {
     fontSize: 56,
@@ -268,6 +301,9 @@ const styles = StyleSheet.create({
     borderLeftColor: GOLD,
     paddingLeft: 14,
     marginBottom: 24,
+    maxWidth: 600,
+    alignSelf: "center",
+    width: "100%",
   },
   yuriNoteLabel: {
     fontSize: 8,
@@ -286,12 +322,12 @@ const styles = StyleSheet.create({
   // FOOTER (pages 2-7)
   footer: {
     position: "absolute",
-    bottom: 40,
-    left: 56,
-    right: 56,
+    bottom: 30,
+    left: 60,
+    right: 60,
     borderTopWidth: 1,
     borderTopColor: HAIRLINE,
-    paddingTop: 12,
+    paddingTop: 10,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -336,7 +372,7 @@ export function PrognosticPdfDocument({
       subject="Fort Inside — Prognóstico Inicial de Direção"
     >
       {/* PAGE 1 — COVER */}
-      <Page size="A4" style={styles.coverPage}>
+      <Page size="A4" orientation="landscape" style={styles.coverPage}>
         <View style={styles.coverContent}>
           <Text style={styles.coverEyebrow}>Mapa da Sua Próxima Construção</Text>
           <Text style={styles.coverSubtitle}>
@@ -356,12 +392,14 @@ export function PrognosticPdfDocument({
       </Page>
 
       {/* PAGE 2 — ANÁLISE */}
-      <Page size="A4" style={styles.page}>
+      <Page size="A4" orientation="landscape" style={styles.page}>
         <Text style={styles.sectionHeadline}>Análise</Text>
         <View style={styles.sectionGap} />
-        {analiseParagraphs.map((p, i) => (
-          <Text key={i} style={styles.bodySpaced}>{p}</Text>
-        ))}
+        <View style={styles.contentColumn}>
+          {analiseParagraphs.map((p, i) => (
+            <Text key={i} style={styles.bodySpaced}>{p}</Text>
+          ))}
+        </View>
         <View style={styles.footer} fixed>
           <Text style={styles.footerText}>
             Prognóstico Inicial de Direção por {hostName}
@@ -370,16 +408,17 @@ export function PrognosticPdfDocument({
         </View>
       </Page>
 
-      {/* PAGE 3 — ÁREAS-CHAVE */}
-      <Page size="A4" style={styles.page}>
+      {/* PAGE 3 — ÁREAS-CHAVE (3 columns) */}
+      <Page size="A4" orientation="landscape" style={styles.page}>
         <Text style={styles.sectionHeadline}>Áreas-Chave</Text>
-        <View style={styles.sectionGap} />
-        {content.areas_chave.map((area, i) => (
-          <View key={i} style={styles.areaBlock}>
-            <Text style={styles.subsectionHeading}>{area.nome}</Text>
-            <Text style={styles.body}>{area.direcionamento}</Text>
-          </View>
-        ))}
+        <View style={styles.areasRow}>
+          {content.areas_chave.map((area, i) => (
+            <View key={i} style={styles.areaColumn}>
+              <Text style={styles.subsectionHeading}>{area.nome}</Text>
+              <Text style={styles.body}>{area.direcionamento}</Text>
+            </View>
+          ))}
+        </View>
         <View style={styles.footer} fixed>
           <Text style={styles.footerText}>
             Prognóstico Inicial de Direção por {hostName}
@@ -388,8 +427,8 @@ export function PrognosticPdfDocument({
         </View>
       </Page>
 
-      {/* PAGE 4 — PLANO 30 DIAS */}
-      <Page size="A4" style={styles.page}>
+      {/* PAGE 4 — PLANO 30 DIAS (table) */}
+      <Page size="A4" orientation="landscape" style={styles.page}>
         <Text style={styles.sectionHeadline}>Plano de 30 dias</Text>
         <View style={styles.sectionGap} />
         <View style={styles.tableHeader}>
@@ -413,16 +452,17 @@ export function PrognosticPdfDocument({
         </View>
       </Page>
 
-      {/* PAGE 5 — PILARES */}
-      <Page size="A4" style={styles.page}>
+      {/* PAGE 5 — PILARES (4 columns) */}
+      <Page size="A4" orientation="landscape" style={styles.page}>
         <Text style={styles.sectionHeadline}>Pilares</Text>
-        <View style={styles.sectionGap} />
-        {content.praticas.map((p, i) => (
-          <View key={i} style={styles.pilarBlock}>
-            <Text style={styles.praticaName}>{p.nome}</Text>
-            <Text style={styles.praticaDescription}>{p.descricao}</Text>
-          </View>
-        ))}
+        <View style={styles.pilaresRow}>
+          {content.praticas.map((p, i) => (
+            <View key={i} style={styles.pilarColumn}>
+              <Text style={styles.praticaName}>{p.nome}</Text>
+              <Text style={styles.praticaDescription}>{p.descricao}</Text>
+            </View>
+          ))}
+        </View>
         <View style={styles.footer} fixed>
           <Text style={styles.footerText}>
             Prognóstico Inicial de Direção por {hostName}
@@ -431,18 +471,20 @@ export function PrognosticPdfDocument({
         </View>
       </Page>
 
-      {/* PAGE 6 — FRASE DE ATIVAÇÃO */}
-      <Page size="A4" style={styles.page}>
+      {/* PAGE 6 — FRASE DE ATIVAÇÃO (centered) */}
+      <Page size="A4" orientation="landscape" style={styles.page}>
         <Text style={styles.sectionHeadlineSmall}>Frase de ativação</Text>
-        <View style={styles.sectionGap} />
-        <View style={styles.quoteBox}>
-          <Text style={styles.fraseQuoteMark}>&ldquo;</Text>
-          <Text style={styles.fraseQuote}>{content.frase_ativacao.frase}</Text>
+        <View style={styles.fraseCenterContainer}>
+          <View style={styles.quoteBox}>
+            <Text style={styles.fraseQuoteMark}>&ldquo;</Text>
+            <Text style={styles.fraseQuote}>{content.frase_ativacao.frase}</Text>
+          </View>
+          <View style={styles.fraseContextoContainer}>
+            {contextoParagraphs.map((p, i) => (
+              <Text key={i} style={styles.bodySpaced}>{p}</Text>
+            ))}
+          </View>
         </View>
-        <View style={{ height: 20 }} />
-        {contextoParagraphs.map((p, i) => (
-          <Text key={i} style={styles.bodySpaced}>{p}</Text>
-        ))}
         <View style={styles.footer} fixed>
           <Text style={styles.footerText}>
             Prognóstico Inicial de Direção por {hostName}
@@ -452,13 +494,15 @@ export function PrognosticPdfDocument({
       </Page>
 
       {/* PAGE 7 — POR QUE ESTA TRILHA */}
-      <Page size="A4" style={styles.page}>
+      <Page size="A4" orientation="landscape" style={styles.page}>
         <Text style={styles.sectionHeadline}>Por que esta trilha</Text>
         <View style={styles.trailBadgeBig}>
           <Text style={styles.trailTextBig}>{content.trilha_recomendada}</Text>
         </View>
         <View style={styles.sectionGap} />
-        <Text style={styles.body}>{content.justificativa_trilha}</Text>
+        <View style={styles.contentColumn}>
+          <Text style={styles.body}>{content.justificativa_trilha}</Text>
+        </View>
         <View style={styles.footer} fixed>
           <Text style={styles.footerText}>
             Prognóstico Inicial de Direção por {hostName}
@@ -468,7 +512,7 @@ export function PrognosticPdfDocument({
       </Page>
 
       {/* PAGE 8 — FECHAMENTO */}
-      <Page size="A4" style={styles.closingPage}>
+      <Page size="A4" orientation="landscape" style={styles.closingPage}>
         <View style={styles.closingTop}>
           {yuriNote ? (
             <View style={styles.yuriNoteBox}>
