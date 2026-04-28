@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { Prognostic, PrognosticContent } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { EditPrognosticDialog } from "./EditPrognosticDialog";
 
 interface Participant {
   id: string;
@@ -31,6 +32,7 @@ const TRAIL_COLORS: Record<string, string> = {
 export function PrognosticReviewGrid({ eventId, participants, prognostics }: Props) {
   const [localPrognostics, setLocalPrognostics] = useState<Prognostic[]>(prognostics);
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   // Realtime: sincroniza localPrognostics quando IA gera ou outro admin entrega.
   useEffect(() => {
@@ -123,7 +125,15 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
     }
   }
 
+  const editingProg = editingId
+    ? localPrognostics.find((p) => p.id === editingId) ?? null
+    : null;
+  const editingParticipantName = editingProg
+    ? participants.find((pt) => pt.id === editingProg.participant_id)?.full_name ?? ""
+    : "";
+
   return (
+    <>
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
       {participants.map((participant) => {
         const prog = localPrognostics.find((p) => p.participant_id === participant.id);
@@ -206,6 +216,17 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
               {prog && prog.status !== "delivered" && (
                 <Button
                   size="sm"
+                  variant="outline"
+                  onClick={() => setEditingId(prog.id)}
+                  disabled={saving}
+                  className="text-xs border-border text-muted-foreground hover:text-foreground"
+                >
+                  Editar
+                </Button>
+              )}
+              {prog && prog.status !== "delivered" && (
+                <Button
+                  size="sm"
                   onClick={() => deliver(prog.id)}
                   disabled={saving}
                   className="flex-1 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
@@ -232,5 +253,25 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
         );
       })}
     </div>
+
+    {editingProg && (
+      <EditPrognosticDialog
+        prognosticId={editingProg.id}
+        participantName={editingParticipantName}
+        initialContent={
+          (editingProg.edited_content ?? editingProg.raw_ai_output) as PrognosticContent
+        }
+        initialYuriNote={editingProg.yuri_note}
+        onClose={() => setEditingId(null)}
+        onSaved={() => {
+          // Realtime subscription propaga, mas atualiza localmente também
+          // pra UX imediata caso a subscription demore.
+          setLocalPrognostics((prev) =>
+            prev.map((p) => (p.id === editingProg.id ? { ...p, status: "reviewed", pdf_url: null } : p))
+          );
+        }}
+      />
+    )}
+    </>
   );
 }
