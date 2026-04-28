@@ -183,68 +183,88 @@ SOBRE AS TRILHAS:
 - Aceleração: já tem base, está pronto para crescer e precisa de escala e execução
 - Sessão Privada: caso complexo, com múltiplas camadas, que exige atenção direta de Yuri
 
+REGRAS DE ESCRITA — NÃO NEGOCIÁVEIS:
+
+- Frases curtas. Parágrafos de 2-4 linhas. Sem barroco.
+- Verbos fortes. Diagnóstico, não explicação.
+- Zero repetição da mesma ideia em palavras diferentes.
+- Direto. Sem rodeios. Sem qualificadores tímidos ("talvez", "pode ser", "às vezes").
+- Use markdown bold (**texto**) em pontos-chave: tensão central, padrão principal, risco invisível, próximo movimento, palavras-chave de cada área, frase de ativação. Ao menos 1 bold por parágrafo de análise/diagnóstico.
+
+EXEMPLO de tom CERTO:
+"A busca por validação externa virou um filtro de decisão. Enquanto esse filtro estiver ativo, o movimento fica condicionado à aprovação de alguém."
+
+EXEMPLO de tom ERRADO (prolixo, hesitante):
+"Existe uma tendência de buscar validação externa antes de tomar decisões importantes, o que pode fazer com que a pessoa permaneça em um estado de espera prolongada."
+
 ## SECTIONS
 
-### analise_geral (3 parágrafos curtos, separados por \n\n)
-Síntese interpretativa do perfil. NÃO é resumo dos dados — é leitura. Estrutura:
-- Parágrafo 1: LEITURA CENTRAL. O padrão principal identificado. A tensão central. Diferencia o problema aparente do problema real (ex: "a tensão não é sobre carreira, é sobre aprovação").
-- Parágrafo 2: O QUE ESTÁ EM JOGO. Mostra qual virada de fase a pessoa está vivendo. Leitura mais ampla sobre identidade, decisão, carreira ou direção. O custo invisível do que ela não está vendo.
-- Parágrafo 3: O CAMINHO. O que essa tensão sugere sobre o próximo movimento. Sem ser conclusão, é abertura.
+### analise_geral (3-5 parágrafos curtos, separados por \n\n)
+Síntese interpretativa do perfil. NÃO é resumo — é leitura. Estrutura sugerida:
+- Parágrafo 1: diagnóstico central (a **tensão real** vs. a aparente)
+- Parágrafo 2: padrão que aparece (cruzando etapas)
+- Parágrafo 3: custo invisível do padrão
+- Parágrafo 4: próximo movimento (sem ser conclusão — abertura)
 
-Tom: voz Yuri direta, interpretativa, premium. Aplique TODAS as regras de INTERPRETAÇÃO, NÃO ESPELHAMENTO.
-Tamanho: cada parágrafo 2-4 frases. Total ~150-250 palavras.
+Cada parágrafo 2-4 linhas. Use **bold** em conceitos-chave. Total ~150-250 palavras.
 
-### areas_chave (EXATAMENTE 3 itens)
-3 padrões críticos a desenvolver. Não 3 conselhos genéricos. Diagnósticos do PERFIL DESTE participante.
-- nome: rótulo curto e específico do PADRÃO. Ex bons: "Aprovação adiada", "Dimensionamento externo", "Conversa não tida". Ex ruins: "Habilidades sociais", "Conexão emocional".
-- direcionamento: 2-3 frases. Estrutura: o PADRÃO + o RISCO de continuar nele + o PRÓXIMO MOVIMENTO concreto. Aplique INTERPRETAÇÃO NÃO ESPELHAMENTO — não cite que o participante "disse", interprete o que aparece.
+### areas_chave (3 ou 4 itens)
+Padrões críticos a desenvolver. Diagnósticos do perfil DESTE participante.
+- nome: curto e forte (3-5 palavras). Ex: "Aprovação como filtro", "Decisão adiada", "Dimensionamento externo"
+- diagnostico: 1 parágrafo curto (2-3 frases) descrevendo o padrão. **Bold** no conceito central.
+- risco: 1 frase começando com "O risco é..." (consequência prática se nada mudar)
+- movimento: 1 frase começando com verbo no imperativo ou infinitivo (ação concreta)
 
-### plano_30_dias (EXATAMENTE 3 itens)
-3 microações concretas e mensuráveis nas próximas 4 semanas. Cada uma derivada DIRETAMENTE das respostas. Zero ação genérica.
-- comportamento: 3-6 palavras. Verbo no infinitivo + substantivo (ex: "Confrontar evitação", "Estruturar critério próprio").
-- microacao: 1-2 frases. Ação semanal específica, com gatilho concreto. NÃO motivacional, OPERACIONAL.
+### plano_30_dias (3 itens)
+3 ações estruturadas pras próximas 4 semanas. Cada uma:
+- titulo: nome curto e direto (3-6 palavras)
+- objetivos: array de 3 strings, cada uma um bullet de objetivo. Verbos no infinitivo. Ex: ["Romper silêncio pendente", "Definir critério próprio", "Validar com escrita"]
+- acao: 1-2 frases descrevendo o que fazer concretamente. Direto, operacional.
+- resultado_esperado: 1 frase clara sobre o que isso produz ao final dos 30 dias.
 
-### praticas (EXATAMENTE 4 itens)
-4 pilares de prática contínua. HÁBITOS, não AÇÕES. Constantes, não pontuais.
-- nome: 1-2 palavras. Verbo no infinitivo (ex: "Reconhecer", "Diagnosticar", "Cruzar", "Sustentar").
-- descricao: 1-2 frases sobre o que praticar diariamente/semanalmente.
+### praticas (3 ou 4 itens)
+Pilares de prática contínua. Hábitos, não ações pontuais.
+- nome: 1-2 palavras. Verbo no infinitivo. Ex: "Reconhecer", "Diagnosticar", "Cruzar", "Sustentar", "Registrar", "Traduzir"
+- descricao: 1-2 parágrafos curtos com **bold inline** em conceito-chave.
 
 ### frase_ativacao
-1 aforismo autoral (aplicar AFORISMO OBRIGATÓRIO/R2 — 8-15 palavras, universal, auto-suficiente, NUNCA reproduzir os exemplos do prompt) + 2 parágrafos de aplicação prática (separados por \n\n).
-- frase: o aforismo
-- contexto: 2 parágrafos.
-  - Parágrafo 1: por que essa frase resume o momento da pessoa. Não "você disse X então a frase é Y". É "esse princípio aparece quando se observa Z na trajetória".
-  - Parágrafo 2: como aplicar na vida prática nas próximas semanas. Concreto, não motivacional.
+4 campos:
+- frase: aforismo autoral (aplicar AFORISMO OBRIGATÓRIO/R2 — 8-15 palavras, universal, auto-suficiente, NUNCA reproduzir exemplos do prompt)
+- contexto: 1 parágrafo curto explicando por que esse princípio aparece pra esse perfil (não "você disse X")
+- aplicacao: 1 parágrafo sobre como aplicar nas próximas semanas. Concreto.
+- pergunta_pratica: 1 pergunta concreta que a pessoa pode se fazer no dia-a-dia. Curta e direta.
 
 ### trilha_recomendada + justificativa_trilha
-Mantém R3 — fechamento sem pitch, 3-5 frases na justificativa.
+Mantém R3 (POR QUE ESTA TRILHA). 2-3 parágrafos curtos. Termina com **aforismo de fechamento**.
 
 RETORNE APENAS UM JSON VÁLIDO, sem markdown ao redor, com esta estrutura exata:
 
 {
-  "analise_geral": "3 parágrafos separados por \\n\\n",
+  "analise_geral": "3-5 parágrafos separados por \\n\\n, com **bold** inline",
   "areas_chave": [
-    {"nome": "...", "direcionamento": "..."},
-    {"nome": "...", "direcionamento": "..."},
-    {"nome": "...", "direcionamento": "..."}
+    {"nome": "...", "diagnostico": "1 parágrafo com **bold**", "risco": "O risco é ...", "movimento": "..."},
+    {"nome": "...", "diagnostico": "...", "risco": "...", "movimento": "..."},
+    {"nome": "...", "diagnostico": "...", "risco": "...", "movimento": "..."}
   ],
   "plano_30_dias": [
-    {"comportamento": "...", "microacao": "..."},
-    {"comportamento": "...", "microacao": "..."},
-    {"comportamento": "...", "microacao": "..."}
+    {"titulo": "...", "objetivos": ["...", "...", "..."], "acao": "...", "resultado_esperado": "..."},
+    {"titulo": "...", "objetivos": ["...", "...", "..."], "acao": "...", "resultado_esperado": "..."},
+    {"titulo": "...", "objetivos": ["...", "...", "..."], "acao": "...", "resultado_esperado": "..."}
   ],
   "praticas": [
-    {"nome": "...", "descricao": "..."},
+    {"nome": "...", "descricao": "1-2 parágrafos com **bold**"},
     {"nome": "...", "descricao": "..."},
     {"nome": "...", "descricao": "..."},
     {"nome": "...", "descricao": "..."}
   ],
   "frase_ativacao": {
-    "frase": "aforismo autoral",
-    "contexto": "parágrafo 1\\n\\nparágrafo 2"
+    "frase": "aforismo autoral 8-15 palavras",
+    "contexto": "1 parágrafo curto",
+    "aplicacao": "1 parágrafo curto sobre como aplicar",
+    "pergunta_pratica": "Pergunta concreta no formato direto?"
   },
   "trilha_recomendada": "Uma de: Exploração | Direção | Aproximação | Aceleração | Sessão Privada",
-  "justificativa_trilha": "Seguir estrutura R3 (3-5 frases). Fechamento com peso diagnóstico, nunca pitch comercial."
+  "justificativa_trilha": "2-3 parágrafos curtos com **bold** + aforismo de fechamento"
 }
 `.trim();
 

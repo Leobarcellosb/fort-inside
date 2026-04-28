@@ -73,6 +73,16 @@ export function PrognosticView({
 
   const analiseParagraphs = content.analise_geral.split(/\n\n+/).filter(Boolean);
   const contextoParagraphs = content.frase_ativacao.contexto.split(/\n\n+/).filter(Boolean);
+  const aplicacaoParagraphs = content.frase_ativacao.aplicacao.split(/\n\n+/).filter(Boolean);
+  const justificativaParagraphs = content.justificativa_trilha.split(/\n\n+/).filter(Boolean);
+
+  // Inline bold parser: turns "**texto**" into <strong> runs.
+  function renderBold(text: string) {
+    const parts = text.split(/\*\*(.*?)\*\*/g);
+    return parts.map((part, i) =>
+      i % 2 === 1 ? <strong key={i}>{part}</strong> : <span key={i}>{part}</span>
+    );
+  }
 
   async function generateAndOpenPdf() {
     setGeneratingPdf(true);
@@ -195,13 +205,13 @@ export function PrognosticView({
                 key={i}
                 className="text-[17px] md:text-lg leading-[1.7] text-foreground font-body"
               >
-                {p}
+                {renderBold(p)}
               </p>
             ))}
           </div>
         </section>
 
-        {/* 2. Áreas-chave */}
+        {/* 2. Áreas-chave (vertical, full width) */}
         <section className="space-y-8">
           <div className="space-y-3">
             <h2 className="font-display text-2xl md:text-3xl font-bold text-foreground uppercase tracking-[0.15em]">
@@ -209,21 +219,27 @@ export function PrognosticView({
             </h2>
             <div className="h-px w-16 bg-foreground" aria-hidden />
           </div>
-          <div className="space-y-10">
+          <div className="space-y-12">
             {content.areas_chave.map((area, i) => (
               <div key={i} className="space-y-3">
                 <h3 className="font-display text-xl md:text-2xl text-foreground font-bold tracking-tight">
                   {area.nome}
                 </h3>
                 <p className="text-[17px] md:text-lg leading-[1.7] text-foreground font-body">
-                  {area.direcionamento}
+                  {renderBold(area.diagnostico)}
+                </p>
+                <p className="text-[15px] md:text-base leading-[1.6] text-foreground font-body italic">
+                  <strong className="not-italic">Risco:</strong> {area.risco}
+                </p>
+                <p className="text-[15px] md:text-base leading-[1.6] text-foreground font-body">
+                  <strong>Movimento:</strong> {area.movimento}
                 </p>
               </div>
             ))}
           </div>
         </section>
 
-        {/* 3. Plano 30 dias */}
+        {/* 3. Plano 30 dias (cards verticais) */}
         <section className="space-y-8">
           <div className="space-y-3">
             <h2 className="font-display text-2xl md:text-3xl font-bold text-foreground uppercase tracking-[0.15em]">
@@ -231,20 +247,50 @@ export function PrognosticView({
             </h2>
             <div className="h-px w-16 bg-foreground" aria-hidden />
           </div>
-          <div className="space-y-8">
+          <div className="space-y-6">
             {content.plano_30_dias.map((step, i) => (
-              <div key={i} className="flex gap-5">
-                <div className="shrink-0">
-                  <span className="font-display text-3xl md:text-4xl text-foreground font-bold leading-none">
+              <div key={i} className="border border-foreground p-6 md:p-8 space-y-5">
+                <div className="flex gap-4 items-baseline">
+                  <span className="font-display text-2xl md:text-3xl text-foreground font-bold leading-none">
                     {String(i + 1).padStart(2, "0")}
                   </span>
-                </div>
-                <div className="space-y-2">
                   <h3 className="font-display text-lg md:text-xl text-foreground font-bold tracking-tight">
-                    {step.comportamento}
+                    {step.titulo}
                   </h3>
-                  <p className="text-[17px] leading-[1.7] text-foreground font-body">
-                    {step.microacao}
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-[10px] uppercase tracking-[0.18em] font-display font-bold text-foreground">
+                    Objetivos
+                  </p>
+                  <ul className="space-y-1.5">
+                    {step.objetivos.map((obj, j) => (
+                      <li
+                        key={j}
+                        className="text-[15px] leading-[1.6] text-foreground font-body flex gap-2"
+                      >
+                        <span aria-hidden>•</span>
+                        <span>{obj}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="space-y-1.5">
+                  <p className="text-[10px] uppercase tracking-[0.18em] font-display font-bold text-foreground">
+                    Ação
+                  </p>
+                  <p className="text-[15px] leading-[1.65] text-foreground font-body">
+                    {renderBold(step.acao)}
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <p className="text-[10px] uppercase tracking-[0.18em] font-display font-bold text-foreground">
+                    Resultado esperado
+                  </p>
+                  <p className="text-[15px] leading-[1.65] text-foreground font-body">
+                    {renderBold(step.resultado_esperado)}
                   </p>
                 </div>
               </div>
@@ -252,7 +298,7 @@ export function PrognosticView({
           </div>
         </section>
 
-        {/* 4. Pilares */}
+        {/* 4. Pilares (vertical full width) */}
         <section className="space-y-8">
           <div className="space-y-3">
             <h2 className="font-display text-2xl md:text-3xl font-bold text-foreground uppercase tracking-[0.15em]">
@@ -260,12 +306,17 @@ export function PrognosticView({
             </h2>
             <div className="h-px w-16 bg-foreground" aria-hidden />
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+          <div className="space-y-8">
             {content.praticas.map((p, i) => (
-              <div key={i} className="space-y-2 border-l-2 border-foreground pl-4">
-                <h3 className="font-display text-lg text-foreground font-bold tracking-tight">{p.nome}</h3>
-                <p className="text-sm leading-[1.6] text-muted-foreground font-body">
-                  {p.descricao}
+              <div
+                key={i}
+                className="space-y-2 border-l-2 border-foreground pl-5"
+              >
+                <h3 className="font-display text-lg md:text-xl text-foreground font-bold tracking-tight">
+                  {p.nome}
+                </h3>
+                <p className="text-[16px] leading-[1.65] text-foreground font-body">
+                  {renderBold(p.descricao)}
                 </p>
               </div>
             ))}
@@ -285,15 +336,46 @@ export function PrognosticView({
               &ldquo;{content.frase_ativacao.frase}&rdquo;
             </blockquote>
           </div>
-          <div className="space-y-5">
-            {contextoParagraphs.map((p, i) => (
-              <p
-                key={i}
-                className="text-[17px] md:text-lg leading-[1.7] text-foreground font-body"
-              >
-                {p}
-              </p>
-            ))}
+
+          <div className="space-y-3">
+            <p className="text-[10px] uppercase tracking-[0.18em] font-display font-bold text-foreground">
+              Contexto
+            </p>
+            <div className="space-y-4">
+              {contextoParagraphs.map((p, i) => (
+                <p
+                  key={i}
+                  className="text-[17px] md:text-lg leading-[1.7] text-foreground font-body"
+                >
+                  {renderBold(p)}
+                </p>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-[10px] uppercase tracking-[0.18em] font-display font-bold text-foreground">
+              Como aplicar
+            </p>
+            <div className="space-y-4">
+              {aplicacaoParagraphs.map((p, i) => (
+                <p
+                  key={i}
+                  className="text-[17px] md:text-lg leading-[1.7] text-foreground font-body"
+                >
+                  {renderBold(p)}
+                </p>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-l-2 border-foreground pl-5 py-2 bg-secondary/40 px-5 py-4">
+            <p className="text-[10px] uppercase tracking-[0.2em] font-display font-bold text-foreground mb-2">
+              Pergunte-se
+            </p>
+            <p className="font-display italic text-lg md:text-xl text-foreground leading-[1.5]">
+              {content.frase_ativacao.pergunta_pratica}
+            </p>
           </div>
         </section>
 
@@ -305,9 +387,16 @@ export function PrognosticView({
             </h2>
             <div className="h-px w-16 bg-foreground" aria-hidden />
           </div>
-          <p className="text-[17px] md:text-lg leading-[1.7] text-foreground font-body">
-            {content.justificativa_trilha}
-          </p>
+          <div className="space-y-4">
+            {justificativaParagraphs.map((p, i) => (
+              <p
+                key={i}
+                className="text-[17px] md:text-lg leading-[1.7] text-foreground font-body"
+              >
+                {renderBold(p)}
+              </p>
+            ))}
+          </div>
         </section>
 
         {/* 7. Yuri's note (opcional) */}

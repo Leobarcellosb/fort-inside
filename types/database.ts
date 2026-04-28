@@ -78,25 +78,31 @@ export interface Prognostic {
 }
 
 export interface PrognosticContent {
-  analise_geral: string;
+  analise_geral: string; // 3-5 paragrafos curtos com markdown bold (**texto**)
   areas_chave: Array<{
-    nome: string;
-    direcionamento: string;
-  }>;
+    nome: string;          // Curto e forte
+    diagnostico: string;   // 1 parágrafo curto com bold
+    risco: string;         // 1 frase
+    movimento: string;     // 1 frase clara
+  }>; // 3 ou 4 itens
   plano_30_dias: Array<{
-    comportamento: string;
-    microacao: string;
-  }>;
+    titulo: string;
+    objetivos: string[];   // 3 bullets, verbos no infinitivo
+    acao: string;
+    resultado_esperado: string;
+  }>; // 3 itens
   praticas: Array<{
-    nome: string;
-    descricao: string;
-  }>;
+    nome: string;          // Verbo no infinitivo
+    descricao: string;     // 1-2 parágrafos curtos com bold inline
+  }>; // 3 ou 4 itens
   frase_ativacao: {
-    frase: string;
-    contexto: string;
+    frase: string;             // Aforismo 8-15 palavras
+    contexto: string;          // Por que apareceu
+    aplicacao: string;         // Como aplicar
+    pergunta_pratica: string;  // Pergunta concreta
   };
   trilha_recomendada: TrailRecommendation;
-  justificativa_trilha: string;
+  justificativa_trilha: string; // 2-3 parágrafos curtos
 }
 
 export interface ParticipantProfile {

@@ -8,23 +8,41 @@ import type { PrognosticContent, QuizResponse, QuizStage, Participant, Prognosti
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Runtime schema validating IA output. Mirrors PrognosticContent shape with
-// strict cardinality (areas_chave=3, plano_30_dias=3, praticas=4) so we catch
-// IA drift early with a clear error instead of inserting malformed data.
+// Runtime schema validating IA output. Mirrors PrognosticContent shape.
+// areas_chave: 3-4, plano_30_dias: exactly 3, praticas: 3-4. Catches IA
+// drift early with a clear error instead of inserting malformed data.
 const prognosticContentSchema = z.object({
   analise_geral: z.string().min(1),
   areas_chave: z
-    .array(z.object({ nome: z.string().min(1), direcionamento: z.string().min(1) }))
-    .length(3),
+    .array(
+      z.object({
+        nome: z.string().min(1),
+        diagnostico: z.string().min(1),
+        risco: z.string().min(1),
+        movimento: z.string().min(1),
+      })
+    )
+    .min(3)
+    .max(4),
   plano_30_dias: z
-    .array(z.object({ comportamento: z.string().min(1), microacao: z.string().min(1) }))
+    .array(
+      z.object({
+        titulo: z.string().min(1),
+        objetivos: z.array(z.string().min(1)).min(1).max(5),
+        acao: z.string().min(1),
+        resultado_esperado: z.string().min(1),
+      })
+    )
     .length(3),
   praticas: z
     .array(z.object({ nome: z.string().min(1), descricao: z.string().min(1) }))
-    .length(4),
+    .min(3)
+    .max(4),
   frase_ativacao: z.object({
     frase: z.string().min(1),
     contexto: z.string().min(1),
+    aplicacao: z.string().min(1),
+    pergunta_pratica: z.string().min(1),
   }),
   trilha_recomendada: z.enum([
     "Exploração",
