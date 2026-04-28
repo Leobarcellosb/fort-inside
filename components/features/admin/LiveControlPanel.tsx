@@ -48,7 +48,7 @@ interface Props {
   initialLogs: LogRecord[];
 }
 
-const STAGE_LABELS = ["—", "Entrada", "Sala Principal", "Cozinha", "Varanda", "Suíte"];
+const STAGE_LABELS = ["—", "Portão", "Entrada", "Sala Principal", "Cozinha", "Varanda", "Suíte"];
 
 export function LiveControlPanel({ event, stages, participants: initialParticipants, initialResponses, initialLogs }: Props) {
   const router = useRouter();
@@ -241,7 +241,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
   }
 
   const nextStageInfo = stages.find((s) => s.id === currentStage + 1);
-  const canReleaseNext = currentStage < 5 && (allCompletedCurrent || currentStage === 0);
+  const canReleaseNext = currentStage < 6 && (allCompletedCurrent || currentStage === 0);
 
   return (
     <div className="min-h-screen bg-background p-4 lg:p-8">
@@ -269,7 +269,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
 
           {/* Stage progress */}
           <div className="space-y-2">
-            {[1, 2, 3, 4, 5].map((n) => (
+            {[1, 2, 3, 4, 5, 6].map((n) => (
               <div
                 key={n}
                 className={`flex items-center gap-3 px-4 py-3 rounded-md border transition-colors
@@ -292,7 +292,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
           </div>
 
           {/* Release button */}
-          {currentStage < 5 && (
+          {currentStage < 6 && (
             <AlertDialog>
               <AlertDialogTrigger
                 render={
@@ -334,7 +334,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
           )}
 
           {/* Process prognostics */}
-          {currentStage === 5 && eventStatus !== "processing" && eventStatus !== "completed" && (
+          {currentStage === 6 && eventStatus !== "processing" && eventStatus !== "completed" && (
             <AlertDialog>
               <AlertDialogTrigger
                 render={
@@ -407,7 +407,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-foreground truncate">{p.full_name}</p>
                     <div className="flex gap-1 mt-1">
-                      {[1, 2, 3, 4, 5].map((n) => (
+                      {[1, 2, 3, 4, 5, 6].map((n) => (
                         <div
                           key={n}
                           className={`w-4 h-1 rounded-full ${

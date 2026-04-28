@@ -21,8 +21,8 @@ export async function POST(req: NextRequest) {
     .eq("id", event_id)
     .single() as { data: Pick<Event, "id" | "current_stage"> | null; error: unknown };
 
-  if (!event || event.current_stage < 5) {
-    return NextResponse.json({ error: "Evento não completou as 5 etapas" }, { status: 400 });
+  if (!event || event.current_stage < 6) {
+    return NextResponse.json({ error: "Evento não completou as 6 etapas" }, { status: 400 });
   }
 
   await ((supabase.from("events") as unknown as {

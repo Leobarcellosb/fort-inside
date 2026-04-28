@@ -1,11 +1,13 @@
 export const AMBIENT_IMAGES = {
   join: "/cinematic/hero-join.jpg",
   waiting: "/cinematic/hero-join.jpg",
+  // Stage 1 (Portão / Seu Ponto de Partida) reuses the Entrada image per product decision.
   stage_1: "/cinematic/ambiente-1-entrada.jpg",
-  stage_2: "/cinematic/ambiente-2-sala.jpg",
-  stage_3: "/cinematic/ambiente-3-cozinha.jpg",
-  stage_4: "/cinematic/ambiente-4-varanda.jpg",
-  stage_5: "/cinematic/ambiente-5-suite.jpg",
+  stage_2: "/cinematic/ambiente-1-entrada.jpg",
+  stage_3: "/cinematic/ambiente-2-sala.jpg",
+  stage_4: "/cinematic/ambiente-3-cozinha.jpg",
+  stage_5: "/cinematic/ambiente-4-varanda.jpg",
+  stage_6: "/cinematic/ambiente-5-suite.jpg",
   prognostic: "/cinematic/hero-prognostico.jpg",
 } as const;
 

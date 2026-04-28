@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
     .select("*")
     .eq("participant_id", participant_id) as { data: QuizResponse[] | null; error: { message: string } | null };
 
-  if (rErr || !responses || responses.length < 5) {
+  if (rErr || !responses || responses.length < 6) {
     return NextResponse.json({ error: "Participante não completou todas as etapas" }, { status: 400 });
   }
 

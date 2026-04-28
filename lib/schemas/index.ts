@@ -9,7 +9,7 @@ export const joinEventSchema = z.object({
 
 export const quizResponseSchema = z.object({
   participant_id: z.string().uuid(),
-  stage_id: z.number().int().min(1).max(5),
+  stage_id: z.number().int().min(1).max(6),
   answers: z.record(z.string(), z.union([z.string(), z.array(z.string())])),
 });
 

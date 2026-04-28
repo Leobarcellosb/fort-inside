@@ -67,8 +67,9 @@ export default function QuizPage({ params }: Props) {
   }
 
   const allValid = !!stage && stage.questions.every((q) => {
-    const min = q.min_chars ?? 0;
     const val = answers[q.id] ?? "";
+    if (q.type === "select") return q.required ? val.length > 0 : true;
+    const min = q.min_chars ?? 0;
     return val.trim().length >= min;
   });
 
@@ -93,7 +94,7 @@ export default function QuizPage({ params }: Props) {
       });
 
       // If stage 5 complete, mark participant as done and trigger prognostic + PDF
-      if (stageNum === 5) {
+      if (stageNum === 6) {
         await ((supabase.from("participants") as unknown as {
           update(values: Record<string, unknown>): { eq(col: string, val: string): Promise<unknown> };
         }).update({ completed_at: new Date().toISOString() }).eq("id", participantId));
@@ -139,7 +140,7 @@ export default function QuizPage({ params }: Props) {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-xs uppercase tracking-[0.2em] text-white/70">
-              Etapa {stageNum} de 5
+              Etapa {stageNum} de 6
             </p>
             <p className="text-xs text-white/70">{stage.ambient_name}</p>
           </div>
@@ -165,21 +166,44 @@ export default function QuizPage({ params }: Props) {
               <p className="text-foreground text-[16px] leading-relaxed font-medium">
                 {question.text}
               </p>
-              <Textarea
-                placeholder={question.placeholder ?? "Responda com suas palavras..."}
-                value={value}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-                  setAnswer(question.id, e.target.value)
-                }
-                rows={6}
-                className={cn(
-                  "min-h-[140px] text-[16px] bg-card text-foreground placeholder:text-muted-foreground resize-none focus-visible:ring-0 transition-colors",
-                  tooShort
-                    ? "border-primary/20 focus-visible:border-primary"
-                    : "border-primary/40 focus-visible:border-primary"
-                )}
-              />
-              {minChars > 0 && (
+              {question.type === "select" && question.options ? (
+                <div className="space-y-2">
+                  {question.options.map((option) => {
+                    const selected = value === option;
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => setAnswer(question.id, option)}
+                        className={cn(
+                          "w-full text-left px-4 py-3.5 rounded-md border text-base transition-all",
+                          selected
+                            ? "border-primary bg-primary/10 text-foreground"
+                            : "border-primary/20 bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                        )}
+                      >
+                        {option}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <Textarea
+                  placeholder={question.placeholder ?? "Responda com suas palavras..."}
+                  value={value}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                    setAnswer(question.id, e.target.value)
+                  }
+                  rows={6}
+                  className={cn(
+                    "min-h-[140px] text-[16px] bg-card text-foreground placeholder:text-muted-foreground resize-none focus-visible:ring-0 transition-colors",
+                    tooShort
+                      ? "border-primary/20 focus-visible:border-primary"
+                      : "border-primary/40 focus-visible:border-primary"
+                  )}
+                />
+              )}
+              {question.type !== "select" && minChars > 0 && (
                 <p
                   className={cn(
                     "text-xs transition-colors",
