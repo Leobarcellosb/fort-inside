@@ -78,12 +78,23 @@ export interface Prognostic {
 }
 
 export interface PrognosticContent {
-  momento_atual: string;
-  forca_central: string;
-  gargalo_sensivel: string;
-  risco_permanecer: string;
-  construir_agora: string;
-  proximo_passo: string;
+  analise_geral: string;
+  areas_chave: Array<{
+    nome: string;
+    direcionamento: string;
+  }>;
+  plano_30_dias: Array<{
+    comportamento: string;
+    microacao: string;
+  }>;
+  praticas: Array<{
+    nome: string;
+    descricao: string;
+  }>;
+  frase_ativacao: {
+    frase: string;
+    contexto: string;
+  };
   trilha_recomendada: TrailRecommendation;
   justificativa_trilha: string;
 }

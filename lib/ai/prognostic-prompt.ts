@@ -152,17 +152,65 @@ SOBRE AS TRILHAS:
 - Aceleração: já tem base, está pronto para crescer e precisa de escala e execução
 - Sessão Privada: caso complexo, com múltiplas camadas, que exige atenção direta de Yuri
 
+## SECTIONS
+
+### analise_geral (3 parágrafos curtos, separados por \n\n)
+Síntese do perfil emergente da leitura cruzada das 5 etapas. Não é resumo dos dados, é leitura. Não lista o que o participante disse, nomeia o padrão que emerge.
+- Parágrafo 1: O que o participante revela sobre si (perfil principal)
+- Parágrafo 2: A tensão central que ele carrega (contradição ou padrão)
+- Parágrafo 3: O que essa tensão sugere sobre o caminho dele
+Tom: voz Yuri direta. Não usa "você apresenta um perfil...", usa "você chegou aqui...", "você nomeou..."
+Tamanho: cada parágrafo 2-4 frases. Total ~150-250 palavras.
+
+### areas_chave (EXATAMENTE 3 itens)
+3 padrões críticos a desenvolver. Não 3 conselhos genéricos. Diagnósticos do PERFIL DESTE participante.
+- nome: rótulo curto e específico do PADRÃO. Ex bons: "Aprovação adiada", "Dimensionamento externo", "Conversa não tida". Ex ruins: "Habilidades sociais", "Conexão emocional".
+- direcionamento: 2-3 frases. Estrutura: nomeia o padrão + por que importa pra ESTE perfil + onde aplicar concretamente.
+
+### plano_30_dias (EXATAMENTE 3 itens)
+3 microações concretas e mensuráveis nas próximas 4 semanas. Cada uma derivada DIRETAMENTE das respostas. Zero ação genérica.
+- comportamento: 3-6 palavras. Verbo no infinitivo + substantivo (ex: "Confrontar evitação", "Estruturar critério próprio").
+- microacao: 1-2 frases. Ação semanal específica, com gatilho concreto. NÃO motivacional, OPERACIONAL.
+
+### praticas (EXATAMENTE 4 itens)
+4 pilares de prática contínua. HÁBITOS, não AÇÕES. Constantes, não pontuais.
+- nome: 1-2 palavras. Verbo no infinitivo (ex: "Reconhecer", "Diagnosticar", "Cruzar", "Sustentar").
+- descricao: 1-2 frases sobre o que praticar diariamente/semanalmente.
+
+### frase_ativacao
+1 aforismo autoral (aplicar AFORISMO OBRIGATÓRIO/R2 — 8-15 palavras, universal, auto-suficiente, NUNCA reproduzir os exemplos do prompt) + 2 parágrafos de aplicação prática (separados por \n\n).
+- frase: o aforismo
+- contexto: parágrafo 1 = o que o aforismo significa pra ESTE participante. Parágrafo 2 = como aparece na vida prática nas próximas semanas.
+
+### trilha_recomendada + justificativa_trilha
+Mantém R3 — fechamento sem pitch, 3-5 frases na justificativa.
+
 RETORNE APENAS UM JSON VÁLIDO, sem markdown ao redor, com esta estrutura exata:
 
 {
-  "momento_atual": "Leitura do estágio em que a pessoa está hoje — breve, precisa, humana (2-3 frases)",
-  "forca_central": "A força mais evidente percebida nas respostas — o que essa pessoa já tem (2-3 frases)",
-  "gargalo_sensivel": "O ponto que hoje mais limita sua evolução — nomear com clareza, sem julgamento (2-3 frases)",
-  "risco_permanecer": "O que pode acontecer se nada mudar nos próximos 12 meses — realista, não alarmista (2-3 frases)",
-  "construir_agora": "O que essa pessoa precisa desenvolver, consolidar ou remover agora (3-4 frases)",
-  "proximo_passo": "Direção prática para os próximos 30 a 90 dias — acionável, específica (3-4 frases)",
+  "analise_geral": "3 parágrafos separados por \\n\\n",
+  "areas_chave": [
+    {"nome": "...", "direcionamento": "..."},
+    {"nome": "...", "direcionamento": "..."},
+    {"nome": "...", "direcionamento": "..."}
+  ],
+  "plano_30_dias": [
+    {"comportamento": "...", "microacao": "..."},
+    {"comportamento": "...", "microacao": "..."},
+    {"comportamento": "...", "microacao": "..."}
+  ],
+  "praticas": [
+    {"nome": "...", "descricao": "..."},
+    {"nome": "...", "descricao": "..."},
+    {"nome": "...", "descricao": "..."},
+    {"nome": "...", "descricao": "..."}
+  ],
+  "frase_ativacao": {
+    "frase": "aforismo autoral",
+    "contexto": "parágrafo 1\\n\\nparágrafo 2"
+  },
   "trilha_recomendada": "Uma de: Exploração | Direção | Aproximação | Aceleração | Sessão Privada",
-  "justificativa_trilha": "Seguir a estrutura de 4 passos da seção 'POR QUE ESTA TRILHA' (3-5 frases). Fechamento com peso diagnóstico, nunca pitch comercial."
+  "justificativa_trilha": "Seguir estrutura R3 (3-5 frases). Fechamento com peso diagnóstico, nunca pitch comercial."
 }
 `.trim();
 

@@ -1,49 +1,52 @@
-import { Document, Page, Text, View, StyleSheet, Font } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { PrognosticContent } from "@/types/database";
 
-// Register fonts — using standard PDF fonts as fallback (no external fetch at render time)
-Font.register({
-  family: "serif",
-  src: "https://fonts.gstatic.com/s/fraunces/v31/6NUu8FyLNQOQZAnv9ZwNjucMHVn85Ni7emAe9lKqZTnDiDNR.woff2",
-});
+// White-paper editorial layout. Helvetica is bundled with @react-pdf/renderer
+// (zero remote-fetch risk). Gold accent #C9A961 first try; if visually faint
+// on print, swap to #9C7A2E in the constant below.
+const GOLD = "#C9A961";
+const DARK = "#1A1A1A";
+const MID = "#5A5A5A";
+const HAIRLINE = "#E0E0E0";
 
 const styles = StyleSheet.create({
   page: {
-    backgroundColor: "#0A0A0A",
-    color: "#F5F1EA",
+    backgroundColor: "#FFFFFF",
+    color: DARK,
     paddingTop: 60,
-    paddingBottom: 60,
+    paddingBottom: 70,
     paddingHorizontal: 56,
     fontFamily: "Helvetica",
   },
+  // Header
   header: {
-    marginBottom: 40,
+    marginBottom: 36,
+    paddingBottom: 20,
     borderBottomWidth: 1,
-    borderBottomColor: "#2A2A2A",
-    paddingBottom: 24,
+    borderBottomColor: HAIRLINE,
   },
   eyebrow: {
     fontSize: 7,
     letterSpacing: 2,
-    color: "#6B6557",
+    color: GOLD,
     textTransform: "uppercase",
     marginBottom: 10,
   },
   title: {
     fontSize: 28,
-    color: "#F5F1EA",
+    color: DARK,
     fontFamily: "Helvetica-Bold",
     marginBottom: 6,
   },
   subtitle: {
     fontSize: 10,
-    color: "#A39D91",
-    marginBottom: 4,
+    color: MID,
+    marginBottom: 3,
   },
   trailBadge: {
-    marginTop: 12,
+    marginTop: 14,
     borderWidth: 1,
-    borderColor: "#C9A961",
+    borderColor: GOLD,
     paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: 20,
@@ -51,78 +54,140 @@ const styles = StyleSheet.create({
   },
   trailText: {
     fontSize: 8,
-    color: "#C9A961",
+    color: GOLD,
     letterSpacing: 1,
     textTransform: "uppercase",
   },
-  section: {
-    marginBottom: 24,
-  },
-  sectionLabel: {
-    fontSize: 7,
-    letterSpacing: 2,
-    color: "#6B6557",
+
+  // Section heading
+  sectionHeading: {
+    fontSize: 9,
+    letterSpacing: 2.5,
+    color: GOLD,
     textTransform: "uppercase",
-    marginBottom: 6,
+    fontFamily: "Helvetica-Bold",
+    marginBottom: 4,
   },
-  sectionText: {
+  sectionRule: {
+    borderBottomWidth: 1,
+    borderBottomColor: GOLD,
+    width: 40,
+    marginBottom: 14,
+  },
+  sectionWrapper: {
+    marginBottom: 28,
+  },
+
+  // Body text
+  body: { fontSize: 11, color: DARK, lineHeight: 1.65 },
+  bodySpaced: { fontSize: 11, color: DARK, lineHeight: 1.65, marginBottom: 10 },
+
+  // Áreas-chave
+  itemBlock: { marginBottom: 16 },
+  itemHeading: {
+    fontSize: 13,
+    color: GOLD,
+    fontFamily: "Helvetica-Bold",
+    marginBottom: 4,
+  },
+  itemBody: { fontSize: 11, color: DARK, lineHeight: 1.65 },
+
+  // Plano numbered
+  planoRow: { flexDirection: "row", marginBottom: 14 },
+  planoNumber: {
+    fontSize: 22,
+    color: GOLD,
+    fontFamily: "Helvetica-Bold",
+    width: 36,
+    marginRight: 8,
+  },
+  planoContent: { flex: 1 },
+  planoComportamento: {
+    fontSize: 12,
+    color: DARK,
+    fontFamily: "Helvetica-Bold",
+    marginBottom: 3,
+  },
+  planoMicroacao: { fontSize: 11, color: DARK, lineHeight: 1.55 },
+
+  // Pilares grid (2 cols)
+  praticasGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginHorizontal: -6,
+  },
+  praticaCell: {
+    width: "50%",
+    paddingHorizontal: 6,
+    marginBottom: 14,
+  },
+  praticaInner: {
+    borderLeftWidth: 1.5,
+    borderLeftColor: GOLD,
+    paddingLeft: 10,
+  },
+  praticaNome: {
     fontSize: 11,
-    color: "#F5F1EA",
-    lineHeight: 1.7,
+    color: GOLD,
+    fontFamily: "Helvetica-Bold",
+    marginBottom: 3,
   },
-  highlightBox: {
-    backgroundColor: "#141414",
-    borderWidth: 1,
-    borderColor: "#2A2A2A",
-    borderRadius: 4,
-    padding: 16,
-    marginBottom: 24,
+  praticaDescricao: { fontSize: 10, color: DARK, lineHeight: 1.5 },
+
+  // Frase ativação
+  fraseBox: {
+    borderTopWidth: 1,
+    borderTopColor: GOLD,
+    borderBottomWidth: 1,
+    borderBottomColor: GOLD,
+    paddingVertical: 18,
+    paddingHorizontal: 12,
+    marginVertical: 16,
   },
+  fraseText: {
+    fontSize: 14,
+    color: DARK,
+    fontStyle: "italic",
+    lineHeight: 1.5,
+    textAlign: "center",
+  },
+
+  // Yuri note
   yuriNoteBox: {
     borderLeftWidth: 2,
-    borderLeftColor: "#C9A961",
-    paddingLeft: 16,
+    borderLeftColor: GOLD,
+    paddingLeft: 14,
     marginBottom: 24,
   },
   yuriNoteLabel: {
     fontSize: 7,
     letterSpacing: 2,
-    color: "#8A7540",
+    color: GOLD,
     textTransform: "uppercase",
-    marginBottom: 6,
+    marginBottom: 5,
   },
   yuriNoteText: {
-    fontSize: 12,
-    color: "#F5F1EA",
-    lineHeight: 1.7,
+    fontSize: 11,
+    color: DARK,
+    lineHeight: 1.65,
     fontStyle: "italic",
   },
+
+  // Footer
   footer: {
     position: "absolute",
     bottom: 40,
     left: 56,
     right: 56,
     borderTopWidth: 1,
-    borderTopColor: "#2A2A2A",
+    borderTopColor: HAIRLINE,
     paddingTop: 12,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  footerText: {
-    fontSize: 8,
-    color: "#6B6557",
-  },
-  footerBrand: {
-    fontSize: 8,
-    color: "#A39D91",
-    fontFamily: "Helvetica-Bold",
-  },
-  divider: {
-    borderBottomWidth: 1,
-    borderBottomColor: "#2A2A2A",
-    marginBottom: 24,
-  },
+  footerText: { fontSize: 8, color: MID },
+  footerBrand: { fontSize: 8, color: DARK, fontFamily: "Helvetica-Bold" },
 });
 
 interface Props {
@@ -133,15 +198,6 @@ interface Props {
   content: PrognosticContent;
   yuriNote: string | null;
 }
-
-const SECTIONS: Array<{ key: keyof PrognosticContent; label: string; highlight?: boolean }> = [
-  { key: "momento_atual", label: "Seu momento" },
-  { key: "forca_central", label: "Sua força" },
-  { key: "gargalo_sensivel", label: "Seu gargalo" },
-  { key: "risco_permanecer", label: "O risco de ficar" },
-  { key: "construir_agora", label: "O que construir agora", highlight: true },
-  { key: "proximo_passo", label: "Seu próximo passo", highlight: true },
-];
 
 export function PrognosticPdfDocument({
   participantName,
@@ -158,6 +214,9 @@ export function PrognosticPdfDocument({
         year: "numeric",
       })
     : "";
+
+  const analiseParagraphs = content.analise_geral.split(/\n\n+/).filter(Boolean);
+  const contextoParagraphs = content.frase_ativacao.contexto.split(/\n\n+/).filter(Boolean);
 
   return (
     <Document
@@ -177,31 +236,84 @@ export function PrognosticPdfDocument({
           </View>
         </View>
 
-        {/* Content sections */}
-        {SECTIONS.map(({ key, label, highlight }) => {
-          const text = content[key] as string;
-          return highlight ? (
-            <View key={key} style={styles.highlightBox}>
-              <Text style={styles.sectionLabel}>{label}</Text>
-              <Text style={styles.sectionText}>{text}</Text>
-            </View>
-          ) : (
-            <View key={key} style={styles.section}>
-              <Text style={styles.sectionLabel}>{label}</Text>
-              <Text style={styles.sectionText}>{text}</Text>
-            </View>
-          );
-        })}
-
-        <View style={styles.divider} />
-
-        {/* Trail justification */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Por que esta trilha</Text>
-          <Text style={styles.sectionText}>{content.justificativa_trilha}</Text>
+        {/* 1. Análise */}
+        <View style={styles.sectionWrapper}>
+          <Text style={styles.sectionHeading}>Análise</Text>
+          <View style={styles.sectionRule} />
+          {analiseParagraphs.map((p, i) => (
+            <Text key={i} style={styles.bodySpaced}>
+              {p}
+            </Text>
+          ))}
         </View>
 
-        {/* Yuri's note */}
+        {/* 2. Áreas-chave */}
+        <View style={styles.sectionWrapper}>
+          <Text style={styles.sectionHeading}>Áreas-chave</Text>
+          <View style={styles.sectionRule} />
+          {content.areas_chave.map((area, i) => (
+            <View key={i} style={styles.itemBlock}>
+              <Text style={styles.itemHeading}>{area.nome}</Text>
+              <Text style={styles.itemBody}>{area.direcionamento}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* 3. Plano 30 dias */}
+        <View style={styles.sectionWrapper}>
+          <Text style={styles.sectionHeading}>Plano de 30 dias</Text>
+          <View style={styles.sectionRule} />
+          {content.plano_30_dias.map((step, i) => (
+            <View key={i} style={styles.planoRow}>
+              <Text style={styles.planoNumber}>{String(i + 1).padStart(2, "0")}</Text>
+              <View style={styles.planoContent}>
+                <Text style={styles.planoComportamento}>{step.comportamento}</Text>
+                <Text style={styles.planoMicroacao}>{step.microacao}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        {/* 4. Pilares */}
+        <View style={styles.sectionWrapper}>
+          <Text style={styles.sectionHeading}>Pilares</Text>
+          <View style={styles.sectionRule} />
+          <View style={styles.praticasGrid}>
+            {content.praticas.map((p, i) => (
+              <View key={i} style={styles.praticaCell}>
+                <View style={styles.praticaInner}>
+                  <Text style={styles.praticaNome}>{p.nome}</Text>
+                  <Text style={styles.praticaDescricao}>{p.descricao}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* 5. Frase de ativação */}
+        <View style={styles.sectionWrapper}>
+          <Text style={styles.sectionHeading}>Frase de ativação</Text>
+          <View style={styles.sectionRule} />
+          <View style={styles.fraseBox}>
+            <Text style={styles.fraseText}>
+              &ldquo;{content.frase_ativacao.frase}&rdquo;
+            </Text>
+          </View>
+          {contextoParagraphs.map((p, i) => (
+            <Text key={i} style={styles.bodySpaced}>
+              {p}
+            </Text>
+          ))}
+        </View>
+
+        {/* 6. Por que esta trilha */}
+        <View style={styles.sectionWrapper}>
+          <Text style={styles.sectionHeading}>Por que esta trilha</Text>
+          <View style={styles.sectionRule} />
+          <Text style={styles.body}>{content.justificativa_trilha}</Text>
+        </View>
+
+        {/* 7. Yuri note */}
         {yuriNote ? (
           <View style={styles.yuriNoteBox}>
             <Text style={styles.yuriNoteLabel}>Observação de {hostName}</Text>
@@ -211,7 +323,9 @@ export function PrognosticPdfDocument({
 
         {/* Footer */}
         <View style={styles.footer} fixed>
-          <Text style={styles.footerText}>Prognóstico Inicial de Direção por {hostName}</Text>
+          <Text style={styles.footerText}>
+            Prognóstico Inicial de Direção por {hostName}
+          </Text>
           <Text style={styles.footerBrand}>Fort Inside</Text>
         </View>
       </Page>

@@ -27,15 +27,6 @@ const TRAIL_COLORS: Record<TrailRecommendation, string> = {
   "Sessão Privada": "border-primary/70 text-primary bg-primary/10",
 };
 
-const SECTIONS = [
-  { key: "momento_atual" as const, label: "Seu momento" },
-  { key: "forca_central" as const, label: "Sua força" },
-  { key: "gargalo_sensivel" as const, label: "Seu gargalo" },
-  { key: "risco_permanecer" as const, label: "O risco de ficar" },
-  { key: "construir_agora" as const, label: "O que construir agora" },
-  { key: "proximo_passo" as const, label: "Seu próximo passo" },
-];
-
 export function PrognosticView({
   participantName,
   eventName,
@@ -51,15 +42,9 @@ export function PrognosticView({
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [pollingTimedOut, setPollingTimedOut] = useState(false);
 
-  // Poll for the background-generated PDF when it's not yet available on load.
-  // generate-prognostic triggers PDF via after(), so participants can arrive here
-  // before the PDF finishes rendering (~10-30s). Polls immediately, then every 3s,
-  // gives up after 2min. Immediate first poll prevents the "why is nothing happening"
-  // window that makes users click the manual-generate fallback prematurely.
   useEffect(() => {
     if (pdfUrl) return;
     if (pollingTimedOut) return;
-
     const POLL_INTERVAL_MS = 3000;
     const POLL_MAX_MS = 120_000;
     const startedAt = Date.now();
@@ -79,20 +64,15 @@ export function PrognosticView({
       }
     }
 
-    // First poll immediately (may resolve within ms if PDF already finished)
     pollOnce();
     const interval = setInterval(pollOnce, POLL_INTERVAL_MS);
-
     return () => clearInterval(interval);
   }, [pdfUrl, pollingTimedOut, token]);
 
   const isPolling = !pdfUrl && !pollingTimedOut;
-
   const trailColor =
     TRAIL_COLORS[content.trilha_recomendada] ?? "border-border text-muted-foreground";
-
   const firstName = participantName.trim().split(" ")[0];
-
   const formattedDate = eventDate
     ? new Date(eventDate).toLocaleDateString("pt-BR", {
         day: "numeric",
@@ -101,7 +81,9 @@ export function PrognosticView({
       })
     : "";
 
-  // Fallback when the PDF wasn't pre-generated (auto-chain from prognostic may have failed)
+  const analiseParagraphs = content.analise_geral.split(/\n\n+/).filter(Boolean);
+  const contextoParagraphs = content.frase_ativacao.contexto.split(/\n\n+/).filter(Boolean);
+
   async function generateAndOpenPdf() {
     setGeneratingPdf(true);
     try {
@@ -125,7 +107,7 @@ export function PrognosticView({
 
   return (
     <main className="min-h-screen bg-background text-foreground relative">
-      {/* Fixed PDF download — top-right, discreet but visible */}
+      {/* Fixed PDF download — top-right */}
       <div className="fixed top-4 right-4 z-30">
         {pdfUrl ? (
           <a
@@ -186,7 +168,7 @@ export function PrognosticView({
         )}
       </div>
 
-      {/* Cinematic hero — uses existing component, untouched */}
+      {/* Cinematic hero */}
       <CinematicHero
         image={AMBIENT_IMAGES.prognostic}
         alt="Mapa da Sua Próxima Construção"
@@ -202,7 +184,6 @@ export function PrognosticView({
           <p className="text-white/75 text-sm">
             {eventName} · {formattedDate}
           </p>
-
           <div
             className={`inline-flex items-center gap-3 px-5 py-2 rounded-full border backdrop-blur-sm ${trailColor} mt-3`}
           >
@@ -214,51 +195,151 @@ export function PrognosticView({
         </div>
       </CinematicHero>
 
-      {/* Editorial content */}
-      <article className="mx-auto max-w-2xl px-6 py-16 md:py-24">
-        <div className="space-y-16 md:space-y-20">
-          {SECTIONS.map(({ key, label }) => (
-            <section key={key} className="space-y-5">
-              <div className="space-y-3">
-                <h2 className="font-playfair text-2xl md:text-3xl font-light text-foreground uppercase tracking-[0.15em] leading-tight">
-                  {label}
-                </h2>
-                <div className="h-px w-16 bg-primary/50" aria-hidden />
-              </div>
-              <p className="text-[17px] md:text-lg leading-[1.7] text-foreground/85 font-sans">
-                {content[key]}
+      {/* Editorial content — 7 sections */}
+      <article className="mx-auto max-w-2xl px-6 py-16 md:py-24 space-y-20 md:space-y-24">
+        {/* 1. Análise */}
+        <section className="space-y-5">
+          <div className="space-y-3">
+            <h2 className="font-playfair text-2xl md:text-3xl font-light text-foreground uppercase tracking-[0.15em]">
+              Análise
+            </h2>
+            <div className="h-px w-16 bg-primary/50" aria-hidden />
+          </div>
+          <div className="space-y-5">
+            {analiseParagraphs.map((p, i) => (
+              <p
+                key={i}
+                className="text-[17px] md:text-lg leading-[1.7] text-foreground/85 font-sans"
+              >
+                {p}
               </p>
-            </section>
-          ))}
+            ))}
+          </div>
+        </section>
 
-          {/* Por que esta trilha — full section, not a sidebar card */}
-          <section className="space-y-5">
-            <div className="space-y-3">
-              <h2 className="font-playfair text-2xl md:text-3xl font-light text-foreground uppercase tracking-[0.15em] leading-tight">
-                Por que esta trilha
-              </h2>
-              <div className="h-px w-16 bg-primary/50" aria-hidden />
-            </div>
-            <p className="text-[17px] md:text-lg leading-[1.7] text-foreground/85 font-sans">
-              {content.justificativa_trilha}
+        {/* 2. Áreas-chave */}
+        <section className="space-y-8">
+          <div className="space-y-3">
+            <h2 className="font-playfair text-2xl md:text-3xl font-light text-foreground uppercase tracking-[0.15em]">
+              Áreas-chave
+            </h2>
+            <div className="h-px w-16 bg-primary/50" aria-hidden />
+          </div>
+          <div className="space-y-10">
+            {content.areas_chave.map((area, i) => (
+              <div key={i} className="space-y-3">
+                <h3 className="font-playfair text-xl md:text-2xl text-primary font-light tracking-tight">
+                  {area.nome}
+                </h3>
+                <p className="text-[17px] md:text-lg leading-[1.7] text-foreground/85 font-sans">
+                  {area.direcionamento}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* 3. Plano 30 dias */}
+        <section className="space-y-8">
+          <div className="space-y-3">
+            <h2 className="font-playfair text-2xl md:text-3xl font-light text-foreground uppercase tracking-[0.15em]">
+              Plano de 30 dias
+            </h2>
+            <div className="h-px w-16 bg-primary/50" aria-hidden />
+          </div>
+          <div className="space-y-8">
+            {content.plano_30_dias.map((step, i) => (
+              <div key={i} className="flex gap-5">
+                <div className="shrink-0">
+                  <span className="font-playfair text-3xl md:text-4xl text-primary font-light leading-none">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  <h3 className="font-playfair text-lg md:text-xl text-foreground tracking-tight">
+                    {step.comportamento}
+                  </h3>
+                  <p className="text-[17px] leading-[1.7] text-foreground/85 font-sans">
+                    {step.microacao}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* 4. Pilares */}
+        <section className="space-y-8">
+          <div className="space-y-3">
+            <h2 className="font-playfair text-2xl md:text-3xl font-light text-foreground uppercase tracking-[0.15em]">
+              Pilares
+            </h2>
+            <div className="h-px w-16 bg-primary/50" aria-hidden />
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            {content.praticas.map((p, i) => (
+              <div key={i} className="space-y-2 border-l-2 border-primary/40 pl-4">
+                <h3 className="font-playfair text-lg text-primary tracking-tight">{p.nome}</h3>
+                <p className="text-sm leading-[1.6] text-foreground/80 font-sans">
+                  {p.descricao}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* 5. Frase de ativação */}
+        <section className="space-y-10">
+          <div className="space-y-3">
+            <h2 className="font-playfair text-2xl md:text-3xl font-light text-foreground uppercase tracking-[0.15em]">
+              Frase de ativação
+            </h2>
+            <div className="h-px w-16 bg-primary/50" aria-hidden />
+          </div>
+          <div className="relative px-6 py-8 md:px-10 md:py-10 border-y-2 border-primary/40 bg-card/30 rounded-sm">
+            <blockquote className="font-playfair italic text-2xl md:text-3xl text-foreground/95 leading-[1.4] text-center font-light tracking-tight">
+              &ldquo;{content.frase_ativacao.frase}&rdquo;
+            </blockquote>
+          </div>
+          <div className="space-y-5">
+            {contextoParagraphs.map((p, i) => (
+              <p
+                key={i}
+                className="text-[17px] md:text-lg leading-[1.7] text-foreground/85 font-sans"
+              >
+                {p}
+              </p>
+            ))}
+          </div>
+        </section>
+
+        {/* 6. Por que esta trilha */}
+        <section className="space-y-5">
+          <div className="space-y-3">
+            <h2 className="font-playfair text-2xl md:text-3xl font-light text-foreground uppercase tracking-[0.15em]">
+              Por que esta trilha
+            </h2>
+            <div className="h-px w-16 bg-primary/50" aria-hidden />
+          </div>
+          <p className="text-[17px] md:text-lg leading-[1.7] text-foreground/85 font-sans">
+            {content.justificativa_trilha}
+          </p>
+        </section>
+
+        {/* 7. Yuri's note (opcional) */}
+        {yuriNote && (
+          <section className="space-y-4 border-l-2 border-primary/50 pl-6 py-2">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+              Observação de {hostName}
+            </p>
+            <p className="font-playfair text-xl md:text-2xl text-foreground/90 leading-[1.5] italic font-light">
+              &ldquo;{yuriNote}&rdquo;
             </p>
           </section>
-
-          {/* Yuri's personal note */}
-          {yuriNote && (
-            <section className="space-y-4 border-l-2 border-primary/50 pl-6 py-2">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                Observação de {hostName}
-              </p>
-              <p className="font-playfair text-xl md:text-2xl text-foreground/90 leading-[1.5] italic font-light">
-                &ldquo;{yuriNote}&rdquo;
-              </p>
-            </section>
-          )}
-        </div>
+        )}
 
         {/* Footer */}
-        <footer className="mt-20 pt-10 border-t border-border/50 text-center">
+        <footer className="pt-10 border-t border-border/50 text-center">
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
             Prognóstico Inicial de Direção
           </p>
