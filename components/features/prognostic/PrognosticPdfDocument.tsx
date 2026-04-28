@@ -390,7 +390,7 @@ export function PrognosticPdfDocument({
       subject="Fort Inside — Prognóstico Inicial de Direção"
     >
       {/* PAGE 1 — COVER */}
-      <Page size="A4" style={styles.coverPage}>
+      <Page size="A4" orientation="portrait" style={styles.coverPage}>
         <View style={styles.coverLogoBlock}>
           {/* eslint-disable-next-line jsx-a11y/alt-text */}
           <Image src={LOGO_URL} style={styles.coverLogo} />
@@ -414,7 +414,7 @@ export function PrognosticPdfDocument({
       </Page>
 
       {/* PAGE 2 — ANÁLISE */}
-      <Page size="A4" style={styles.page}>
+      <Page size="A4" orientation="portrait" style={styles.page}>
         <Text style={styles.sectionHeadline}>Análise</Text>
         <View style={styles.sectionGap} />
         <View style={styles.contentColumn}>
@@ -432,7 +432,7 @@ export function PrognosticPdfDocument({
       </Page>
 
       {/* PAGE 3 — ÁREAS-CHAVE */}
-      <Page size="A4" style={styles.page}>
+      <Page size="A4" orientation="portrait" style={styles.page}>
         <Text style={styles.sectionHeadline}>Áreas-Chave</Text>
         <View style={styles.areasRow}>
           {content.areas_chave.map((area, i) => (
@@ -452,7 +452,7 @@ export function PrognosticPdfDocument({
       </Page>
 
       {/* PAGE 4 — PLANO 30 DIAS */}
-      <Page size="A4" style={styles.page}>
+      <Page size="A4" orientation="portrait" style={styles.page}>
         <Text style={styles.sectionHeadline}>Plano de 30 dias</Text>
         <View style={styles.sectionGap} />
         <View style={styles.tableHeader}>
@@ -478,7 +478,7 @@ export function PrognosticPdfDocument({
       </Page>
 
       {/* PAGE 5 — PILARES */}
-      <Page size="A4" style={styles.page}>
+      <Page size="A4" orientation="portrait" style={styles.page}>
         <Text style={styles.sectionHeadline}>Pilares</Text>
         <View style={styles.pilaresRow}>
           {content.praticas.map((p, i) => (
@@ -498,7 +498,7 @@ export function PrognosticPdfDocument({
       </Page>
 
       {/* PAGE 6 — FRASE DE ATIVAÇÃO */}
-      <Page size="A4" style={styles.page}>
+      <Page size="A4" orientation="portrait" style={styles.page}>
         <Text style={styles.sectionHeadlineSmall}>Frase de ativação</Text>
         <View style={styles.fraseCenterContainer}>
           <View style={styles.quoteBox}>
@@ -521,7 +521,7 @@ export function PrognosticPdfDocument({
       </Page>
 
       {/* PAGE 7 — POR QUE ESTA TRILHA */}
-      <Page size="A4" style={styles.page}>
+      <Page size="A4" orientation="portrait" style={styles.page}>
         <Text style={styles.sectionHeadline}>Por que esta trilha</Text>
         <View style={styles.trailBadgeBig}>
           <Text style={styles.trailTextBig}>{content.trilha_recomendada}</Text>
@@ -540,7 +540,7 @@ export function PrognosticPdfDocument({
       </Page>
 
       {/* PAGE 8 — FECHAMENTO */}
-      <Page size="A4" style={styles.closingPage}>
+      <Page size="A4" orientation="portrait" style={styles.closingPage}>
         <View style={styles.closingTop}>
           {yuriNote ? (
             <View style={styles.yuriNoteBox}>
