@@ -37,6 +37,9 @@ export default async function EventsPage() {
           </div>
           <div className="flex gap-2">
             <Button asChild variant="outline" className="border-border text-muted-foreground hover:text-foreground">
+              <Link href="/admin/nps">Avaliações</Link>
+            </Button>
+            <Button asChild variant="outline" className="border-border text-muted-foreground hover:text-foreground">
               <Link href="/admin/settings">Configurações</Link>
             </Button>
             <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
