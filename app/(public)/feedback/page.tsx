@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CinematicHero } from "@/components/features/participant/CinematicHero";
+import { Logo } from "@/components/ui/Logo";
 import type { NPSQualityRating } from "@/types/database";
 
 const QUALITY_OPTIONS: { value: NPSQualityRating; label: string }[] = [
@@ -101,7 +102,8 @@ export default function FeedbackPage() {
 
   if (alreadySent || submitted) {
     return (
-      <main className="min-h-screen bg-background flex items-center justify-center px-6">
+      <main className="min-h-screen bg-background flex flex-col items-center justify-center px-6">
+        <Logo size="lg" className="mb-8 opacity-90" />
         <div className="max-w-md text-center space-y-4">
           <h1 className="font-display text-5xl text-foreground font-bold">
             {submitted ? "Obrigado." : "Já recebemos seu feedback"}
@@ -123,13 +125,19 @@ export default function FeedbackPage() {
 
   return (
     <main className="min-h-screen bg-background">
-      <CinematicHero
-        imageSrc="/cinematic/hero-join.jpg"
-        imageAlt="Fort Inside"
-        eyebrow="Fort Inside"
-        title="Sua avaliação"
-        subtitle="Conta pra gente como foi a imersão"
-      />
+      <div className="relative">
+        <CinematicHero
+          imageSrc="/cinematic/hero-join.jpg"
+          imageAlt="Fort Inside"
+          eyebrow="Fort Inside"
+          title="Sua avaliação"
+          subtitle="Conta pra gente como foi a imersão"
+        />
+        {/* Logo branca (invertida) sobreposta no topo do hero */}
+        <div className="pointer-events-none absolute top-6 left-1/2 -translate-x-1/2 z-20">
+          <Logo size="md" className="brightness-0 invert opacity-90" />
+        </div>
+      </div>
 
       <div className="max-w-2xl mx-auto px-6 py-12 space-y-12">
         {/* PERGUNTA 1 — Nome */}
