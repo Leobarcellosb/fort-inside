@@ -105,6 +105,18 @@ export interface PrognosticContent {
   justificativa_trilha: string; // 2-3 parágrafos curtos
 }
 
+export type NPSQualityRating = "nao_refletiu" | "parcialmente" | "bem" | "precisao";
+
+export interface NPSResponse {
+  id: string;
+  full_name: string;
+  nps_score: number;
+  quality_rating: NPSQualityRating;
+  highlight: string | null;
+  improvement: string | null;
+  created_at: string;
+}
+
 export interface ParticipantProfile {
   id: string;
   full_name: string;
