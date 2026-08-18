@@ -344,7 +344,10 @@ export default function QuizPage({ params }: Props) {
                 </div>
               ) : question.type === "scale" ? (
                 <div className="space-y-2">
-                  <div className="flex flex-wrap gap-2">
+                  {/* Grade fixa em vez de flex-wrap: com 11 passos o wrap
+                      deixava o "10" sozinho ocupando a linha inteira. 6 por
+                      linha no mobile mantem o alvo de toque grande. */}
+                  <div className="grid grid-cols-6 sm:grid-cols-11 gap-2">
                     {scaleSteps.map((step) => {
                       const selected = numberValue === step;
                       return (
