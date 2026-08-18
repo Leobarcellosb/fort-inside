@@ -25,11 +25,14 @@ export { TOTAL_STAGES };
 
 // Runtime schema validating IA output. Mirrors PrognosticContent shape.
 //
-// Array sizes are ranges, not exact counts: structured outputs pass minItems /
-// maxItems through to the model as a hint but do NOT enforce them server-side
-// ("complex array constraints" are unsupported). Opus 5 consistently writes 4
-// steps in plano_30_dias, so the previous .length(3) would have rejected every
-// generation. Ranges let the depth of the answer follow the participant.
+// Pisos de array em 1, nao 3. Structured outputs repassam minItems/maxItems
+// ao modelo como dica mas NAO os impoem no servidor ("complex array
+// constraints" nao sao suportadas), entao um piso alto aqui nunca produz mais
+// itens — so destroi geracoes validas. Um participante que respondeu so as
+// escalas e deixou as abertas vazias rendeu 2 areas-chave, e o .min(3)
+// descartou a geracao inteira depois de 98 segundos, deixando a pessoa sem
+// prognostico nenhum. Entregar um mapa mais curto e melhor que nao entregar.
+// O tamanho desejado (3 a 5) e pedido no prompt, que e onde ele funciona.
 const prognosticContentSchema = z.object({
   analise_geral: z.string().min(1),
   areas_chave: z
@@ -41,8 +44,8 @@ const prognosticContentSchema = z.object({
         movimento: z.string().min(1),
       })
     )
-    .min(3)
-    .max(5),
+    .min(1)
+    .max(6),
   plano_30_dias: z
     .array(
       z.object({
@@ -52,12 +55,12 @@ const prognosticContentSchema = z.object({
         resultado_esperado: z.string().min(1),
       })
     )
-    .min(3)
-    .max(5),
+    .min(1)
+    .max(6),
   praticas: z
     .array(z.object({ nome: z.string().min(1), descricao: z.string().min(1) }))
-    .min(3)
-    .max(5),
+    .min(1)
+    .max(6),
   frase_ativacao: z.object({
     frase: z.string().min(1),
     contexto: z.string().min(1),
