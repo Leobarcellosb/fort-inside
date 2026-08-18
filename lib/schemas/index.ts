@@ -10,7 +10,7 @@ export const joinEventSchema = z.object({
 export const quizResponseSchema = z.object({
   participant_id: z.string().uuid(),
   stage_id: z.number().int().min(1).max(6),
-  answers: z.record(z.string(), z.union([z.string(), z.array(z.string())])),
+  answers: z.record(z.string(), z.union([z.string(), z.array(z.string()), z.number()])),
 });
 
 export const createEventSchema = z.object({
@@ -22,21 +22,6 @@ export const createEventSchema = z.object({
   host_name: z.string().default("Yuri Fortes"),
 });
 
-export const updatePrognosticSchema = z.object({
-  prognostic_id: z.string().uuid(),
-  edited_content: z.object({
-    momento_atual: z.string(),
-    forca_central: z.string(),
-    gargalo_sensivel: z.string(),
-    risco_permanecer: z.string(),
-    construir_agora: z.string(),
-    proximo_passo: z.string(),
-    trilha_recomendada: z.enum(["Exploração", "Direção", "Aproximação", "Aceleração", "Sessão Privada"]),
-    justificativa_trilha: z.string(),
-  }),
-  yuri_note: z.string().optional(),
-});
-
 export const generatePrognosticSchema = z.object({
   participant_id: z.string().uuid(),
   event_id: z.string().uuid(),
@@ -46,11 +31,6 @@ export const batchProcessSchema = z.object({
   event_id: z.string().uuid(),
 });
 
-export const generatePdfSchema = z.object({
-  prognostic_id: z.string().uuid(),
-});
-
 export type JoinEventInput = z.infer<typeof joinEventSchema>;
 export type CreateEventInput = z.output<typeof createEventSchema>;
 export type QuizResponseInput = z.infer<typeof quizResponseSchema>;
-export type UpdatePrognosticInput = z.infer<typeof updatePrognosticSchema>;

@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getAdminUser } from "@/lib/auth/require-admin";
 import { z } from "zod";
+
+// Admin-only. Every handler here runs with service_role (bypasses RLS) and the
+// proxy matcher only covers /admin/:path*, so without this guard the whole
+// knowledge base was readable, writable and deletable by anonymous requests.
+// Must be a factory: a Response body can only be consumed once, so a shared
+// module-level instance would break on the second request.
+const forbidden = () => NextResponse.json({ error: "Não autorizado" }, { status: 403 });
 
 const createSchema = z.object({
   title: z.string().min(1).max(200),
@@ -10,6 +18,8 @@ const createSchema = z.object({
 });
 
 export async function GET() {
+  if (!(await getAdminUser())) return forbidden();
+
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("knowledge_base")
@@ -24,6 +34,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  if (!(await getAdminUser())) return forbidden();
+
   const contentType = req.headers.get("content-type") ?? "";
 
   let title: string;
@@ -68,6 +80,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  if (!(await getAdminUser())) return forbidden();
+
   const id = new URL(req.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "ID obrigatório" }, { status: 400 });
 

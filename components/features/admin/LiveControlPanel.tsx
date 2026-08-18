@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
@@ -57,6 +57,9 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
   const [participants, setParticipants] = useState<Participant[]>(initialParticipants);
   const [responses, setResponses] = useState<ResponseRecord[]>(initialResponses);
   const [logs, setLogs] = useState<LogRecord[]>(initialLogs);
+  // Realtime handlers are registered once; a ref keeps them reading the current
+  // participant list instead of closing over the initial server snapshot.
+  const participantsRef = useRef<Participant[]>(initialParticipants);
   const [releasing, setReleasing] = useState(false);
   const [processing, setProcessing] = useState(false);
 
@@ -70,15 +73,27 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
     responses.some((r) => r.participant_id === p.id && r.stage_id === currentStage)
   ).length;
 
-  const allCompletedCurrent =
-    currentStage > 0 && completedCurrentStage >= participants.length;
+  const pendingParticipants =
+    currentStage > 0
+      ? participants.filter(
+          (p) => !responses.some((r) => r.participant_id === p.id && r.stage_id === currentStage)
+        )
+      : [];
+
+  const isForcedRelease = currentStage > 0 && pendingParticipants.length > 0;
 
   const allParticipantsDone =
     participants.length > 0 && participants.every((p) => p.completed_at !== null);
 
+  // Keep the ref in sync so realtime handlers registered once can still resolve
+  // participants that joined after mount.
+  useEffect(() => {
+    participantsRef.current = participants;
+  }, [participants]);
+
   useEffect(() => {
     const supabase = createClient();
-    const participantIds = new Set(initialParticipants.map((p) => p.id));
+    const participantIds = new Set(participantsRef.current.map((p) => p.id));
 
     const upsertResponse = (r: ResponseRecord) => {
       if (!participantIds.has(r.participant_id)) return;
@@ -93,7 +108,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
         }
         return [...prev, r];
       });
-      const p = initialParticipants.find((x) => x.id === r.participant_id);
+      const p = participantsRef.current.find((x) => x.id === r.participant_id);
       setLogs((prev) => [
         {
           action: "response_submitted",
@@ -120,6 +135,30 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
       )
       .on(
         "postgres_changes",
+        { event: "INSERT", schema: "public", table: "participants", filter: `event_id=eq.${event.id}` },
+        (payload) => {
+          // Without this, someone who joined after the panel loaded stayed
+          // invisible until a refresh — and still counted toward the
+          // "everyone finished this stage" gate that unlocks the next one.
+          const joined = payload.new as Participant;
+          participantIds.add(joined.id);
+          setParticipants((prev) =>
+            prev.some((p) => p.id === joined.id) ? prev : [...prev, joined]
+          );
+          setLogs((prev) => [
+            {
+              action: "participant_joined",
+              payload: null,
+              created_at: new Date().toISOString(),
+              participant_id: joined.id,
+            },
+            ...prev,
+          ]);
+          toast.success(`${joined.full_name} entrou na imersão`);
+        }
+      )
+      .on(
+        "postgres_changes",
         { event: "UPDATE", schema: "public", table: "participants", filter: `event_id=eq.${event.id}` },
         (payload) => {
           const updated = payload.new as Participant;
@@ -127,7 +166,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
             prev.map((p) => (p.id === updated.id ? { ...p, completed_at: updated.completed_at } : p))
           );
           if (updated.completed_at) {
-            const p = initialParticipants.find((x) => x.id === updated.id);
+            const p = participantsRef.current.find((x) => x.id === updated.id);
             if (p) {
               setLogs((prev) => [
                 {
@@ -149,7 +188,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
         (payload) => {
           const pr = payload.new as { participant_id: string; trail_recommendation: string | null };
           if (!participantIds.has(pr.participant_id)) return;
-          const p = initialParticipants.find((x) => x.id === pr.participant_id);
+          const p = participantsRef.current.find((x) => x.id === pr.participant_id);
           setLogs((prev) => [
             {
               action: "prognostic_generated",
@@ -168,7 +207,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
         (payload) => {
           const pr = payload.new as { participant_id: string; pdf_url: string | null };
           if (!participantIds.has(pr.participant_id) || !pr.pdf_url) return;
-          const p = initialParticipants.find((x) => x.id === pr.participant_id);
+          const p = participantsRef.current.find((x) => x.id === pr.participant_id);
           setLogs((prev) => [
             {
               action: "pdf_generated",
@@ -193,7 +232,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [event.id, initialParticipants]);
+  }, [event.id]);
 
   async function releaseNextStage() {
     if (releasing) return;
@@ -208,9 +247,15 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
 
       if (error) throw error;
 
+      const releasePayload: Record<string, unknown> = { stage_id: next };
+      if (isForcedRelease) {
+        releasePayload.forced = true;
+        releasePayload.pending = pendingParticipants.length;
+      }
+
       await ((supabase.from("event_logs") as unknown as {
         insert(v: Record<string, unknown>): Promise<unknown>;
-      }).insert({ event_id: event.id, action: "stage_released", payload: { stage_id: next } }));
+      }).insert({ event_id: event.id, action: "stage_released", payload: releasePayload }));
 
       setCurrentStage(next);
       toast.success(`Etapa ${next} liberada — ${STAGE_LABELS[next]}`);
@@ -241,7 +286,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
   }
 
   const nextStageInfo = stages.find((s) => s.id === currentStage + 1);
-  const canReleaseNext = currentStage < 6 && (allCompletedCurrent || currentStage === 0);
+  const pendingNames = pendingParticipants.map((p) => p.full_name).join(", ");
 
   return (
     <div className="min-h-screen bg-background p-4 lg:p-8">
@@ -297,8 +342,12 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
               <AlertDialogTrigger
                 render={
                   <Button
-                    disabled={!canReleaseNext || releasing}
-                    className="w-full h-12 bg-primary text-primary-foreground hover:bg-primary/90 uppercase tracking-[0.08em] text-sm"
+                    disabled={releasing}
+                    className={
+                      isForcedRelease
+                        ? "w-full h-12 bg-muted text-muted-foreground hover:bg-muted/80 border border-border uppercase tracking-[0.08em] text-sm"
+                        : "w-full h-12 bg-primary text-primary-foreground hover:bg-primary/90 uppercase tracking-[0.08em] text-sm"
+                    }
                   />
                 }
               >
@@ -310,6 +359,17 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
                     Liberar etapa {currentStage + 1}?
                   </AlertDialogTitle>
                   <AlertDialogDescription className="text-muted-foreground">
+                    {isForcedRelease && (
+                      <>
+                        <strong className="text-foreground">
+                          {pendingParticipants.length === 1
+                            ? `1 participante ainda não enviou a etapa ${currentStage}: ${pendingNames}.`
+                            : `${pendingParticipants.length} participantes ainda não enviaram a etapa ${currentStage}: ${pendingNames}.`}
+                        </strong>
+                        {" "}Eles serão levados para a próxima etapa e a resposta pendente será perdida.
+                        <br />
+                      </>
+                    )}
                     {nextStageInfo ? (
                       <>
                         <strong className="text-foreground">{nextStageInfo.title}</strong>
@@ -326,7 +386,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
                     onClick={releaseNextStage}
                     className="bg-primary text-primary-foreground hover:bg-primary/90"
                   >
-                    Liberar
+                    {isForcedRelease ? "Liberar mesmo assim" : "Liberar"}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -353,7 +413,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
                   </AlertDialogTitle>
                   <AlertDialogDescription className="text-muted-foreground">
                     Isso irá gerar o Mapa da Próxima Construção para todos os {participants.length} participantes.
-                    Pode levar de 60 a 90 segundos.
+                    Cada prognóstico leva cerca de 2 a 3 minutos; eles são gerados em paralelo.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -455,6 +515,8 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
                   label = `PDF pronto — ${participant.full_name}`;
                 } else if (log.action === "participant_completed" && participant) {
                   label = `${participant.full_name} concluiu o quiz`;
+                } else if (log.action === "participant_joined" && participant) {
+                  label = `${participant.full_name} entrou na imersão`;
                 } else if (log.action === "batch_process_completed") {
                   label = `Processamento concluído`;
                 }

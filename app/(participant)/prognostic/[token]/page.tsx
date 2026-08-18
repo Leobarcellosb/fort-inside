@@ -41,7 +41,6 @@ export default async function PrognosticPage({ params }: Props) {
       hostName={event?.host_name ?? "Yuri Fortes"}
       content={content}
       yuriNote={prognostic.yuri_note ?? null}
-      prognosticId={prognostic.id}
       token={token}
       pdfUrl={prognostic.pdf_url ?? null}
     />
