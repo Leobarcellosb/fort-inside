@@ -144,13 +144,23 @@ export default function QuizPage({ params }: Props) {
         upsert(
           values: Record<string, unknown>,
           options: { onConflict: string }
-        ): Promise<{ data: unknown; error: { message: string } | null }>;
+        ): Promise<{ data: unknown; error: { message: string; code?: string } | null }>;
       }).upsert(
         { participant_id: participantId, stage_id: stageNum, answers },
         { onConflict: "participant_id,stage_id" }
       );
 
-      if (error) throw new Error(error.message);
+      if (error) {
+        // O participante nunca deve ver erro cru de banco no meio da imersao.
+        // A mensagem tecnica fica no console para o Yuri/suporte diagnosticar.
+        console.error("[quiz] falha ao gravar etapa", { stageNum, error });
+        const code = (error as { code?: string }).code;
+        throw new Error(
+          code === "42501"
+            ? "Sua sessão expirou. Recarregue a página e tente de novo."
+            : "Não consegui salvar suas respostas. Tente de novo em alguns segundos."
+        );
+      }
 
       // Broadcast to Yuri's panel
       await supabase.channel(`event:${eventId}`).send({
