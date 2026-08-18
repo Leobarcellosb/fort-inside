@@ -107,7 +107,12 @@ export default function QuizPage({ params }: Props) {
       case "text": {
         const str = typeof val === "string" ? val : "";
         const min = q.min_chars ?? 0;
-        return str.trim().length >= min;
+        // Sem min_chars, `required` e o que exige resposta. O piso de
+        // caracteres era pedagogicamente ruim: os 10 participantes do FORT26
+        // escreveram 2 a 3x o minimo, entao ele nunca puxou profundidade —
+        // so punia com erro vermelho quem tinha uma resposta curta e honesta.
+        if (min > 0) return str.trim().length >= min;
+        return q.required ? str.trim().length > 0 : true;
       }
       case "scale": {
         if (typeof val === "number") return true;
