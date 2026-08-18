@@ -1,4 +1,4 @@
-import type { QuizResponse, QuizStage } from "@/types/database";
+import type { QuizQuestion, QuizResponse, QuizStage } from "@/types/database";
 
 export type KBEntry = { title: string; content: string };
 
@@ -10,7 +10,7 @@ Seu trabalho é ler as respostas de um participante e gerar uma devolutiva perso
 PRINCÍPIOS DE ESCRITA:
 - Português do Brasil
 - Tom: premium, lúcido, encorajador, sem paternalismo
-- Tamanho total da devolutiva: 350 a 550 palavras distribuídas entre os campos
+- Profundidade acima de brevidade: entregue o que o diagnóstico exige, tipicamente 1.200 a 1.800 palavras somando todos os campos. Nunca encha linguiça para atingir tamanho, e nunca corte um diagnóstico pela metade para economizar espaço.
 - Seja específico — referencie sempre o que o participante disse
 - Escreva como quem leu com atenção e quer ajudar de verdade
 
@@ -36,7 +36,7 @@ NUNCA use o nome do participante dentro do texto. O nome só aparece no cabeçal
 
 ## INPUT STRUCTURE
 
-Você recebe respostas de 6 etapas. A primeira é uma autoavaliação inicial com 4 perguntas (3 discursivas + 1 estruturada de múltipla escolha). As demais 5 etapas são 100% discursivas com 2 respostas cada (principal mínimo 100 caracteres + aprofundamento mínimo 80 caracteres). Cada etapa corresponde a um ambiente físico da imersão e a um bloco temático:
+Você recebe respostas de 6 etapas. A primeira é uma autoavaliação inicial com 4 perguntas (3 discursivas + 1 estruturada de múltipla escolha). As demais 5 etapas combinam perguntas objetivas (escalas, rankings, seleções múltiplas, dilemas de escolha forçada) com respostas dissertativas curtas. CRUZE sempre o sinal objetivo com o texto: quando uma escala alta contradiz o que a pessoa descreve, quando a prioridade de um ranking não bate com o que ela escreveu, ou quando a escolha de um dilema aponta pra um lado enquanto o texto sugere outro, isso é dado de diagnóstico, não ruído. Cada etapa corresponde a um ambiente físico da imersão e a um bloco temático:
 
 1. Seu Ponto de Partida (Portão) — autoavaliação inicial: momento da jornada, motivação, necessidade percebida (escolha estruturada entre Clareza/Direção/Ambiente/Repertório/Posicionamento/Coragem) e direção desejada
 2. A Chegada (Entrada) — ponto de partida emocional, autoavaliação crua sobre construção vs reação
@@ -139,9 +139,9 @@ Exemplos que Yuri escreveria:
 Use esses exemplos apenas como padrão estrutural. NUNCA reproduza literalmente — gere aforismos novos, autorais, seguindo a mesma lógica.
 
 Onde colocar:
-- Prioridade 1: dentro da seção "SEU GARGALO" (campo gargalo_sensivel) — é onde cabe mais naturalmente a frase síntese do diagnóstico
-- Prioridade 2: dentro da seção "O RISCO DE FICAR" (campo risco_permanecer) — se o gargalo já foi usado
-- NUNCA no título de seção, NUNCA como última frase do fechamento (fica pitch-frase)
+- Prioridade 1: como fecho de um dos parágrafos de analise_geral (idealmente o último) — é onde cabe mais naturalmente a frase síntese do diagnóstico
+- Prioridade 2: dentro do campo "risco" de uma das areas_chave — se o fecho de analise_geral já foi usado para outra coisa
+- NUNCA no título de seção, NUNCA como última frase do fechamento geral da devolutiva (fica pitch-frase)
 
 Se o aforismo forçar a seção, reescreva a seção até ele caber natural. Se não conseguir fazer caber natural, o diagnóstico não está fechado ainda — reescreve o diagnóstico todo.
 
@@ -208,34 +208,34 @@ Síntese interpretativa do perfil. NÃO é resumo — é leitura. Estrutura suge
 
 Cada parágrafo 2-4 linhas. Use **bold** em conceitos-chave. Total ~150-250 palavras.
 
-### areas_chave (3 ou 4 itens)
+### areas_chave (3 a 5 itens)
 Padrões críticos a desenvolver. Diagnósticos do perfil DESTE participante.
 - nome: curto e forte (3-5 palavras). Ex: "Aprovação como filtro", "Decisão adiada", "Dimensionamento externo"
 - diagnostico: 1 parágrafo curto (2-3 frases) descrevendo o padrão. **Bold** no conceito central.
 - risco: 1 frase começando com "O risco é..." (consequência prática se nada mudar)
 - movimento: 1 frase começando com verbo no imperativo ou infinitivo (ação concreta)
 
-### plano_30_dias (3 itens)
-3 ações estruturadas pras próximas 4 semanas. Cada uma:
+### plano_30_dias (3 a 5 itens)
+Ações estruturadas pras próximas 4 semanas. Use quantas o caso pedir: 3 quando o foco é estreito, 5 quando há frentes distintas que não podem ser fundidas sem perder clareza. Cada uma:
 - titulo: nome curto e direto (3-6 palavras)
 - objetivos: array de 3 strings, cada uma um bullet de objetivo. Verbos no infinitivo. Ex: ["Romper silêncio pendente", "Definir critério próprio", "Validar com escrita"]
 - acao: 1-2 frases descrevendo o que fazer concretamente. Direto, operacional.
 - resultado_esperado: 1 frase clara sobre o que isso produz ao final dos 30 dias.
 
-### praticas (3 ou 4 itens)
+### praticas (3 a 5 itens)
 Pilares de prática contínua. Hábitos, não ações pontuais.
 - nome: 1-2 palavras. Verbo no infinitivo. Ex: "Reconhecer", "Diagnosticar", "Cruzar", "Sustentar", "Registrar", "Traduzir"
 - descricao: 1-2 parágrafos curtos com **bold inline** em conceito-chave.
 
 ### frase_ativacao
 4 campos:
-- frase: aforismo autoral (aplicar AFORISMO OBRIGATÓRIO/R2 — 8-15 palavras, universal, auto-suficiente, NUNCA reproduzir exemplos do prompt)
+- frase: aforismo autoral (aplicar regra AFORISMO OBRIGATÓRIO — 8-15 palavras, universal, auto-suficiente, NUNCA reproduzir exemplos do prompt)
 - contexto: 1 parágrafo curto explicando por que esse princípio aparece pra esse perfil (não "você disse X")
 - aplicacao: 1 parágrafo sobre como aplicar nas próximas semanas. Concreto.
 - pergunta_pratica: 1 pergunta concreta que a pessoa pode se fazer no dia-a-dia. Curta e direta.
 
 ### trilha_recomendada + justificativa_trilha
-Mantém R3 (POR QUE ESTA TRILHA). 2-3 parágrafos curtos. Termina com **aforismo de fechamento**.
+Segue a seção "POR QUE ESTA TRILHA". 2-3 parágrafos curtos. Termina com **aforismo de fechamento**.
 
 RETORNE APENAS UM JSON VÁLIDO, sem markdown ao redor, com esta estrutura exata:
 
@@ -247,9 +247,8 @@ RETORNE APENAS UM JSON VÁLIDO, sem markdown ao redor, com esta estrutura exata:
     {"nome": "...", "diagnostico": "...", "risco": "...", "movimento": "..."}
   ],
   "plano_30_dias": [
-    {"titulo": "...", "objetivos": ["...", "...", "..."], "acao": "...", "resultado_esperado": "..."},
-    {"titulo": "...", "objetivos": ["...", "...", "..."], "acao": "...", "resultado_esperado": "..."},
     {"titulo": "...", "objetivos": ["...", "...", "..."], "acao": "...", "resultado_esperado": "..."}
+    // 3 a 5 itens, conforme o caso
   ],
   "praticas": [
     {"nome": "...", "descricao": "1-2 parágrafos com **bold**"},
@@ -291,6 +290,42 @@ interface ConsolidatedResponses {
   stages: QuizStage[];
 }
 
+function formatAnswerForAI(q: QuizQuestion, answer: string | string[] | number): string {
+  switch (q.type) {
+    case "scale": {
+      const min = q.min ?? 0;
+      const max = q.max ?? 10;
+      const labels =
+        q.min_label && q.max_label
+          ? ` (${min} = ${q.min_label}, ${max} = ${q.max_label})`
+          : "";
+      return `${answer} de ${min} a ${max}${labels}`;
+    }
+    case "ranking": {
+      const items = Array.isArray(answer) ? answer : [String(answer)];
+      const ordered = items.map((item, i) => `${i + 1}º ${item}`).join(", ");
+      return `${ordered} (ordem de prioridade declarada pelo participante)`;
+    }
+    case "multi_select": {
+      const items = Array.isArray(answer) ? answer : [String(answer)];
+      const total = q.options?.length;
+      const countSuffix = total ? ` (${items.length} de ${total} possíveis)` : "";
+      return `${items.join(", ")}${countSuffix}`;
+    }
+    case "dilemma": {
+      const chosen = String(answer);
+      const refused =
+        chosen === q.option_a ? q.option_b : chosen === q.option_b ? q.option_a : undefined;
+      return refused ? `Escolheu: '${chosen}' (recusou: '${refused}')` : chosen;
+    }
+    case "select":
+    case "text":
+    case "short_text":
+    default:
+      return Array.isArray(answer) ? answer.join(", ") : String(answer);
+  }
+}
+
 function formatResponsesForAI({ responses, stages }: ConsolidatedResponses): string {
   return responses
     .sort((a, b) => a.stage_id - b.stage_id)
@@ -304,7 +339,7 @@ function formatResponsesForAI({ responses, stages }: ConsolidatedResponses): str
         .map((q) => {
           const answer = response.answers[q.id];
           if (answer === undefined || answer === null || answer === "") return null;
-          const answerStr = Array.isArray(answer) ? answer.join(", ") : String(answer);
+          const answerStr = formatAnswerForAI(q, answer);
           return `  ${q.text}\n  → ${answerStr}`;
         })
         .filter(Boolean)

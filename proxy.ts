@@ -32,7 +32,13 @@ export async function proxy(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) {
+  // Being signed in is NOT enough: every participant gets a Supabase session
+  // when they join an event, so a bare `!user` check let them reach /admin/*
+  // — including /admin/nps, which reads with service_role and bypasses RLS.
+  // Require the same claim the is_admin() RLS helper checks.
+  const isAdmin = user?.app_metadata?.role === "admin";
+
+  if (!isAdmin) {
     const loginUrl = new URL("/admin/login", request.url);
     loginUrl.searchParams.set("next", pathname);
     const redirectResponse = NextResponse.redirect(loginUrl);

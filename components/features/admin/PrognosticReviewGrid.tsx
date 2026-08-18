@@ -115,6 +115,20 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
         )
       );
 
+      // Editing a prognostic nulls pdf_url, so after an edited delivery there is
+      // no PDF and nothing was generating one — the participant's page just sat
+      // polling for 120s. Kick the render off here (the realtime subscription
+      // picks up pdf_url when it lands).
+      if (!prog.pdf_url) {
+        fetch("/api/generate-pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prognostic_id: prognosticId }),
+        }).catch(() => {
+          // Non-fatal: the participant still has the on-demand PDF button.
+        });
+      }
+
       const shareUrl = `${window.location.origin}/prognostic/${prog.public_share_token}`;
       await navigator.clipboard.writeText(shareUrl).catch(() => {});
       toast.success("Entregue! Link copiado para a área de transferência.");

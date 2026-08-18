@@ -14,7 +14,6 @@ interface Props {
   hostName: string;
   content: PrognosticContent;
   yuriNote: string | null;
-  prognosticId: string;
   token: string;
   pdfUrl: string | null;
 }
@@ -26,7 +25,6 @@ export function PrognosticView({
   hostName,
   content,
   yuriNote,
-  prognosticId,
   token,
   pdfUrl: initialPdfUrl,
 }: Props) {
@@ -90,7 +88,7 @@ export function PrognosticView({
       const res = await fetch("/api/generate-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prognostic_id: prognosticId }),
+        body: JSON.stringify({ token }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);

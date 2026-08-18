@@ -37,7 +37,7 @@ export function NewEventForm() {
       const { data: event, error } = await ((supabase.from("events") as unknown as {
         insert(v: Record<string, unknown>): {
           select(cols: string): {
-            single(): Promise<{ data: { id: string; event_code: string } | null; error: { message: string } | null }>;
+            single(): Promise<{ data: { id: string; event_code: string } | null; error: { message: string; code?: string } | null }>;
           };
         };
       }).insert({
@@ -51,6 +51,14 @@ export function NewEventForm() {
         current_stage: 0,
       }).select("id, event_code").single());
 
+      // 23505 = unique_violation. O unico unique da tabela e o event_code, e a
+      // mensagem crua do Postgres ("duplicate key value violates unique
+      // constraint events_event_code_key") vazava direto para o toast.
+      if (error?.code === "23505") {
+        throw new Error(
+          `Já existe um evento com o código ${data.event_code.toUpperCase()}. Escolha outro.`
+        );
+      }
       if (error || !event) throw new Error(error?.message ?? "Erro ao criar evento");
 
       // Use the current origin so the QR always matches where the admin is browsing.

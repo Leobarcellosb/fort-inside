@@ -7,7 +7,14 @@ export type TrailRecommendation =
   | "Aceleração"
   | "Sessão Privada";
 
-export type QuestionType = "select" | "text";
+export type QuestionType =
+  | "select" // escolha única, já existe
+  | "text" // dissertativa, já existe
+  | "short_text" // uma linha, sem mínimo
+  | "scale" // régua numérica
+  | "multi_select" // várias opções
+  | "ranking" // ordenar opções por prioridade
+  | "dilemma"; // escolha forçada entre duas tensões
 
 export interface QuizQuestion {
   id: string;
@@ -17,6 +24,14 @@ export interface QuizQuestion {
   placeholder?: string;
   min_chars?: number;
   required?: boolean;
+  min?: number; // scale — default 0
+  max?: number; // scale — default 10
+  min_label?: string; // scale — rótulo da ponta esquerda
+  max_label?: string; // scale — rótulo da ponta direita
+  max_choices?: number; // multi_select — máximo de opções
+  option_a?: string; // dilemma
+  option_b?: string; // dilemma
+  max_chars?: number; // short_text
 }
 
 export interface QuizStage {
@@ -57,7 +72,7 @@ export interface QuizResponse {
   id: string;
   participant_id: string;
   stage_id: number;
-  answers: Record<string, string | string[]>;
+  answers: Record<string, string | string[] | number>;
   submitted_at: string;
 }
 
@@ -114,6 +129,17 @@ export interface NPSResponse {
   quality_rating: NPSQualityRating;
   highlight: string | null;
   improvement: string | null;
+  ip_hash: string | null;
+  created_at: string;
+}
+
+export interface KnowledgeBaseEntry {
+  id: string;
+  title: string;
+  content: string;
+  type: "text" | "file";
+  file_name: string | null;
+  priority: number;
   created_at: string;
 }
 
@@ -158,6 +184,20 @@ export interface Database {
         Row: Prognostic;
         Insert: Omit<Prognostic, "id" | "public_share_token">;
         Update: Partial<Omit<Prognostic, "id" | "participant_id">>;
+        Relationships: [];
+      };
+      knowledge_base: {
+        Row: KnowledgeBaseEntry;
+        Insert: Omit<KnowledgeBaseEntry, "id" | "created_at" | "priority"> & {
+          priority?: number;
+        };
+        Update: Partial<Omit<KnowledgeBaseEntry, "id" | "created_at">>;
+        Relationships: [];
+      };
+      nps_responses: {
+        Row: NPSResponse;
+        Insert: Omit<NPSResponse, "id" | "created_at">;
+        Update: Partial<Omit<NPSResponse, "id" | "created_at">>;
         Relationships: [];
       };
       event_logs: {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomBytes } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { joinEventSchema } from "@/lib/schemas";
 import { z } from "zod";
@@ -8,6 +9,30 @@ const bodySchema = joinEventSchema.extend({
   event_code: z.string(),
 });
 
+type AuthUser = { id: string; email?: string; app_metadata?: { role?: string } };
+
+// listUsers() defaults to 50 per page. Past that, a returning participant's
+// account simply wasn't found and the join failed with "Erro ao identificar
+// usuário". Walk every page until we find the e-mail or run out.
+async function findUserByEmail(
+  supabase: ReturnType<typeof createAdminClient>,
+  email: string
+): Promise<AuthUser | null> {
+  const perPage = 1000;
+  const target = email.toLowerCase();
+
+  for (let page = 1; page <= 50; page++) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+    if (error || !data) return null;
+
+    const match = data.users.find((u) => u.email?.toLowerCase() === target);
+    if (match) return match as AuthUser;
+
+    if (data.users.length < perPage) return null;
+  }
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const parsed = bodySchema.safeParse(body);
@@ -15,7 +40,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Dados inválidos" }, { status: 400 });
   }
 
-  const { email, full_name, phone, course_or_moment, event_id, event_code } = parsed.data;
+  const { email, full_name, phone, course_or_moment, event_id } = parsed.data;
   const supabase = createAdminClient();
 
   // Verify event exists and has capacity
@@ -29,7 +54,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Evento não encontrado" }, { status: 404 });
   }
 
-  const password = `${email}::${event_code}`;
+  // Random, single-use credential. The previous `${email}::${event_code}`
+  // scheme was guessable: the event code is printed on a public QR, so knowing
+  // a participant's e-mail was enough to sign in as them.
+  const password = randomBytes(24).toString("base64url");
 
   // Try to create auth user — email_confirm: true skips confirmation email
   let userId: string;
@@ -42,15 +70,25 @@ export async function POST(req: NextRequest) {
 
   if (createError) {
     if (createError.message.includes("already been registered")) {
-      // User exists — fetch their ID and reset password to the current
-      // event-scoped password so signInWithPassword on the client succeeds.
-      // Without this, returning users from a previous event hit "invalid
-      // credentials" because their stored password matches the old event_code.
-      const { data: users } = await supabase.auth.admin.listUsers();
-      const existing = users?.users.find((u) => u.email === email);
+      // User exists — reset the password to the freshly generated one so
+      // signInWithPassword on the client succeeds. Returning participants from
+      // a previous event would otherwise hit "invalid credentials".
+      const existing = await findUserByEmail(supabase, email);
       if (!existing) {
         return NextResponse.json({ error: "Erro ao identificar usuário" }, { status: 500 });
       }
+
+      // NEVER reset the credentials of a privileged account. Without this,
+      // anyone holding a public event QR could type the admin's e-mail into
+      // the join form, have the admin password overwritten, and read the new
+      // one straight out of this endpoint's response.
+      if (existing.app_metadata?.role === "admin") {
+        return NextResponse.json(
+          { error: "Este e-mail não pode ser usado para entrar na imersão." },
+          { status: 403 }
+        );
+      }
+
       userId = existing.id;
       const { error: updateErr } = await supabase.auth.admin.updateUserById(userId, {
         password,

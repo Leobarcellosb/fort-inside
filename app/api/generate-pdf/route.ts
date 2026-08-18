@@ -1,82 +1,60 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { generatePdfSchema } from "@/lib/schemas";
-import type { PrognosticContent, Prognostic, Event } from "@/types/database";
+import { getAdminUser } from "@/lib/auth/require-admin";
+import { renderAndStorePdf } from "@/lib/pdf/render-prognostic-pdf";
 
 export const maxDuration = 60;
 
+// Two ways in:
+//   { token }         — the participant's own share token. Same gate as the
+//                       /prognostic/[token] page: unguessable and delivered-only.
+//   { prognostic_id } — admin only.
+// Previously this accepted a bare prognostic_id from anyone, making PDF
+// rendering (and Storage writes) an open endpoint.
+const bodySchema = z.union([
+  z.object({ token: z.string().min(1) }),
+  z.object({ prognostic_id: z.string().uuid() }),
+]);
+
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const parsed = generatePdfSchema.safeParse(body);
-  if (!parsed.success) {
+  let parsed;
+  try {
+    parsed = bodySchema.safeParse(await req.json());
+  } catch {
+    return NextResponse.json({ error: "Payload inválido" }, { status: 400 });
+  }
+  if (!parsed?.success) {
     return NextResponse.json({ error: "Dados inválidos" }, { status: 400 });
   }
 
-  const { prognostic_id } = parsed.data;
-  const supabase = createAdminClient();
+  let prognosticId: string;
 
-  const { data: prognostic } = await supabase
-    .from("prognostics")
-    .select("*, participants(full_name, event_id)")
-    .eq("id", prognostic_id)
-    .single() as { data: (Prognostic & { participants: { full_name: string; event_id: string } | null }) | null; error: unknown };
+  if ("token" in parsed.data) {
+    const admin = createAdminClient();
+    const { data } = (await admin
+      .from("prognostics")
+      .select("id")
+      .eq("public_share_token", parsed.data.token)
+      .eq("status", "delivered")
+      .single()) as { data: { id: string } | null; error: unknown };
 
-  if (!prognostic) {
-    return NextResponse.json({ error: "Prognóstico não encontrado" }, { status: 404 });
+    if (!data) {
+      return NextResponse.json({ error: "Prognóstico não encontrado" }, { status: 404 });
+    }
+    prognosticId = data.id;
+  } else {
+    if (!(await getAdminUser())) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
+    }
+    prognosticId = parsed.data.prognostic_id;
   }
 
-  // Return existing PDF if already generated
-  if (prognostic.pdf_url) {
-    return NextResponse.json({ pdf_url: prognostic.pdf_url });
+  const result = await renderAndStorePdf(prognosticId);
+
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
   }
 
-  const participant = prognostic.participants as { full_name: string; event_id: string } | null;
-
-  const { data: event } = await supabase
-    .from("events")
-    .select("name, event_date, host_name")
-    .eq("id", participant?.event_id ?? "")
-    .single() as { data: Pick<Event, "name" | "event_date" | "host_name"> | null; error: unknown };
-
-  const content = (prognostic.final_content ?? prognostic.raw_ai_output) as PrognosticContent;
-
-  // Dynamic import to avoid bundling issues
-  const { renderToBuffer } = await import("@react-pdf/renderer");
-  const { PrognosticPdfDocument } = await import("@/components/features/prognostic/PrognosticPdfDocument");
-  const { createElement } = await import("react");
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pdfBuffer = await renderToBuffer(
-    createElement(PrognosticPdfDocument, {
-      participantName: participant?.full_name ?? "",
-      eventName: event?.name ?? "Fort Inside",
-      eventDate: event?.event_date ?? "",
-      hostName: event?.host_name ?? "Yuri Fortes",
-      content,
-      yuriNote: prognostic.yuri_note ?? null,
-    }) as any
-  );
-
-  // Upload to Supabase Storage
-  const fileName = `prognostics/${prognostic_id}.pdf`;
-  const { error: uploadError } = await supabase.storage
-    .from("documents")
-    .upload(fileName, pdfBuffer, {
-      contentType: "application/pdf",
-      upsert: true,
-    });
-
-  if (uploadError) {
-    return NextResponse.json({ error: "Erro ao salvar PDF" }, { status: 500 });
-  }
-
-  const { data: { publicUrl } } = supabase.storage
-    .from("documents")
-    .getPublicUrl(fileName);
-
-  await ((supabase.from("prognostics") as unknown as {
-    update(v: Record<string, unknown>): { eq(c: string, v: string): Promise<unknown> };
-  }).update({ pdf_url: publicUrl }).eq("id", prognostic_id));
-
-  return NextResponse.json({ pdf_url: publicUrl });
+  return NextResponse.json({ pdf_url: result.pdfUrl });
 }
