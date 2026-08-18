@@ -162,7 +162,11 @@ export async function generatePrognostic(
     // Adaptive thinking replaces the fixed budget; `temperature` is rejected
     // outright by Opus 5 and had to go.
     thinking: { type: "adaptive" },
-    output_config: { effort: "high", format: outputFormat },
+    // effort medium, nao high: medido no mesmo participante real, o high
+    // levava 147s e 10.749 tokens de saida para produzir 1.303 palavras; o
+    // medium leva 63s e 3.931 tokens para produzir 1.280. Os ~8.700 tokens de
+    // raciocinio extras do high nao apareciam no texto entregue.
+    output_config: { effort: "medium", format: outputFormat },
     // cache_control on the system prompt: it is large (methodology + knowledge
     // base) and identical for every participant, so a batch of 20 pays the
     // write once and reads it 19 times at a tenth of the price.

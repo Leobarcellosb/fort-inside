@@ -8,6 +8,27 @@ import type { Event, Participant } from "@/types/database";
 
 export const maxDuration = 300;
 
+// Dispara em ondas em vez de tudo de uma vez. Vinte requests simultaneos de
+// 32k max_tokens podem estourar o rate limit da organizacao no meio do evento,
+// e vinte renderizacoes de PDF ao mesmo tempo pesam na memoria da funcao.
+// Com ~63s por prognostico, 10 por onda entrega 20 participantes em ~2 min.
+// Tudo de uma vez seria ~1 min, mas um 429 no meio do evento custa mais que o
+// minuto economizado: o SDK so tenta de novo 2 vezes antes de desistir, e um
+// participante sem prognostico e um problema visivel na sala.
+const CONCURRENCY = 10;
+
+async function inWaves<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>
+): Promise<PromiseSettledResult<R>[]> {
+  const out: PromiseSettledResult<R>[] = [];
+  for (let i = 0; i < items.length; i += CONCURRENCY) {
+    const wave = items.slice(i, i + CONCURRENCY);
+    out.push(...(await Promise.allSettled(wave.map(fn))));
+  }
+  return out;
+}
+
 export async function POST(req: NextRequest) {
   // Admin only: this fans out one Anthropic call per participant.
   if (!(await getAdminUser())) {
@@ -64,8 +85,8 @@ export async function POST(req: NextRequest) {
   // that route's per-participant rate limit whenever the admin pressed
   // "Processar" within 60s of the stage-6 auto-fire, so successful generations
   // were reported back as failures.
-  const results = await Promise.allSettled(
-    participants.map((p) => generatePrognostic(p.id, event_id))
+  const results = await inWaves(participants, (p) =>
+    generatePrognostic(p.id, event_id)
   );
 
   let succeeded = 0;
@@ -99,7 +120,7 @@ export async function POST(req: NextRequest) {
   const failed = results.length - succeeded;
 
   // Render PDFs up front so the participant's share page doesn't sit polling.
-  await Promise.allSettled(generatedIds.map((id) => renderAndStorePdf(id)));
+  await inWaves(generatedIds, (id) => renderAndStorePdf(id));
 
   await (
     supabase.from("events") as unknown as {

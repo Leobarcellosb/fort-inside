@@ -413,7 +413,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
                   </AlertDialogTitle>
                   <AlertDialogDescription className="text-muted-foreground">
                     Isso irá gerar o Mapa da Próxima Construção para todos os {participants.length} participantes.
-                    Cada prognóstico leva cerca de 2 a 3 minutos; eles são gerados em paralelo.
+                    Cerca de 1 minuto por prognóstico, gerados em paralelo. Para uma turma cheia, conte com 2 a 3 minutos no total.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
