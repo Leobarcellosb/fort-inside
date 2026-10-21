@@ -1,4 +1,5 @@
 export type EventStatus = "draft" | "live" | "processing" | "completed";
+export type EventMode = "live" | "async";
 export type PrognosticStatus = "pending" | "generated" | "reviewed" | "delivered";
 export type TrailRecommendation =
   | "Exploração"
@@ -40,6 +41,8 @@ export interface QuizStage {
   ambient_name: string;
   description: string | null;
   questions: QuizQuestion[];
+  quiz_version: number; // versão do quiz (1 = Fort Inside, 2 = Marco Zero)
+  stage_number: number | null; // ordem dentro da versão (id pode começar em 101)
 }
 
 export interface Event {
@@ -52,6 +55,10 @@ export interface Event {
   host_name: string;
   location_name: string | null;
   max_participants: number;
+  quiz_version: number; // versão do quiz que o evento usa
+  mode: EventMode;
+  form_opens_at: string | null; // janela do formulário assíncrono; nulos no live
+  form_closes_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -73,7 +80,30 @@ export interface QuizResponse {
   participant_id: string;
   stage_id: number;
   answers: Record<string, string | string[] | number>;
+  // Enunciado congelado no momento da resposta. Nulo nas linhas antigas:
+  // nesse caso ler de quiz_stages.
+  questions_snapshot: QuizQuestion[] | null;
   submitted_at: string;
+}
+
+export interface AxisScore {
+  likert: number;
+  situacional: number;
+}
+
+export interface ParticipantScores {
+  participant_id: string;
+  eixos: {
+    visao: AxisScore;
+    execucao: AxisScore;
+    relacao: AxisScore;
+    integridade: AxisScore;
+  };
+  elementos: Record<string, number> | null; // 0..10 por elemento
+  perfil_dominante: string | null;
+  perfil_declarado: string | null;
+  divergencia: boolean | null;
+  computed_at: string;
 }
 
 export interface Prognostic {
@@ -158,7 +188,11 @@ export interface Database {
     Tables: {
       events: {
         Row: Event;
-        Insert: Omit<Event, "id" | "created_at" | "updated_at">;
+        Insert: Omit<
+          Event,
+          "id" | "created_at" | "updated_at" | "quiz_version" | "mode" | "form_opens_at" | "form_closes_at"
+        > &
+          Partial<Pick<Event, "quiz_version" | "mode" | "form_opens_at" | "form_closes_at">>;
         Update: Partial<Omit<Event, "id" | "created_at">>;
         Relationships: [];
       };
@@ -170,13 +204,15 @@ export interface Database {
       };
       quiz_stages: {
         Row: QuizStage;
-        Insert: QuizStage;
+        Insert: Omit<QuizStage, "quiz_version" | "stage_number"> &
+          Partial<Pick<QuizStage, "quiz_version" | "stage_number">>;
         Update: Partial<QuizStage>;
         Relationships: [];
       };
       quiz_responses: {
         Row: QuizResponse;
-        Insert: Omit<QuizResponse, "id" | "submitted_at">;
+        Insert: Omit<QuizResponse, "id" | "submitted_at" | "questions_snapshot"> &
+          Partial<Pick<QuizResponse, "questions_snapshot">>;
         Update: Partial<QuizResponse>;
         Relationships: [];
       };
@@ -198,6 +234,12 @@ export interface Database {
         Row: NPSResponse;
         Insert: Omit<NPSResponse, "id" | "created_at">;
         Update: Partial<Omit<NPSResponse, "id" | "created_at">>;
+        Relationships: [];
+      };
+      participant_scores: {
+        Row: ParticipantScores;
+        Insert: Omit<ParticipantScores, "computed_at"> & { computed_at?: string };
+        Update: Partial<Omit<ParticipantScores, "participant_id">>;
         Relationships: [];
       };
       event_logs: {
