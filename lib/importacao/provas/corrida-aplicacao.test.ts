@@ -1,5 +1,6 @@
 // PROVA DA CORRIDA: a janela entre a PREVIA e a APLICACAO da importacao
-// externa, contra Postgres de verdade.
+// externa, contra Postgres de verdade -- incluindo DISPUTA CONCORRENTE REAL
+// entre os dois caminhos de escrita, nos dois sentidos.
 //
 // Como rodar:
 //   PROVA_IMPORTACAO_URL="postgresql://...@127.0.0.1:PORTA/postgres" \
@@ -11,8 +12,8 @@
 // localhost ou [::1]. Nunca aponte para producao -- esta prova ESCREVE. Use um
 // container descartavel PROPRIO, nao o banco local compartilhado do projeto:
 // outras unidades escrevem nele e ja houve contaminacao medida. Evento e
-// participantes desta prova tem ids proprios, que nao colidem com os da prova
-// de importacao externa (`importacao-externa.test.ts`).
+// participantes desta prova tem ids proprios, que nao colidem com os das outras
+// provas desta pasta.
 //
 // O DEFEITO QUE ELA MEDE
 // ----------------------
@@ -24,23 +25,38 @@
 // desaparecia, `origem` virava 'externo', e o conflito nao era detectado --
 // porque foi avaliado num instante em que ainda nao existia.
 //
-// Contra as migrations 001..023 este arquivo fica VERMELHO no cenario 1: e
-// assim que ele prova que o defeito existe. Com a 024 aplicada, fica verde.
+// Contra as migrations 001..023 este arquivo fica VERMELHO. Com a 024, verde.
+//
+// A REGRA QUE ELA COBRA (ordem da revisao)
+// ----------------------------------------
+//   plano integro                            -> aplicacao atomica
+//   respondeu pelo app depois da previa       -> RECUSAR O LOTE, resposta fica
+//   outra importacao ocupou a identidade      -> RECUSAR O LOTE como conflito
+//   previa nova sem os conflitos              -> aplica o novo conjunto
+//   falha durante a transacao                 -> reverter todas as escritas
 //
 // O QUE ELA PROVA, nesta ordem:
-//   1. A CORRIDA: resposta do aplicativo inserida DEPOIS da montagem do plano
-//      continua intacta, e a importacao e recusada como CONFLITO;
-//   2. CONTROLE POSITIVO: importacao de quem nao respondeu continua gravando
-//      (a correcao nao e "recusa tudo");
-//   3. CONTROLE POSITIVO: reimportacao da MESMA submissao continua atualizando;
-//   4. linha existente de OUTRA submissao externa e CONFLITO, nao atualizacao;
-//   5. o livro-razao mostra a recusa com ACAO PROPRIA, e e append-only;
-//   6. resposta do aplicativo POR CIMA de linha importada devolve a linha para a
-//      pessoa, e a reimportacao daquela submissao passa a ser recusada;
-//   7. identidade revalidada: participante que nao e mais do evento nao grava, e
-//      nao derruba o lote inteiro.
+//   1. A CORRIDA: resposta do aplicativo depois da previa continua intacta e o
+//      LOTE e recusado -- e o conjunto de escrita da recusa e SO o registro de
+//      auditoria (nenhuma submissao, nenhum item, nenhuma resposta canonica);
+//   2. LOTE ATOMICO: uma submissao em conflito impede a submissao LEGITIMA do
+//      mesmo lote de entrar. Nada parcial;
+//   3. PROGRESSO: previa nova sem a conflitante aplica o conjunto elegivel;
+//   4. CONTROLE POSITIVO: importacao limpa continua gravando;
+//   5. CONTROLE POSITIVO: reimportar a MESMA submissao continua atualizando;
+//   6. MESMA submissao exige VERSAO verificada: versao divergente e recusa;
+//   7. linha de OUTRA submissao externa recusa o lote;
+//   8. IDENTIDADE revalidada: participante de outro evento recusa o lote;
+//   9. o registro DURAVEL da recusa, com codigo proprio, e o livro-razao da
+//      submissao que ja existia;
+//  10. resposta do aplicativo POR CIMA de linha importada devolve a linha para a
+//      pessoa, e a reimportacao passa a ser recusada;
+//  11. CONCORRENCIA REAL, sentido A: participante gravando e importacao
+//      chegando no meio -- a importacao ESPERA e recusa o lote;
+//  12. CONCORRENCIA REAL, sentido B: importacao gravando e participante
+//      chegando no meio -- o participante ESPERA e a resposta dele nao e perdida.
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -75,14 +91,52 @@ function exigirLocal(url: string): void {
 const descreve = URL_ALVO ? describe : describe.skip;
 const TRABALHO = URL_ALVO ? mkdtempSync(join(tmpdir(), "prova-corrida-")) : "";
 
-function sql(texto: string): string {
+function arquivoSql(texto: string): string {
   const arquivo = join(TRABALHO, `q-${Math.random().toString(36).slice(2)}.sql`);
   writeFileSync(arquivo, texto, "utf8");
+  return arquivo;
+}
+
+function sql(texto: string): string {
   return execFileSync(
     "psql",
-    ["-X", "-q", "-At", "-v", "ON_ERROR_STOP=1", URL_ALVO as string, "-f", arquivo],
+    ["-X", "-q", "-At", "-v", "ON_ERROR_STOP=1", URL_ALVO as string, "-f", arquivoSql(texto)],
     { encoding: "utf8", env: { ...process.env, PGCONNECT_TIMEOUT: "15" } },
   ).trim();
+}
+
+/**
+ * A MESMA chamada, em OUTRA SESSAO, sem bloquear esta. E o que permite duas
+ * transacoes concorrentes de verdade -- nao duas chamadas em fila.
+ */
+interface Concorrente {
+  saida: string;
+  erro: string;
+  ms: number;
+  codigo: number | null;
+}
+
+function sqlConcorrente(texto: string): Promise<Concorrente> {
+  const arquivo = arquivoSql(texto);
+  const t0 = Date.now();
+  return new Promise((resolve) => {
+    const p = spawn(
+      "psql",
+      ["-X", "-q", "-At", "-v", "ON_ERROR_STOP=1", URL_ALVO as string, "-f", arquivo],
+      { env: { ...process.env, PGCONNECT_TIMEOUT: "15" } },
+    );
+    let saida = "";
+    let erro = "";
+    p.stdout.on("data", (d) => (saida += String(d)));
+    p.stderr.on("data", (d) => (erro += String(d)));
+    p.on("close", (codigo) =>
+      resolve({ saida: saida.trim(), erro: erro.trim(), ms: Date.now() - t0, codigo }),
+    );
+  });
+}
+
+function espera(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 function um(texto: string): string {
@@ -132,17 +186,33 @@ interface LinhaDeSubmissao {
   estado: string;
   participant_id: string | null;
   apto: boolean;
-  codigo: string | null;
-  motivo: string | null;
 }
 
-function submissaoNoBanco(submissaoId: string): LinhaDeSubmissao {
-  return json<LinhaDeSubmissao>(`
+function submissaoNoBanco(submissaoId: string): LinhaDeSubmissao | null {
+  return json<LinhaDeSubmissao | null>(`
     select coalesce(to_json(t)::text, 'null') from (
       select submissao_id, estado, participant_id::text as participant_id,
-             apto_para_pontuar as apto,
-             bloqueio ->> 'codigo' as codigo, bloqueio ->> 'motivo' as motivo
+             apto_para_pontuar as apto
         from external_submissions where submissao_id = '${submissaoId}') t
+  `);
+}
+
+interface Recusa {
+  submissao_id: string;
+  codigo: string;
+  motivo: string;
+  etapas_em_conflito: string[];
+}
+
+function recusasRegistradas(lote?: string): Recusa[] {
+  const filtro = lote === undefined ? "" : `and r.lote_impressao = '${lote}'`;
+  return json<Recusa[]>(`
+    select coalesce(json_agg(json_build_object(
+             'submissao_id', r.submissao_id, 'codigo', r.codigo,
+             'motivo', r.motivo, 'etapas_em_conflito', r.etapas_em_conflito
+           ) order by r.submissao_id)::text, '[]')
+      from external_import_rejections r
+     where r.event_id = '${EVENTO}' ${filtro}
   `);
 }
 
@@ -154,6 +224,36 @@ function livroRazao(submissaoId: string): { acao: string; justificativa: string 
       from external_submission_events ev
       join external_submissions es on es.id = ev.submission_id
      where es.submissao_id = '${submissaoId}'
+  `);
+}
+
+/**
+ * O CONJUNTO DE ESCRITA, contado: e com estes numeros que se afirma que a recusa
+ * nao gravou nada do plano. Sem eles, "nada foi gravado" seria so uma frase.
+ */
+interface Contagens {
+  submissoes: number;
+  itens: number;
+  respostas: number;
+  recusas: number;
+  razao: number;
+}
+
+function contagens(): Contagens {
+  return json<Contagens>(`
+    select to_json(t)::text from (
+      select
+        (select count(*) from external_submissions where event_id = '${EVENTO}') as submissoes,
+        (select count(*) from external_response_items i
+           join external_submissions es on es.id = i.submission_id
+          where es.event_id = '${EVENTO}') as itens,
+        (select count(*) from quiz_responses r
+           join participants p on p.id = r.participant_id
+          where p.event_id = '${EVENTO}') as respostas,
+        (select count(*) from external_import_rejections where event_id = '${EVENTO}') as recusas,
+        (select count(*) from external_submission_events ev
+           join external_submissions es on es.id = ev.submission_id
+          where es.event_id = '${EVENTO}') as razao) t
   `);
 }
 
@@ -173,6 +273,15 @@ const P = {
   ana: "a0000024-0003-4003-8003-a00000240003",
   bruno: "a0000024-0004-4004-8004-a00000240004",
   carla: "a0000024-0005-4005-8005-a00000240005",
+  diego: "a0000024-0006-4006-8006-a00000240006",
+  elisa: "a0000024-0007-4007-8007-a00000240007",
+  fabio: "a0000024-0008-4008-8008-a00000240008",
+  // Dedicados ao enxame do cenario 13: sem historico, para que os DOIS
+  // desfechos do lote (aplicar inteiro ou recusar inteiro) sejam possiveis.
+  gustavo: "a0000024-0010-4010-8010-a00000240010",
+  helena: "a0000024-0011-4011-8011-a00000240011",
+  igor: "a0000024-0012-4012-8012-a00000240012",
+  julia: "a0000024-0013-4013-8013-a00000240013",
 };
 /** Existe no banco, mas em OUTRO evento: serve a revalidacao de identidade. */
 const FORA_DO_EVENTO = "a0000024-0099-4099-8099-a00000240099";
@@ -213,7 +322,7 @@ function submissao(over: Partial<SubmissaoExterna> & { submissao_id: string }): 
   return {
     email: "maria@corrida024.test",
     email_verificado: true,
-    nome_declarado: "Maria Souza",
+    nome_declarado: "Pessoa Declarada",
     respostas: respostasCompletas("IMPORTADO"),
     ...over,
   };
@@ -225,6 +334,13 @@ const PARTICIPANTES: ParticipanteDoEvento[] = [
   { id: P.ana, email: "ana@corrida024.test", full_name: "Ana Lima" },
   { id: P.bruno, email: "bruno@corrida024.test", full_name: "Bruno Dias" },
   { id: P.carla, email: "carla@corrida024.test", full_name: "Carla Reis" },
+  { id: P.diego, email: "diego@corrida024.test", full_name: "Diego Melo" },
+  { id: P.elisa, email: "elisa@corrida024.test", full_name: "Elisa Rocha" },
+  { id: P.fabio, email: "fabio@corrida024.test", full_name: "Fabio Nunes" },
+  { id: P.gustavo, email: "gustavo@corrida024.test", full_name: "Gustavo Alves" },
+  { id: P.helena, email: "helena@corrida024.test", full_name: "Helena Prado" },
+  { id: P.igor, email: "igor@corrida024.test", full_name: "Igor Campos" },
+  { id: P.julia, email: "julia@corrida024.test", full_name: "Julia Freitas" },
   { id: FORA_DO_EVENTO, email: "vizinho@corrida024.test", full_name: "Vizinho Dias" },
 ];
 
@@ -246,28 +362,48 @@ function entradaBase(submissoes: readonly SubmissaoExterna[]) {
   } as Parameters<typeof planejarImportacao>[0];
 }
 
-interface Resumo {
+interface Resultado {
+  ok: boolean;
+  codigo?: string;
+  motivo?: string;
+  lote_impressao: string;
   linhas_de_resposta_gravadas: number;
   por_estado: Record<string, number>;
-  recusas_na_revalidacao?: number;
-  recusadas_na_revalidacao?: { submissao_id: string; codigo: string; motivo: string }[];
+  recusas_na_revalidacao: number;
+  recusadas_na_revalidacao: {
+    submissao_id: string;
+    codigo: string;
+    motivo: string;
+    etapas_em_conflito: string[];
+  }[];
 }
 
-/** Planeja e APLICA no banco. Devolve o plano e o resumo que a funcao devolveu. */
-function aplicar(entrada: Parameters<typeof planejarImportacao>[0]) {
+function planoDe(entrada: Parameters<typeof planejarImportacao>[0]) {
   const plano = planejarImportacao(entrada);
   if (!plano.ok) throw new Error(`plano recusado: ${plano.codigo} ${plano.motivo}`);
-  const resumo = json<Resumo>(`select public.importacao_externa_aplicar(${literalJson(plano)})`);
-  return { plano, resumo };
+  return plano;
+}
+
+function chamadaSql(plano: unknown): string {
+  return `select public.importacao_externa_aplicar(${literalJson(plano)})`;
+}
+
+/** Planeja e APLICA no banco. Devolve o plano e o que a funcao devolveu. */
+function aplicar(entrada: Parameters<typeof planejarImportacao>[0]) {
+  const plano = planoDe(entrada);
+  return { plano, resultado: json<Resultado>(chamadaSql(plano)) };
 }
 
 /** O aplicativo gravando, do jeito que o aplicativo grava: so as tres colunas. */
-function respondePeloAplicativo(participante: string, stageId: number, marca: string): void {
-  sql(`
+function escritaDoAplicativo(participante: string, stageId: number, marca: string): string {
+  return `
     insert into quiz_responses (participant_id, stage_id, answers)
     values ('${participante}', ${stageId}, jsonb_build_object('q1', '${marca}'))
-    on conflict (participant_id, stage_id) do update set answers = excluded.answers
-  `);
+    on conflict (participant_id, stage_id) do update set answers = excluded.answers`;
+}
+
+function respondePeloAplicativo(participante: string, stageId: number, marca: string): void {
+  sql(escritaDoAplicativo(participante, stageId, marca));
 }
 
 describe("guarda de alvo", () => {
@@ -294,6 +430,18 @@ descreve("PROVA: a janela entre a previa e a aplicacao da importacao externa", (
        where participant_id in (
          select id from participants
           where event_id in ('${EVENTO}', '${EVENTO_VIZINHO}'));
+      -- A tabela de recusas so existe com a 024 aplicada. A limpeza nao pode
+      -- morrer num banco SEM a 024: senao esta prova ficaria verde-por-omissao
+      -- justamente no banco onde ela tem de ficar VERMELHA, e o vermelho sairia
+      -- do preparo em vez do comportamento medido.
+      do $limpa$
+      begin
+        if to_regclass('public.external_import_rejections') is not null then
+          delete from public.external_import_rejections
+           where event_id in ('${EVENTO}', '${EVENTO_VIZINHO}');
+        end if;
+      end
+      $limpa$;
       delete from events where id in ('${EVENTO}', '${EVENTO_VIZINHO}');
     `);
 
@@ -328,86 +476,150 @@ descreve("PROVA: a janela entre a previa e a aplicacao da importacao externa", (
   });
 
   // =========================================================================
-  it("1. A CORRIDA: respondeu no aplicativo depois da previa -> resposta INTACTA e importacao recusada como CONFLITO", () => {
+  it("1. A CORRIDA: respondeu no aplicativo depois da previa -> LOTE recusado, resposta INTACTA, e o conjunto de escrita e SO a auditoria", () => {
     // O plano e montado AGORA, com Maria sem nenhuma resposta: o planejador
     // decide 'importavel', e e uma decisao CORRETA no instante em que e tomada.
-    const entrada = entradaBase([
-      submissao({ submissao_id: "corrida-maria", email: "maria@corrida024.test" }),
-    ]);
-    const plano = planejarImportacao(entrada);
-    if (!plano.ok) throw new Error("plano recusado");
+    const plano = planoDe(
+      entradaBase([submissao({ submissao_id: "corrida-maria", email: "maria@corrida024.test" })]),
+    );
     expect(plano.submissoes[0].estado).toBe("importavel");
     expect(plano.submissoes[0].participant_id).toBe(P.maria);
-    mostrar("ANTES: respostas de Maria (nenhuma) e o que o plano decidiu", {
-      respostas: respostasDe(P.maria),
-      estado_do_plano: plano.submissoes[0].estado,
-      etapas_a_gravar: plano.submissoes[0].etapas.length,
-    });
     expect(respostasDe(P.maria)).toEqual([]);
 
     // AQUI ESTA A JANELA: a pessoa responde PELO APLICATIVO, depois de a previa
-    // ter sido montada e antes de a funcao rodar.
-    respondePeloAplicativo(P.maria, 101, "RESPOSTA DA MARIA NO APLICATIVO");
-    const antes = respostasDe(P.maria);
-    mostrar("ANTES da aplicacao: Maria JA respondeu a etapa 101 no aplicativo", antes);
-    expect(antes).toEqual([
-      { stage_id: 101, origem: "app", marca: "RESPOSTA DA MARIA NO APLICATIVO", submissao: null },
+    // ter sido montada e antes de a funcao rodar. E ela responde a etapa 104 --
+    // de proposito uma etapa QUALQUER, nao a primeira: proteger so a colisao da
+    // mesma chave nao bastaria.
+    respondePeloAplicativo(P.maria, 104, "RESPOSTA DA MARIA NO APLICATIVO");
+    const antes = { respostas: respostasDe(P.maria), contagens: contagens() };
+    mostrar("ANTES da aplicacao: Maria JA respondeu a etapa 104 no aplicativo", antes);
+    expect(antes.respostas).toEqual([
+      { stage_id: 104, origem: "app", marca: "RESPOSTA DA MARIA NO APLICATIVO", submissao: null },
     ]);
 
     // A impressao da previa continua CORRETA: o plano nao mudou. Quem mudou foi
     // o banco. E por isso que um hash correto nao pode ser a autorizacao final.
-    const resumo = json<Resumo>(
-      `select public.importacao_externa_aplicar(${literalJson(plano)})`,
-    );
-    const depois = respostasDe(P.maria);
-    mostrar("DEPOIS da aplicacao: resumo e respostas de Maria", { resumo, respostas: depois });
+    const r = json<Resultado>(chamadaSql(plano));
+    const depois = { respostas: respostasDe(P.maria), contagens: contagens() };
+    mostrar("DEPOIS da aplicacao: o que a funcao devolveu", r);
+    mostrar("DEPOIS da aplicacao: respostas de Maria e contagens", depois);
 
-    // A RESPOSTA DELA FICA. Nenhuma linha dela virou 'externo'.
-    expect(depois).toEqual([
-      { stage_id: 101, origem: "app", marca: "RESPOSTA DA MARIA NO APLICATIVO", submissao: null },
-    ]);
-    expect(resumo.linhas_de_resposta_gravadas).toBe(0);
+    // O LOTE FOI RECUSADO.
+    expect(r.ok).toBe(false);
+    expect(r.codigo).toBe("LOTE_RECUSADO_NA_REVALIDACAO");
+    expect(r.motivo).toContain("LOTE INTEIRO foi recusado");
+    expect(r.motivo).toContain("previa nova");
+    expect(r.linhas_de_resposta_gravadas).toBe(0);
+    expect(r.por_estado).toEqual({});
+    expect(r.recusas_na_revalidacao).toBe(1);
+    expect(r.recusadas_na_revalidacao[0].codigo).toBe("resposta_do_aplicativo");
+    expect(r.recusadas_na_revalidacao[0].etapas_em_conflito).toEqual(["104"]);
 
-    // E A IMPORTACAO E RECUSADA COMO CONFLITO, com nome e motivo.
-    const sub = submissaoNoBanco("corrida-maria");
-    mostrar("DEPOIS: a submissao no banco", sub);
-    expect(sub.estado).toBe("conflito");
-    expect(sub.participant_id).toBeNull();
-    expect(sub.apto).toBe(false);
-    expect(sub.codigo).toBe("resposta_do_aplicativo");
-    expect(sub.motivo).toContain("RECUSADA NA REVALIDACAO");
-    expect(resumo.por_estado.importavel ?? 0).toBe(0);
-    expect(resumo.por_estado.conflito).toBe(1);
-    expect(resumo.recusas_na_revalidacao).toBe(1);
-    expect(resumo.recusadas_na_revalidacao?.[0].submissao_id).toBe("corrida-maria");
+    // A RESPOSTA DELA FICA, exatamente como estava.
+    expect(depois.respostas).toEqual(antes.respostas);
 
-    // O payload cru NAO foi descartado: dado coletado de uma pessoa nao se joga
-    // fora so porque a gravacao foi recusada.
-    const itens = Number(
-      um(`select count(*) from external_response_items i
-            join external_submissions es on es.id = i.submission_id
-           where es.submissao_id = 'corrida-maria'`),
-    );
-    expect(itens).toBeGreaterThan(0);
+    // E O CONJUNTO DE ESCRITA DA RECUSA E SO O REGISTRO DE AUDITORIA: nenhuma
+    // submissao, nenhum item, nenhuma resposta canonica. E por isso que o
+    // registro nao precisa sobreviver a rollback nenhum -- nao ha rollback.
+    expect(depois.contagens.submissoes).toBe(antes.contagens.submissoes);
+    expect(depois.contagens.itens).toBe(antes.contagens.itens);
+    expect(depois.contagens.respostas).toBe(antes.contagens.respostas);
+    expect(depois.contagens.razao).toBe(antes.contagens.razao);
+    expect(depois.contagens.recusas).toBe(antes.contagens.recusas + 1);
+    expect(submissaoNoBanco("corrida-maria")).toBeNull();
 
-    // A visao de aptidao nao finge que foi identidade nao resolvida.
-    const apt = json<{ pode_pontuar: boolean; codigo: string }>(`
-      select to_json(t)::text from (
-        select pode_pontuar, codigo from v_aptidao_pontuacao_externa
-         where submission_id = (select id from external_submissions where submissao_id = 'corrida-maria')) t
-    `);
-    mostrar("DEPOIS: v_aptidao_pontuacao_externa", apt);
-    expect(apt.pode_pontuar).toBe(false);
-    expect(apt.codigo).toBe("RECUSADA_NA_REVALIDACAO");
+    const registradas = recusasRegistradas(r.lote_impressao);
+    mostrar("DEPOIS: o registro DURAVEL da recusa", registradas);
+    expect(registradas).toHaveLength(1);
+    expect(registradas[0].submissao_id).toBe("corrida-maria");
+    expect(registradas[0].codigo).toBe("resposta_do_aplicativo");
+    expect(registradas[0].motivo).toContain("LOTE RECUSADO NA REVALIDACAO");
   });
 
   // =========================================================================
-  it("2. CONTROLE POSITIVO: quem nao respondeu continua entrando (a correcao nao e 'recusa tudo')", () => {
-    const antes = respostasDe(P.joao);
-    mostrar("ANTES: respostas de Joao", antes);
+  it("2. LOTE ATOMICO: uma submissao em conflito impede a LEGITIMA do mesmo lote de entrar", () => {
+    const antes = {
+      maria: respostasDe(P.maria),
+      carla: respostasDe(P.carla),
+      contagens: contagens(),
+    };
+    mostrar("ANTES: Maria com resposta do app; Carla sem nada", antes);
+    expect(antes.carla).toEqual([]);
+
+    // Lote com DUAS submissoes: a de Maria (em conflito desde o cenario 1) e a
+    // de Carla, que e perfeitamente legitima.
+    const { resultado } = aplicar(
+      entradaBase([
+        submissao({ submissao_id: "corrida-maria", email: "maria@corrida024.test" }),
+        submissao({
+          submissao_id: "carla-no-lote-recusado",
+          email: "carla@corrida024.test",
+          respostas: respostasCompletas("CARLA NAO DEVE ENTRAR AGORA"),
+        }),
+      ]),
+    );
+    const depois = {
+      maria: respostasDe(P.maria),
+      carla: respostasDe(P.carla),
+      contagens: contagens(),
+    };
+    mostrar("DEPOIS: o que a funcao devolveu", resultado);
+    mostrar("DEPOIS: respostas e contagens", depois);
+
+    expect(resultado.ok).toBe(false);
+    expect(resultado.linhas_de_resposta_gravadas).toBe(0);
+    // A LEGITIMA NAO ENTROU. E isto que "lote atomico" quer dizer.
+    expect(depois.carla).toEqual([]);
+    expect(submissaoNoBanco("carla-no-lote-recusado")).toBeNull();
+    expect(depois.maria).toEqual(antes.maria);
+    expect(depois.contagens.submissoes).toBe(antes.contagens.submissoes);
+    expect(depois.contagens.respostas).toBe(antes.contagens.respostas);
+    // So a submissao conflitante gera registro de recusa; a legitima nao e
+    // acusada de nada -- ela so nao entrou.
+    expect(resultado.recusas_na_revalidacao).toBe(1);
+    expect(recusasRegistradas(resultado.lote_impressao).map((x) => x.submissao_id)).toEqual([
+      "corrida-maria",
+    ]);
+  });
+
+  // =========================================================================
+  it("3. PROGRESSO: previa NOVA sem a submissao conflitante aplica o conjunto elegivel", () => {
+    const antes = respostasDe(P.carla);
+    mostrar("ANTES: Carla continua sem resposta", antes);
     expect(antes).toEqual([]);
 
-    const { plano, resumo } = aplicar(
+    // O caminho de progresso que a revisao manda existir: mesma coleta, previa
+    // nova SEM a conflitante.
+    const { resultado } = aplicar(
+      entradaBase([
+        submissao({
+          submissao_id: "carla-no-lote-recusado",
+          email: "carla@corrida024.test",
+          respostas: respostasCompletas("CARLA IMPORTADA NA PREVIA NOVA"),
+        }),
+      ]),
+    );
+    const depois = respostasDe(P.carla);
+    mostrar("DEPOIS: o que a funcao devolveu", resultado);
+    mostrar("DEPOIS: respostas de Carla", depois);
+
+    expect(resultado.ok).toBe(true);
+    expect(resultado.linhas_de_resposta_gravadas).toBe(5);
+    expect(resultado.recusas_na_revalidacao).toBe(0);
+    expect(resultado.por_estado).toEqual({ importavel: 1 });
+    expect(depois.map((l) => l.stage_id)).toEqual([101, 102, 103, 104, 105]);
+    expect(depois.every((l) => l.origem === "externo")).toBe(true);
+    expect(depois[0].marca).toBe("CARLA IMPORTADA NA PREVIA NOVA");
+    // E Maria continua com a resposta dela, intacta, sem ter entrado em nada.
+    expect(respostasDe(P.maria)).toEqual([
+      { stage_id: 104, origem: "app", marca: "RESPOSTA DA MARIA NO APLICATIVO", submissao: null },
+    ]);
+  });
+
+  // =========================================================================
+  it("4. CONTROLE POSITIVO: quem nao respondeu continua entrando (a correcao nao e 'recusa tudo')", () => {
+    expect(respostasDe(P.joao)).toEqual([]);
+    const { resultado } = aplicar(
       entradaBase([
         submissao({
           submissao_id: "limpa-joao",
@@ -416,32 +628,23 @@ descreve("PROVA: a janela entre a previa e a aplicacao da importacao externa", (
         }),
       ]),
     );
-    expect(plano.ok && plano.submissoes[0].estado).toBe("importavel");
-
     const depois = respostasDe(P.joao);
-    mostrar("DEPOIS: resumo e respostas de Joao", { resumo, respostas: depois });
-    expect(resumo.linhas_de_resposta_gravadas).toBe(5);
-    expect(resumo.recusas_na_revalidacao).toBe(0);
-    expect(depois.map((l) => l.stage_id)).toEqual([101, 102, 103, 104, 105]);
+    mostrar("DEPOIS: resultado e respostas de Joao", { resultado, respostas: depois });
+
+    expect(resultado.ok).toBe(true);
+    expect(resultado.linhas_de_resposta_gravadas).toBe(5);
     expect(depois.every((l) => l.origem === "externo")).toBe(true);
     expect(depois.every((l) => l.submissao === "limpa-joao")).toBe(true);
     expect(depois[0].marca).toBe("IMPORTADO DO FORMULARIO");
-
-    const sub = submissaoNoBanco("limpa-joao");
-    mostrar("DEPOIS: a submissao no banco", sub);
-    expect(sub.estado).toBe("importavel");
-    expect(sub.apto).toBe(true);
+    expect(submissaoNoBanco("limpa-joao")?.apto).toBe(true);
     expect(livroRazao("limpa-joao").map((l) => l.acao)).toEqual(["importada"]);
   });
 
   // =========================================================================
-  it("3. CONTROLE POSITIVO: reimportar a MESMA submissao continua ATUALIZANDO", () => {
-    const antes = respostasDe(P.joao);
-    mostrar("ANTES: respostas de Joao, vindas de limpa-joao", antes);
-    expect(antes[0].marca).toBe("IMPORTADO DO FORMULARIO");
+  it("5. CONTROLE POSITIVO: reimportar a MESMA submissao continua ATUALIZANDO", () => {
+    expect(respostasDe(P.joao)[0].marca).toBe("IMPORTADO DO FORMULARIO");
 
-    // Mesmo formulario, MESMO submissao_id, conteudo corrigido.
-    const { resumo } = aplicar(
+    const { resultado } = aplicar(
       entradaBase([
         submissao({
           submissao_id: "limpa-joao",
@@ -451,12 +654,12 @@ descreve("PROVA: a janela entre a previa e a aplicacao da importacao externa", (
       ]),
     );
     const depois = respostasDe(P.joao);
-    mostrar("DEPOIS: resumo e respostas de Joao", { resumo, respostas: depois });
+    mostrar("DEPOIS: resultado e respostas de Joao", { resultado, respostas: depois });
 
-    expect(resumo.linhas_de_resposta_gravadas).toBe(5);
-    expect(resumo.recusas_na_revalidacao).toBe(0);
+    expect(resultado.ok).toBe(true);
+    expect(resultado.linhas_de_resposta_gravadas).toBe(5);
+    expect(resultado.recusas_na_revalidacao).toBe(0);
     expect(depois[0].marca).toBe("REIMPORTADO APOS CORRECAO");
-    expect(depois.every((l) => l.origem === "externo")).toBe(true);
     expect(depois.every((l) => l.submissao === "limpa-joao")).toBe(true);
     // Nao duplicou linha: continuam 5 etapas, nao 10.
     expect(depois).toHaveLength(5);
@@ -464,8 +667,46 @@ descreve("PROVA: a janela entre a previa e a aplicacao da importacao externa", (
   });
 
   // =========================================================================
-  it("4. OUTRA submissao externa sobre a mesma linha e CONFLITO, nao atualizacao silenciosa", () => {
-    // Ana entra por uma coleta.
+  it("6. MESMA submissao exige VERSAO verificada: versao divergente recusa o lote", () => {
+    // A submissao de Joao passa a estar gravada como de OUTRA versao de
+    // questionario. O numero de protocolo e o mesmo; o questionario nao e.
+    sql(`update external_submissions set quiz_version = 3 where submissao_id = 'limpa-joao'`);
+    const antes = respostasDe(P.joao);
+    mostrar("ANTES: a submissao gravada esta na versao 3; o plano vem na 2", antes);
+
+    const { resultado } = aplicar(
+      entradaBase([
+        submissao({
+          submissao_id: "limpa-joao",
+          email: "joao@corrida024.test",
+          respostas: respostasCompletas("NAO DEVE SOBRESCREVER"),
+        }),
+      ]),
+    );
+    const depois = respostasDe(P.joao);
+    mostrar("DEPOIS: resultado e respostas de Joao", { resultado, respostas: depois });
+
+    expect(resultado.ok).toBe(false);
+    expect(resultado.recusadas_na_revalidacao[0].codigo).toBe("versao_da_submissao_mudou");
+    expect(resultado.linhas_de_resposta_gravadas).toBe(0);
+    expect(depois[0].marca).toBe("REIMPORTADO APOS CORRECAO");
+
+    // A submissao que JA EXISTIA tem a tentativa recusada no PROPRIO livro-razao.
+    const razao = livroRazao("limpa-joao");
+    mostrar("DEPOIS: livro-razao de limpa-joao", razao);
+    expect(razao.map((l) => l.acao)).toEqual([
+      "importada",
+      "importada",
+      "lote_recusado_na_revalidacao",
+    ]);
+    expect(razao[2].justificativa).toContain("NADA do lote foi gravado");
+
+    // Devolve o estado para os cenarios seguintes.
+    sql(`update external_submissions set quiz_version = 2 where submissao_id = 'limpa-joao'`);
+  });
+
+  // =========================================================================
+  it("7. linha de OUTRA submissao externa recusa o lote, nao atualiza em silencio", () => {
     aplicar(
       entradaBase([
         submissao({
@@ -478,11 +719,8 @@ descreve("PROVA: a janela entre a previa e a aplicacao da importacao externa", (
     const antes = respostasDe(P.ana);
     mostrar("ANTES: respostas de Ana, vindas de coleta-A-ana", antes);
     expect(antes.every((l) => l.submissao === "coleta-A-ana")).toBe(true);
-    expect(antes[0].marca).toBe("COLETA A");
 
-    // Outra submissao, mesmo e-mail, OUTRO submissao_id. O planejador, com a
-    // leitura de respostas que a previa teve (zero), decide 'importavel'.
-    const { plano, resumo } = aplicar(
+    const { resultado } = aplicar(
       entradaBase([
         submissao({
           submissao_id: "coleta-B-ana",
@@ -491,64 +729,88 @@ descreve("PROVA: a janela entre a previa e a aplicacao da importacao externa", (
         }),
       ]),
     );
-    expect(plano.ok && plano.submissoes[0].estado).toBe("importavel");
-
     const depois = respostasDe(P.ana);
-    mostrar("DEPOIS: resumo e respostas de Ana", { resumo, respostas: depois });
+    mostrar("DEPOIS: resultado e respostas de Ana", { resultado, respostas: depois });
 
-    // A coleta A fica. A B e recusada.
-    expect(depois.every((l) => l.submissao === "coleta-A-ana")).toBe(true);
+    expect(resultado.ok).toBe(false);
+    expect(resultado.linhas_de_resposta_gravadas).toBe(0);
     expect(depois[0].marca).toBe("COLETA A");
-    expect(resumo.linhas_de_resposta_gravadas).toBe(0);
-    expect(resumo.recusas_na_revalidacao).toBe(1);
-
-    const sub = submissaoNoBanco("coleta-B-ana");
-    mostrar("DEPOIS: a submissao B no banco", sub);
-    expect(sub.estado).toBe("conflito");
-    expect(sub.participant_id).toBeNull();
-    // Qualquer das duas guardas estruturais serve, e as duas dizem CONFLITO: a
-    // submissao A ja esta ativa para este participante, e a linha canonica nao e
-    // da B. O que NAO se aceita e a B passar por cima em silencio.
+    expect(depois.every((l) => l.submissao === "coleta-A-ana")).toBe(true);
+    expect(submissaoNoBanco("coleta-B-ana")).toBeNull();
+    // Qualquer das duas guardas estruturais serve, e as duas dizem conflito.
     expect(["outra_submissao_ativa_do_participante", "outra_submissao_externa"]).toContain(
-      sub.codigo,
+      resultado.recusadas_na_revalidacao[0].codigo,
     );
-    expect(sub.motivo).toContain("CONFLITO");
   });
 
   // =========================================================================
-  it("5. O LIVRO-RAZAO mostra a recusa com ACAO PROPRIA, e continua append-only", () => {
-    const razao = livroRazao("corrida-maria");
-    mostrar("LIVRO-RAZAO de corrida-maria", razao);
-    expect(razao.map((l) => l.acao)).toEqual(["recusada_na_revalidacao"]);
-    expect(razao[0].justificativa).toContain("RECUSADA NA REVALIDACAO");
+  it("8. IDENTIDADE revalidada: participante que nao e deste evento recusa o lote", () => {
+    const antes = { fora: respostasDe(FORA_DO_EVENTO), fabio: respostasDe(P.fabio) };
+    expect(antes.fora).toEqual([]);
+    expect(antes.fabio).toEqual([]);
 
-    const razaoB = livroRazao("coleta-B-ana");
-    mostrar("LIVRO-RAZAO de coleta-B-ana", razaoB);
-    expect(razaoB.map((l) => l.acao)).toEqual(["recusada_na_revalidacao"]);
+    const { resultado } = aplicar(
+      entradaBase([
+        submissao({
+          submissao_id: "vizinho-fora",
+          email: "vizinho@corrida024.test",
+          respostas: respostasCompletas("NAO DEVE ENTRAR"),
+        }),
+        submissao({
+          submissao_id: "fabio-legitima",
+          email: "fabio@corrida024.test",
+          respostas: respostasCompletas("FABIO NAO DEVE ENTRAR TAMBEM"),
+        }),
+      ]),
+    );
+    const depois = { fora: respostasDe(FORA_DO_EVENTO), fabio: respostasDe(P.fabio) };
+    mostrar("DEPOIS: resultado e respostas", { resultado, respostas: depois });
 
-    // A acao nova NAO e um dos nomes antigos reaproveitados.
-    expect(razao[0].acao).not.toBe("retida_conflito");
+    expect(resultado.ok).toBe(false);
+    expect(resultado.recusadas_na_revalidacao[0].codigo).toBe("participante_fora_do_evento");
+    expect(depois.fora).toEqual([]);
+    // Lote atomico outra vez: a legitima do mesmo lote tambem nao entrou.
+    expect(depois.fabio).toEqual([]);
+  });
 
-    // Append-only de verdade: nem o dono do banco reescreve isto por caminho de
-    // aplicacao. `anon`/`authenticated`/`service_role` nao tem update nem delete.
+  // =========================================================================
+  it("9. O REGISTRO DURAVEL: codigo proprio por recusa, agrupado por LOTE, e append-only", () => {
+    const porLote = json<
+      { lote: string; n: number; codigos: string[] }[]
+    >(`
+      select coalesce(json_agg(json_build_object(
+               'lote', left(lote_impressao, 8), 'n', submissoes_recusadas,
+               'codigos', (select json_agg(x ->> 'codigo') from jsonb_array_elements(recusas) x)
+             ) order by recusado_em)::text, '[]')
+        from v_importacoes_recusadas where event_id = '${EVENTO}'
+    `);
+    mostrar("v_importacoes_recusadas: um grupo por TENTATIVA", porLote);
+    // Cenarios 1, 2, 6, 7 e 8 recusaram um lote cada.
+    expect(porLote.length).toBeGreaterThanOrEqual(5);
+    expect(porLote.every((l) => l.n >= 1)).toBe(true);
+    const codigos = porLote.flatMap((l) => l.codigos);
+    expect(codigos).toContain("resposta_do_aplicativo");
+    expect(codigos).toContain("versao_da_submissao_mudou");
+    expect(codigos).toContain("participante_fora_do_evento");
+
+    // Append-only de verdade, nos dois historicos: nem anon, nem authenticated,
+    // nem service_role tem UPDATE ou DELETE.
     const privilegios = sql(`
-      select coalesce(string_agg(distinct grantee || ':' || privilege_type, ', '), 'nenhum')
+      select coalesce(string_agg(distinct table_name || ':' || grantee || ':' || privilege_type, ', '), 'nenhum')
         from information_schema.role_table_grants
-       where table_name = 'external_submission_events'
+       where table_name in ('external_submission_events', 'external_import_rejections')
          and privilege_type in ('UPDATE', 'DELETE')
          and grantee in ('anon', 'authenticated', 'service_role')
     `);
-    mostrar("privilegios de UPDATE/DELETE no livro-razao", privilegios);
+    mostrar("privilegios de UPDATE/DELETE nos dois historicos", privilegios);
     expect(privilegios).toBe("nenhum");
 
-    // E a recusa nao apagou o passado de quem entrou: as duas importacoes de
-    // Joao continuam escritas.
-    expect(livroRazao("limpa-joao")).toHaveLength(2);
+    // E a recusa nao apagou o passado de quem entrou.
+    expect(livroRazao("limpa-joao").filter((l) => l.acao === "importada")).toHaveLength(2);
   });
 
   // =========================================================================
-  it("6. resposta do aplicativo POR CIMA de linha importada devolve a linha para a pessoa, e a reimportacao passa a ser recusada", () => {
-    // Bruno entra por importacao legitima.
+  it("10. resposta do aplicativo POR CIMA de linha importada devolve a linha para a pessoa, e a reimportacao passa a ser recusada", () => {
     aplicar(
       entradaBase([
         submissao({
@@ -558,28 +820,23 @@ descreve("PROVA: a janela entre a previa e a aplicacao da importacao externa", (
         }),
       ]),
     );
-    const antes = respostasDe(P.bruno);
-    mostrar("ANTES: respostas de Bruno, importadas", antes);
-    expect(antes.every((l) => l.origem === "externo")).toBe(true);
+    expect(respostasDe(P.bruno).every((l) => l.origem === "externo")).toBe(true);
 
-    // Agora a pessoa responde a etapa 103 no aplicativo, por cima da linha
-    // importada. O aplicativo grava SO `answers` (e e assim que ele grava): sem a
-    // 024 isso nao deixaria rastro nenhum, e `origem` continuaria dizendo
-    // 'externo' -- uma afirmacao falsa sobre de quem e aquele dado.
+    // A pessoa responde a etapa 103 no aplicativo, por cima da linha importada.
+    // O aplicativo grava SO `answers` (e e assim que ele grava): sem o gatilho de
+    // proveniencia isso nao deixaria rastro nenhum, e `origem` continuaria
+    // dizendo 'externo' -- afirmacao falsa sobre de quem e aquele dado.
     respondePeloAplicativo(P.bruno, 103, "BRUNO RESPONDEU NO APLICATIVO");
     const meio = respostasDe(P.bruno);
     mostrar("DEPOIS da resposta no aplicativo: a procedencia da etapa 103", meio);
-    const etapa103 = meio.find((l) => l.stage_id === 103);
-    expect(etapa103).toEqual({
+    expect(meio.find((l) => l.stage_id === 103)).toEqual({
       stage_id: 103,
       origem: "app",
       marca: "BRUNO RESPONDEU NO APLICATIVO",
       submissao: null,
     });
 
-    // E a reimportacao da MESMA submissao, que no caso limpo e legitima, agora e
-    // recusada -- porque uma das linhas deixou de ser dela.
-    const { resumo } = aplicar(
+    const { resultado } = aplicar(
       entradaBase([
         submissao({
           submissao_id: "bruno-importado",
@@ -589,61 +846,217 @@ descreve("PROVA: a janela entre a previa e a aplicacao da importacao externa", (
       ]),
     );
     const depois = respostasDe(P.bruno);
-    mostrar("DEPOIS da reimportacao: resumo e respostas de Bruno", { resumo, respostas: depois });
+    mostrar("DEPOIS da reimportacao: resultado e respostas de Bruno", { resultado, respostas: depois });
 
-    expect(resumo.linhas_de_resposta_gravadas).toBe(0);
-    expect(resumo.recusas_na_revalidacao).toBe(1);
+    expect(resultado.ok).toBe(false);
+    expect(resultado.recusadas_na_revalidacao[0].codigo).toBe("resposta_do_aplicativo");
     expect(depois.find((l) => l.stage_id === 103)?.marca).toBe("BRUNO RESPONDEU NO APLICATIVO");
-    // E as outras etapas tambem NAO foram atualizadas: a unidade de atomicidade
-    // e a submissao inteira.
+    // E as outras etapas tambem NAO foram atualizadas: o lote e atomico.
     expect(depois.find((l) => l.stage_id === 101)?.marca).toBe("IMPORTADO");
-    expect(submissaoNoBanco("bruno-importado").codigo).toBe("resposta_do_aplicativo");
   });
 
   // =========================================================================
-  it("7. IDENTIDADE revalidada: participante que nao e deste evento nao grava, e nao derruba o lote", () => {
-    const antes = {
-      fora_do_evento: respostasDe(FORA_DO_EVENTO),
-      carla: respostasDe(P.carla),
-    };
-    mostrar("ANTES: respostas do participante de outro evento e de Carla", antes);
-    expect(antes.fora_do_evento).toEqual([]);
-    expect(antes.carla).toEqual([]);
-
-    // Lote com DUAS submissoes: uma que o plano reconcilia com alguem que nao e
-    // deste evento, e uma legitima. A legitima tem de entrar.
-    const { resumo } = aplicar(
+  // CONCORRENCIA REAL. Duas sessoes, duas transacoes, disputando o mesmo
+  // participante -- nao duas chamadas em fila. Os dois sentidos da corrida.
+  // =========================================================================
+  it("11. CONCORRENCIA, sentido A: participante gravando e importacao chegando no meio -> a importacao ESPERA e recusa o lote", async () => {
+    const plano = planoDe(
       entradaBase([
         submissao({
-          submissao_id: "vizinho-fora",
-          email: "vizinho@corrida024.test",
-          respostas: respostasCompletas("NAO DEVE ENTRAR"),
-        }),
-        submissao({
-          submissao_id: "carla-legitima",
-          email: "carla@corrida024.test",
-          respostas: respostasCompletas("CARLA IMPORTADA"),
+          submissao_id: "corrida-diego",
+          email: "diego@corrida024.test",
+          respostas: respostasCompletas("IMPORTACAO PERDEU A CORRIDA"),
         }),
       ]),
     );
-    const depois = {
-      fora_do_evento: respostasDe(FORA_DO_EVENTO),
-      carla: respostasDe(P.carla),
-    };
-    mostrar("DEPOIS: resumo e respostas", { resumo, respostas: depois });
+    expect(plano.submissoes[0].estado).toBe("importavel");
+    const antes = respostasDe(P.diego);
+    mostrar("ANTES: Diego sem resposta, plano decidido como importavel", {
+      respostas: antes,
+      estado_do_plano: plano.submissoes[0].estado,
+    });
+    expect(antes).toEqual([]);
 
-    expect(depois.fora_do_evento).toEqual([]);
-    expect(depois.carla).toHaveLength(5);
-    expect(depois.carla[0].marca).toBe("CARLA IMPORTADA");
-    expect(resumo.linhas_de_resposta_gravadas).toBe(5);
-    expect(resumo.recusas_na_revalidacao).toBe(1);
+    // Sessao 1: o participante grava a etapa 102 e SEGURA a transacao aberta.
+    const participante = sqlConcorrente(`
+      begin;
+      ${escritaDoAplicativo(P.diego, 102, "DIEGO GANHOU A CORRIDA")};
+      select pg_sleep(2.5);
+      commit;
+    `);
+    // Sessao 2: a importacao chega NO MEIO da transacao do participante.
+    await espera(500);
+    const importacao = sqlConcorrente(chamadaSql(plano));
 
-    const sub = submissaoNoBanco("vizinho-fora");
-    mostrar("DEPOIS: a submissao recusada por identidade", sub);
-    expect(sub.estado).toBe("pendente");
-    expect(sub.participant_id).toBeNull();
-    expect(sub.codigo).toBe("participante_fora_do_evento");
-    expect(livroRazao("vizinho-fora").map((l) => l.acao)).toEqual(["recusada_na_revalidacao"]);
-    expect(livroRazao("carla-legitima").map((l) => l.acao)).toEqual(["importada"]);
+    const [rPart, rImp] = await Promise.all([participante, importacao]);
+    const depois = respostasDe(P.diego);
+    const resultado = JSON.parse(rImp.saida) as Resultado;
+    mostrar("CONCORRENCIA sentido A", {
+      participante: { ms: rPart.ms, erro: rPart.erro },
+      importacao: { ms: rImp.ms, erro: rImp.erro },
+      resultado,
+      respostas: depois,
+    });
+
+    // A IMPORTACAO ESPEROU. Ela so pode ter visto a escrita do participante
+    // depois do commit dele -- e e exatamente a etapa 102 que ela nomeia.
+    expect(rPart.erro).toBe("");
+    expect(rImp.erro).toBe("");
+    expect(rImp.ms).toBeGreaterThan(1000);
+    expect(resultado.ok).toBe(false);
+    expect(resultado.recusadas_na_revalidacao[0].codigo).toBe("resposta_do_aplicativo");
+    expect(resultado.recusadas_na_revalidacao[0].etapas_em_conflito).toEqual(["102"]);
+    expect(resultado.linhas_de_resposta_gravadas).toBe(0);
+
+    // A resposta do participante esta la, e NADA foi importado.
+    expect(depois).toEqual([
+      { stage_id: 102, origem: "app", marca: "DIEGO GANHOU A CORRIDA", submissao: null },
+    ]);
+    expect(submissaoNoBanco("corrida-diego")).toBeNull();
+  });
+
+  // =========================================================================
+  it("12. CONCORRENCIA, sentido B: importacao gravando e participante chegando no meio -> o participante ESPERA e a resposta dele NAO e perdida", async () => {
+    const plano = planoDe(
+      entradaBase([
+        submissao({
+          submissao_id: "corrida-elisa",
+          email: "elisa@corrida024.test",
+          respostas: respostasCompletas("IMPORTACAO GANHOU A CORRIDA"),
+        }),
+      ]),
+    );
+    expect(respostasDe(P.elisa)).toEqual([]);
+
+    // Sessao 1: a importacao grava o lote e SEGURA a transacao aberta.
+    const importacao = sqlConcorrente(`
+      begin;
+      ${chamadaSql(plano)};
+      select pg_sleep(2.5);
+      commit;
+    `);
+    // Sessao 2: o participante grava a etapa 103 NO MEIO da importacao.
+    await espera(500);
+    const participante = sqlConcorrente(escritaDoAplicativo(P.elisa, 103, "ELISA CHEGOU DEPOIS"));
+
+    const [rImp, rPart] = await Promise.all([importacao, participante]);
+    const depois = respostasDe(P.elisa);
+    mostrar("CONCORRENCIA sentido B", {
+      importacao: { ms: rImp.ms, erro: rImp.erro, saida: rImp.saida.slice(0, 120) },
+      participante: { ms: rPart.ms, erro: rPart.erro },
+      respostas: depois,
+    });
+
+    // O PARTICIPANTE ESPEROU, e nao levou erro: a resposta dele entrou depois.
+    expect(rImp.erro).toBe("");
+    expect(rPart.erro).toBe("");
+    expect(rPart.ms).toBeGreaterThan(1000);
+
+    // A importacao entrou INTEIRA (5 etapas) e a resposta do participante NAO
+    // foi perdida: a etapa 103 e dele, e volta a ser 'app'. Nenhuma escrita
+    // perdida nos dois sentidos -- e o que serializacao quer dizer.
+    expect(depois).toHaveLength(5);
+    expect(depois.find((l) => l.stage_id === 103)).toEqual({
+      stage_id: 103,
+      origem: "app",
+      marca: "ELISA CHEGOU DEPOIS",
+      submissao: null,
+    });
+    expect(depois.find((l) => l.stage_id === 101)?.origem).toBe("externo");
+    expect(depois.find((l) => l.stage_id === 101)?.marca).toBe("IMPORTACAO GANHOU A CORRIDA");
+
+    // E a reimportacao da MESMA submissao agora e recusada, porque uma das
+    // linhas deixou de ser dela.
+    const { resultado } = aplicar(
+      entradaBase([
+        submissao({
+          submissao_id: "corrida-elisa",
+          email: "elisa@corrida024.test",
+          respostas: respostasCompletas("NAO DEVE SOBRESCREVER ELISA"),
+        }),
+      ]),
+    );
+    mostrar("DEPOIS: reimportacao da mesma submissao", resultado);
+    expect(resultado.ok).toBe(false);
+    expect(resultado.recusadas_na_revalidacao[0].codigo).toBe("resposta_do_aplicativo");
+    expect(respostasDe(P.elisa).find((l) => l.stage_id === 103)?.marca).toBe("ELISA CHEGOU DEPOIS");
+  });
+
+  // =========================================================================
+  it("13. SEM DEADLOCK: lote de varios participantes contra escritas simultaneas dos mesmos participantes", async () => {
+    // Travar mais de um participante por transacao abre a porta para abraco
+    // mortal. O desenho diz que nao pode acontecer (a importacao pega as chaves
+    // em ORDEM CRESCENTE de id; cada transacao do aplicativo pega UMA chave --
+    // conjunto ordenado contra detentor de recurso unico nao fecha ciclo). Isto
+    // nao e um teste de "deu certo uma vez": e a verificacao do invariante que
+    // importa, nos dois desfechos possiveis da corrida.
+    const alvos = [P.gustavo, P.helena, P.igor, P.julia];
+    const emails = [
+      "gustavo@corrida024.test",
+      "helena@corrida024.test",
+      "igor@corrida024.test",
+      "julia@corrida024.test",
+    ];
+    const plano = planoDe(
+      entradaBase(
+        emails.map((email, i) =>
+          submissao({
+            submissao_id: `enxame-${i}`,
+            email,
+            respostas: respostasCompletas(`ENXAME ${i}`),
+          }),
+        ),
+      ),
+    );
+    const antes = alvos.map(respostasDe);
+    mostrar("ANTES do enxame: quantas respostas cada um tem", antes.map((r) => r.length));
+
+    // Uma importacao do lote inteiro e, ao mesmo tempo, uma escrita do
+    // aplicativo para CADA participante do lote -- na ordem INVERSA da que a
+    // importacao usa, que e o arranjo que mais convida ao abraco mortal.
+    const tarefas: Promise<Concorrente>[] = [sqlConcorrente(chamadaSql(plano))];
+    for (let i = alvos.length - 1; i >= 0; i--) {
+      tarefas.push(
+        sqlConcorrente(`
+          begin;
+          ${escritaDoAplicativo(alvos[i], 105, `ENXAME APP ${i}`)};
+          select pg_sleep(0.2);
+          commit;
+        `),
+      );
+    }
+    const r = await Promise.all(tarefas);
+    const depois = alvos.map(respostasDe);
+    mostrar("DEPOIS do enxame", {
+      sessoes: r.map((x, i) => ({ sessao: i === 0 ? "importacao" : `app-${i - 1}`, ms: x.ms, erro: x.erro })),
+      importacao: r[0].saida.slice(0, 160),
+      etapa105: depois.map((linhas) => linhas.find((l) => l.stage_id === 105) ?? null),
+    });
+
+    // INVARIANTE 1: nenhuma sessao morreu, e NENHUM abraco mortal.
+    for (const x of r) {
+      expect(x.erro).not.toMatch(/deadlock/i);
+      expect(x.erro).toBe("");
+      expect(x.codigo).toBe(0);
+    }
+
+    // INVARIANTE 2: toda escrita do aplicativo que reportou sucesso ESTA LA, com
+    // a procedencia dela. Nenhuma resposta de participante perdida, em nenhum
+    // dos dois desfechos possiveis do lote.
+    depois.forEach((linhas, i) => {
+      const etapa = linhas.find((l) => l.stage_id === 105);
+      expect(etapa).toBeDefined();
+      expect(etapa?.origem).toBe("app");
+      expect(etapa?.marca).toBe(`ENXAME APP ${i}`);
+    });
+
+    // INVARIANTE 3: o lote e tudo-ou-nada. Ou entrou inteiro (4 submissoes), ou
+    // nenhuma submissao do enxame existe.
+    const gravadas = Number(
+      um(`select count(*) from external_submissions
+           where event_id = '${EVENTO}' and submissao_id like 'enxame-%'`),
+    );
+    mostrar("DEPOIS do enxame: submissoes do enxame gravadas", gravadas);
+    expect([0, alvos.length]).toContain(gravadas);
   });
 });

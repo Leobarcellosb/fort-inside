@@ -132,6 +132,19 @@ export const DEFINICOES_DE_ERRO = {
    * este código é o que sobra quando a corrida acontece no meio.
    */
   IMPORT_REVALIDATION_REFUSED: { status: 400, error: "A gravação foi recusada na revalidação do banco" },
+  /**
+   * CONFERIDO e NÃO PERMITIDO: já existe DOCUMENTO gerado, revisado ou entregue a
+   * partir destas respostas. Desfazer deixou de ser ação simples -- os derivados
+   * têm de ser invalidados e o acesso indevido suspenso antes, por procedimento
+   * excepcional. Não é "não autorizado" genérico: é "este caminho não serve mais".
+   */
+  IMPORT_REVOKE_BLOCKED: { status: 400, error: "Há documento gerado a partir destas respostas" },
+  /**
+   * NÃO DEU PARA VERIFICAR se há documento ou pontuação derivada. Sem isso não se
+   * pode afirmar se a decisão é reversível por ação simples -- e afirmar que é,
+   * sem ter conferido, é a promessa que não se pode cumprir depois.
+   */
+  IMPORT_DERIVATIVES_UNVERIFIABLE: { status: 503, error: "Não foi possível verificar os documentos derivados" },
 
   // --- Guia de Preparação do Facilitador (/api/marco-zero/guia-facilitador)
   //
@@ -221,6 +234,13 @@ export interface DetalhesDeErro {
   respostas_existentes?: number;
   /** Qual ato o operador tentou: reconciliar ou revogar. */
   ato?: "reconciliar" | "revogar";
+  /**
+   * Em qual dos três estados do contrato de reversibilidade a decisão cai.
+   * `correcao_simples` desfaz com um ato; `operacao_controlada` desfaz removendo
+   * registro e preservando histórico; `procedimento_excepcional` não desfaz por
+   * ação simples, porque há derivado gerado ou entregue.
+   */
+  reversibilidade?: "correcao_simples" | "operacao_controlada" | "procedimento_excepcional";
   /** O código com que a revalidação do banco (migration 024) recusou a gravação. */
   revalidacao?:
     | "resposta_do_aplicativo"

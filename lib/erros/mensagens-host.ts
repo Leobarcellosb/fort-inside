@@ -211,6 +211,10 @@ const MENSAGENS: Record<CodigoDeErro, Mensagem> = {
       "A submissão volta para a mesa, com o payload inteiro. Recarregue a mesa, leia a ficha nova e decida a partir dela."
     );
   },
+  IMPORT_REVOKE_BLOCKED:
+    "Esta reconciliação NÃO é desfeita por aqui, porque já existe documento gerado a partir destas respostas -- e pode ter sido revisado, entregue ou compartilhado por link. Remover as respostas agora deixaria o documento de pé, falando sobre a pessoa errada, e nada foi alterado. O caminho é outro, e é excepcional: invalidar o documento derivado, suspender o acesso indevido (inclusive o link público, se houver) e só então corrigir a identidade, com registro de quem autorizou. Fale com a equipe técnica antes de qualquer passo -- o registro da submissão continua preservado e nada se perde nesse meio-tempo.",
+  IMPORT_DERIVATIVES_UNVERIFIABLE:
+    "Não foi possível verificar se já existe documento ou pontuação gerados a partir destas respostas, então nada foi alterado. Isso NÃO quer dizer que existe nem que não existe: quer dizer que não deu para afirmar, e sem essa resposta não se pode dizer se a decisão seria reversível. Aguarde alguns instantes e tente de novo; se persistir, avise a equipe técnica.",
   IMPORT_ACT_NOT_APPLIED:
     "Sua decisão FOI registrada no histórico, com seu nome e sua justificativa, e NÃO foi efetivada: nenhuma resposta foi gravada e a submissão continua sem participante. O histórico guarda o ato sem o efeito, que é o registro honesto do que aconteceu. Aguarde alguns instantes e confirme outra vez a partir da mesa de decisões; o histórico vai mostrar as duas tentativas, e é assim que se vê o que de fato pegou.",
 

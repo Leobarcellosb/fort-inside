@@ -22,6 +22,7 @@ import {
 import { EventQRDialog } from "@/components/features/admin/EventQRDialog";
 import { SituacaoPrognosticos } from "@/components/features/admin/SituacaoPrognosticos";
 import { GuiaDoFacilitadorCard } from "@/components/features/marco-zero/GuiaDoFacilitadorCard";
+import { CadernoDeConducaoCard } from "@/components/features/marco-zero/CadernoDeConducaoCard";
 import type { EstadoDaFila } from "@/components/features/admin/SituacaoPrognosticos";
 import {
   MENSAGEM_FILA_INDISPONIVEL,
@@ -370,6 +371,16 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
           recusa o guia quando o evento tem DNA Coletivo disponibilizado. */}
       <div className="mb-8">
         <GuiaDoFacilitadorCard eventId={event.id} />
+      </div>
+
+      {/* O CADERNO DE CONDUCAO vem ANTES do Guia na ordem de necessidade e
+          depois dele aqui por um motivo so: o Guia ja estava montado neste
+          ponto. Ele e o terceiro artefato e nao recebe `eventId` -- nao e por
+          evento, nao le banco e nao depende de resposta alguma. E o unico dos
+          tres que esta sempre disponivel, inclusive se nenhum participante
+          responder o questionario antes do dia. */}
+      <div className="mb-8">
+        <CadernoDeConducaoCard />
       </div>
 
       {mostrarPrognosticos && (

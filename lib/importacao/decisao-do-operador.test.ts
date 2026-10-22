@@ -7,6 +7,12 @@
 import { describe, expect, it } from "vitest";
 import {
   CODIGO_DA_RECUSA_DA_DECISAO,
+  SEPARADOR_DO_INVENTARIO,
+  SEM_DERIVADOS,
+  classificarReversibilidade,
+  justificativaComInventario,
+  montarFichaDeRevogacao,
+  recusaDaRevalidacao,
   acharFichaDeReconciliacao,
   acharFichaDeRevogacao,
   conferirFicha,
@@ -315,16 +321,24 @@ describe("a mesa separa o que se decide do que se revoga, e cada recusa tem o se
     bloqueio: null,
   });
 
-  const mesa = montarMesaDeDecisao(
-    ctx,
-    MANIFESTO,
-    [pendente, ativa],
-    [
-      { external_submission_id: ativa.id, origem: "externo" },
-      { external_submission_id: ativa.id, origem: "app" },
-    ],
-    OPERADOR,
-  );
+  const registros = [
+    {
+      external_submission_id: ativa.id,
+      origem: "externo",
+      stage_id: 201,
+      participant_id: OUTRO,
+      submitted_at: "2026-10-22T12:00:00Z",
+    },
+    {
+      external_submission_id: ativa.id,
+      origem: "app",
+      stage_id: 202,
+      participant_id: OUTRO,
+      submitted_at: "2026-10-22T12:01:00Z",
+    },
+  ];
+
+  const mesa = montarMesaDeDecisao(ctx, MANIFESTO, [pendente, ativa], registros, OPERADOR, new Map());
 
   it("a pendente entra em a_decidir com um candidato por participante; a ativa entra em revogaveis", () => {
     expect(mesa.a_decidir.map((g) => g.submissao.submissao_id)).toEqual(["resp-001"]);
@@ -333,10 +347,24 @@ describe("a mesa separa o que se decide do que se revoga, e cada recusa tem o se
     expect(mesa.por_estado).toEqual({ pendente: 1, importavel: 1 });
   });
 
-  it("a ficha da revogacao conta o que SAI, e avisa sobre a linha de outra origem", () => {
+  it("a ficha da revogacao INVENTARIA o que sai, e avisa sobre a linha de outra origem", () => {
     const r = mesa.revogaveis[0];
     expect(r.respostas_canonicas_a_remover).toBe(2);
     expect(r.respostas_de_outra_origem).toBe(1);
+    // INVENTARIO, nao contagem: de quem era cada registro, de que origem e de quando.
+    expect(r.registros).toEqual([
+      { stage_id: 201, participante: OUTRO, origem: "externo", submetida_em: "2026-10-22T12:00:00Z" },
+      { stage_id: 202, participante: OUTRO, origem: "app", submetida_em: "2026-10-22T12:01:00Z" },
+    ]);
+    // E o inventario viaja para o livro-razao junto da justificativa do operador,
+    // separado do que o operador escreveu.
+    const texto = justificativaComInventario("era outra pessoa, homonimo da turma", r);
+    expect(texto).toMatch(/^era outra pessoa, homonimo da turma/);
+    expect(texto).toContain(SEPARADOR_DO_INVENTARIO);
+    expect(texto).toContain("etapa 201");
+    expect(texto).toContain("etapa 202");
+    expect(texto).toContain("2 registro(s)");
+    expect(texto).toContain("reversibilidade operacao_controlada");
     expect(r.avisos.join(" ")).toMatch(/REMOVE 2 resposta/);
     expect(r.avisos.join(" ")).toMatch(/ATENCAO/);
     expect(r.avisos.join(" ")).toMatch(/historico NAO e reescrito/);
@@ -410,5 +438,140 @@ describe("a tabela de recusas do plano cobre todas as recusas, e nenhuma vira 'n
     // Nenhuma recusa de decisao manda instalar atualizacao de banco: "o recurso
     // nao esta instalado" e OUTRO fato, e so a leitura do banco o produz.
     expect(Object.values(CODIGO_DA_RECUSA_DA_DECISAO)).not.toContain("IMPORT_SCHEMA_MISSING");
+  });
+});
+
+// =========================================================================
+describe("o contrato de reversibilidade tem TRES estados, e eles nao se confundem", () => {
+  const COM_DOCUMENTO = { ...SEM_DERIVADOS, documento: true, gerado: true, entregue: true, link_publico: true };
+  const COM_PONTUACAO = { ...SEM_DERIVADOS, pontuacao: true };
+
+  it("ESTADO 1: nada gravado e nada derivado -> correcao simples", () => {
+    const r = classificarReversibilidade(0, SEM_DERIVADOS, "revogar");
+    expect(r.estado).toBe("correcao_simples");
+    expect(r.efeitos_nao_reversiveis).toEqual([]);
+    expect(r.evidencia_preservada).toBe(true);
+  });
+
+  it("ESTADO 2: ha registro e nenhum documento -> operacao controlada, com o numero na frase", () => {
+    const r = classificarReversibilidade(5, SEM_DERIVADOS, "revogar");
+    expect(r.estado).toBe("operacao_controlada");
+    expect(r.texto).toMatch(/REMOVE 5 registro/);
+    expect(r.texto).toMatch(/preserva o historico/);
+    expect(r.texto).toMatch(/de quem era cada registro/);
+    expect(r.efeitos_nao_reversiveis).toEqual([]);
+
+    // Pontuacao calculada nao muda o ESTADO, mas e efeito que nao volta sozinho.
+    const comScore = classificarReversibilidade(5, COM_PONTUACAO, "revogar");
+    expect(comScore.estado).toBe("operacao_controlada");
+    expect(comScore.efeitos_nao_reversiveis.join(" ")).toMatch(/OBSOLETA/);
+  });
+
+  it("ESTADO 3: documento gerado -> procedimento excepcional, e o link publico e nomeado", () => {
+    const r = classificarReversibilidade(5, COM_DOCUMENTO, "revogar");
+    expect(r.estado).toBe("procedimento_excepcional");
+    expect(r.texto).toMatch(/BLOQUEADO/);
+    expect(r.efeitos_nao_reversiveis.join(" ")).toMatch(/documento ENTREGUE/);
+    expect(r.efeitos_nao_reversiveis.join(" ")).toMatch(/link publico continua funcionando/);
+    expect(r.evidencia_preservada).toBe(true);
+
+    // E o texto de RECONCILIAR avisa PREVIAMENTE, com outras palavras: ele nao
+    // fala de bloqueio, fala do efeito que a confirmacao vai produzir.
+    const aoReconciliar = classificarReversibilidade(5, COM_DOCUMENTO, "reconciliar");
+    expect(aoReconciliar.estado).toBe("procedimento_excepcional");
+    expect(aoReconciliar.texto).toMatch(/LEIA ANTES DE CONFIRMAR/);
+    expect(aoReconciliar.texto).not.toBe(r.texto);
+  });
+
+  it("a ficha de revogacao do ESTADO 3 NAO e permitida, e a recusa tem codigo proprio", () => {
+    const linha = submissao({ estado: "importavel", participant_id: PART, bloqueio: null });
+    const registros = [
+      {
+        external_submission_id: linha.id,
+        origem: "externo",
+        stage_id: 201,
+        participant_id: PART,
+        submitted_at: null,
+      },
+    ];
+    const comDoc = montarFichaDeRevogacao(linha, PARTICIPANTE, registros, COM_DOCUMENTO);
+    expect(comDoc.permitida).toBe(false);
+    expect(comDoc.impedimento?.codigo).toBe("derivado_ja_gerado");
+    expect(comDoc.reversibilidade.estado).toBe("procedimento_excepcional");
+
+    const mesaComDoc = montarMesaDeDecisao(
+      contexto([{ id: PART, email: PARTICIPANTE.email, full_name: PARTICIPANTE.nome, respostas_existentes: 1 }]),
+      MANIFESTO,
+      [linha],
+      registros,
+      OPERADOR,
+      new Map([[PART, COM_DOCUMENTO]]),
+    );
+    const bloqueada = acharFichaDeRevogacao(mesaComDoc, [linha], linha.id);
+    expect(bloqueada.ok).toBe(false);
+    if (!bloqueada.ok) {
+      expect(bloqueada.codigo).toBe("IMPORT_REVOKE_BLOCKED");
+      expect(bloqueada.detalhes?.reversibilidade).toBe("procedimento_excepcional");
+    }
+
+    // CONTROLE POSITIVO: a MESMA submissao, sem documento derivado, e revogavel.
+    const mesaSemDoc = montarMesaDeDecisao(
+      contexto([{ id: PART, email: PARTICIPANTE.email, full_name: PARTICIPANTE.nome, respostas_existentes: 1 }]),
+      MANIFESTO,
+      [linha],
+      registros,
+      OPERADOR,
+      new Map(),
+    );
+    const permitida = acharFichaDeRevogacao(mesaSemDoc, [linha], linha.id);
+    expect(permitida.ok).toBe(true);
+    if (permitida.ok) expect(permitida.ficha.reversibilidade.estado).toBe("operacao_controlada");
+  });
+
+  it("a ficha de reconciliacao classifica ANTES do clique, por submissao", () => {
+    const ctx = contexto([
+      { id: PART, email: PARTICIPANTE.email, full_name: PARTICIPANTE.nome, respostas_existentes: 0 },
+    ]);
+    // Grava uma etapa: operacao controlada.
+    const normal = montarFichaDeReconciliacao(ctx, MANIFESTO, submissao(), PARTICIPANTE, OPERADOR, SEM_DERIVADOS);
+    expect(normal.reversibilidade?.estado).toBe("operacao_controlada");
+
+    // O mesmo ato, para quem ja tem documento: procedimento excepcional, avisado
+    // PREVIAMENTE e nesta submissao -- nao num aviso geral da tela.
+    const comDoc = montarFichaDeReconciliacao(ctx, MANIFESTO, submissao(), PARTICIPANTE, OPERADOR, COM_DOCUMENTO);
+    expect(comDoc.reversibilidade?.estado).toBe("procedimento_excepcional");
+    expect(comDoc.reversibilidade?.texto).toMatch(/LEIA ANTES DE CONFIRMAR/);
+
+    // Quando nao da para afirmar o que seria gravado, NAO se classifica
+    // reversibilidade: nao se promete nem se nega o que nao foi conferido.
+    const semPlano = montarFichaDeReconciliacao(
+      ctx,
+      MANIFESTO,
+      submissao({ questionario_impressao: "b".repeat(64) }),
+      PARTICIPANTE,
+      OPERADOR,
+      SEM_DERIVADOS,
+    );
+    expect(semPlano.reversibilidade).toBeNull();
+  });
+});
+
+// =========================================================================
+describe("a recusa da revalidacao do banco (024) e lida com nome", () => {
+  it("cada codigo conhecido vira IMPORT_REVALIDATION_REFUSED, e o desconhecido NAO", () => {
+    const resumo = (codigo: string) => ({
+      recusadas_na_revalidacao: [{ submissao_id: "resp-001", codigo, estado: "conflito" }],
+    });
+    const app = recusaDaRevalidacao(resumo("resposta_do_aplicativo"), "resp-001");
+    expect(app?.codigo).toBe("IMPORT_REVALIDATION_REFUSED");
+    expect(app?.detalhes.revalidacao).toBe("resposta_do_aplicativo");
+
+    const desconhecido = recusaDaRevalidacao(resumo("algo_que_ninguem_previu"), "resp-001");
+    expect(desconhecido?.codigo).toBe("IMPORT_ACT_NOT_APPLIED");
+    expect(desconhecido?.detalhes.revalidacao).toBeUndefined();
+
+    // CONTROLE POSITIVO: sem recusa, nao se inventa recusa.
+    expect(recusaDaRevalidacao({ recusadas_na_revalidacao: [] }, "resp-001")).toBeNull();
+    expect(recusaDaRevalidacao(resumo("resposta_do_aplicativo"), "resp-002")).toBeNull();
   });
 });

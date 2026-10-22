@@ -475,6 +475,8 @@ describe("critério 7 -- cada erro tem controle positivo ao lado", () => {
       IMPORT_TARGET_OCCUPIED: "recusado",
       IMPORT_ACT_NOT_APPLIED: "bloqueado",
       IMPORT_REVALIDATION_REFUSED: "recusado",
+      IMPORT_REVOKE_BLOCKED: "recusado",
+      IMPORT_DERIVATIVES_UNVERIFIABLE: "bloqueado",
       // Guia de Preparação do Facilitador: duas recusas conferidas e três
       // indisponibilidades. "Não deu para saber se há DNA disponibilizado"
       // bloqueia, e não é recusa.

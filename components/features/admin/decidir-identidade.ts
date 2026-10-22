@@ -294,5 +294,7 @@ export const TITULO_DO_CODIGO: Partial<Record<CodigoDeErro, string>> = {
   IMPORT_DECISION_STALE: "A ficha na tela não é mais a atual — nada foi alterado",
   IMPORT_TARGET_OCCUPIED: "O participante escolhido já tem resposta — nada foi alterado",
   IMPORT_REVALIDATION_REFUSED: "O banco recusou na hora de gravar — nada foi gravado",
+  IMPORT_REVOKE_BLOCKED: "Há documento gerado a partir destas respostas — nada foi alterado",
+  IMPORT_DERIVATIVES_UNVERIFIABLE: "Não foi possível verificar os derivados — nada foi alterado",
   IMPORT_ACT_NOT_APPLIED: "A decisão foi registrada e não foi efetivada",
 };

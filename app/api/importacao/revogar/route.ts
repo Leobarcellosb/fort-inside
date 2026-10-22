@@ -6,6 +6,7 @@ import type { ClienteDeLeitura } from "@/lib/importacao/borda";
 import {
   acharFichaDeRevogacao,
   conferirFicha,
+  justificativaComInventario,
   lerPedidoDeRevogacao,
   prepararMesaDeDecisao,
   revogarReconciliacao,
@@ -85,10 +86,14 @@ async function revogar(req: NextRequest) {
     return erroHttp(conferida.codigo, { causa: conferida.motivo });
   }
 
+  // A justificativa vai para o livro-razao COM O INVENTARIO dos registros
+  // removidos anexado pelo sistema: a reversao nao apenas conta quantas linhas
+  // sairam, ela demonstra de quem era cada uma. O texto do operador fica
+  // separado do que o sistema escreveu.
   const revogada = await revogarReconciliacao(supabase as unknown as ClienteDeEscrita, {
     submission_id: pedido.submission_id,
     operador,
-    justificativa: pedido.justificativa,
+    justificativa: justificativaComInventario(pedido.justificativa, ficha),
   });
   if (!revogada.ok) {
     return erroHttp(revogada.codigo, { causa: revogada.motivo, detalhes: { ato: "revogar" } });

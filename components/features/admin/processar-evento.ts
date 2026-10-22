@@ -114,6 +114,8 @@ const CLASSE_DO_CODIGO: Record<CodigoDeErro, "recusado" | "bloqueado" | "fila_in
   IMPORT_TARGET_OCCUPIED: "recusado",
   IMPORT_ACT_NOT_APPLIED: "bloqueado",
   IMPORT_REVALIDATION_REFUSED: "recusado",
+  IMPORT_REVOKE_BLOCKED: "recusado",
+  IMPORT_DERIVATIVES_UNVERIFIABLE: "bloqueado",
   // A família do Guia de Preparação do Facilitador também não é desta rota (ela
   // é de /api/marco-zero/guia-facilitador). Está aqui porque o vocabulário é
   // fechado, e cada uma cai na classe do fato que é.

@@ -1,43 +1,51 @@
 # Leia ao acordar — 23 de outubro
 
-O evento é **sábado 24**. A coleta pré-evento deveria começar **hoje**.
+Duas coisas têm prazo **hoje ou amanhã**, e nenhuma das duas é código.
 
-## O app está no ar e funciona
+---
 
-**https://fort-inside.vercel.app/join/MARCOZERO**
+## 1. A gráfica fecha e falta conteúdo para dois materiais
 
-| | |
-|---|---|
-| Banco | `marco-zero`, 22 migrations, 29 tabelas, 52 perguntas, 36 policies |
-| Evento | `MARCOZERO`, assíncrono, coleta até sexta 23h59 (Brasília) |
-| RLS | verificada contra produção, com controle positivo |
-| Código | `c35e327` no GitHub, deploy READY |
-| Testes | 900 passando, build exit 0 |
+O roteiro oficial do evento tem uma lista chamada **"Produzir até sexta, 23/10"**. Dois
+itens dela **não têm conteúdo escrito em lugar nenhum**:
 
-## Uma coisa trava tudo: o e-mail
+| Material | O que falta | De quem |
+|---|---|---|
+| **50 Murais do Futuro** impressos | as instruções e o conteúdo da folha | Carlos (envia ao Yuri e à Malu) |
+| **Pacto** em tamanho grande para assinatura | o texto do pacto e o formato da assinatura | Yuri e Carlos |
 
-O participante entra digitando um **código de 6 dígitos** que chega por e-mail.
-Hoje esse código **não chega**, e por um motivo só.
+Não é possível imprimir 50 folhas de um material cujo conteúdo ninguém escreveu. Se
+isso não sair hoje, sábado acontece sem o Mural — e o Mural é a entrada do
+direcionamento individual prometido para segunda.
 
-O Supabase manda **2 e-mails por hora** no plano free, e o campo é **desabilitado** —
-não dá pra aumentar. Com SMTP próprio, sobe para **30/hora**, que cobre os 50 com folga.
+Eu **não escrevi** esses conteúdos de propósito: formular o Mural e o pacto é
+planejamento pedagógico, não é meu. O que eu fiz foi deixar a falta nomeada, com
+responsável, dentro do Caderno de Condução.
 
-Mas SMTP próprio precisa de um remetente que entregue de verdade. E tem uma
-consequência a mais: **só com SMTP próprio dá pra editar o template do e-mail**.
-Sem ele, o Supabase manda o template padrão, que envia **link em vez de código** —
-foi o que você recebeu no teste.
+## 2. O Forms pré-evento deveria sair hoje, e o e-mail continua travado
 
-Ou seja, os dois sintomas (não chega código, chega link) têm a mesma causa.
+O próprio roteiro oficial diz: **"Quinta 22 ou sexta 23: Forms pré-evento, enviado entre
+48h e 24h antes, respostas até sexta — Carlos e Léo montam, Malu valida e envia."**
 
-## Os dois caminhos, decididos pelo CTO
+O app está no ar e funciona: **https://fort-inside.vercel.app/join/MARCOZERO**
 
-**Plano A — verificar um domínio seu no Resend.**
-Resend → Domains → Add domain → copiar os registros DNS → colar no provedor do
-domínio → aguardar confirmação. Depois disso eu termino a configuração em minutos.
+O que não funciona é a entrega do código de acesso por e-mail, e a causa é uma só, já
+descrita abaixo. Sem ela, ninguém entra.
 
-**Plano B — SMTP de conta institucional (Google Workspace).**
-Precisa de verificação em duas etapas e uma **senha de aplicativo**. O CTO foi
-explícito: conta institucional autorizada, **não** conta pessoal improvisada.
+---
+
+## O bloqueio do e-mail, inalterado
+
+O Supabase manda **2 e-mails por hora** no plano free, e o campo é **desabilitado**. Com
+SMTP próprio sobe para **30/hora**, que cobre os 50 com folga. E só com SMTP próprio dá
+para **editar o template** — sem ele o Supabase manda link em vez de código, que foi o
+que você recebeu no teste. Os dois sintomas têm a mesma causa.
+
+**Plano A — verificar um domínio seu no Resend.** Resend → Domains → Add domain → copiar
+os registros DNS → colar no provedor do domínio. Depois disso eu termino em minutos.
+
+**Plano B — SMTP de conta institucional** (Google Workspace, com senha de aplicativo).
+O CTO foi explícito: conta institucional autorizada, **não** conta pessoal improvisada.
 
 | Campo | Valor |
 |---|---|
@@ -45,45 +53,46 @@ explícito: conta institucional autorizada, **não** conta pessoal improvisada.
 | Porta | 465 (SSL) ou 587 (STARTTLS) |
 | Usuário | o e-mail da conta autorizada |
 | Senha | **senha de aplicativo**, não a senha normal |
-| Remetente | a própria conta |
 
-**NO-GO do CTO:** se nenhum funcionar, **não** trocar o código por e-mail digitado,
-link compartilhável ou autenticação simulada. Isso é decisão dele, não minha.
+**NO-GO do CTO:** se nenhum funcionar, **não** trocar o código por e-mail digitado, link
+compartilhável ou autenticação simulada.
 
-## O que eu quase fiz e desfiz
+---
 
-Cheguei a ligar o SMTP com uma conta pessoal do Gmail e preencher quase tudo.
-Desfiz quando li a regra do CTO. **O SMTP está desligado e nada foi salvo** — porque
-SMTP ligado com senha vazia é pior que não configurar: o Supabase para de usar o
-envio nativo e passa a falhar. Trocaria um limite baixo por zero.
+## O que ficou pronto esta noite
 
-## O que você achou e eu não tinha visto
+**Caderno de Condução** — o roteiro operacional do sábado, que não existia. Montado do
+roteiro oficial do site, com **proveniência item por item**: 44 itens `[OFICIAL]` com a
+fonte ao lado, 21 `[OPERAÇÃO]` (conferência de material, guarda, digitalização, o que
+fazer sem internet) e **18 `[FALTA]`** nomeadas com responsável. Imprime, funciona sem
+internet, e tem versão e hash para se saber depois qual versão estava na mão de quem
+conduziu. O Yuri consegue conduzir o dia inteiro com **zero respostas digitais**.
 
-Três URLs apontando para `localhost`: Site URL do Supabase, Redirect URLs (vazio) e
-`NEXT_PUBLIC_APP_URL` na Vercel. Já corrigidas.
+As 18 lacunas são a lista de cobrança antes de sábado. As duas da gráfica estão nela.
 
-A pior era o Site URL: ele **também alimenta os templates de e-mail**. Cada um dos 50
-receberia um link que só funcionaria na máquina de quem configurou — e ninguém
-descobriria antes do primeiro clicar.
+**Guia de Preparação do Facilitador** — agora com caminho para pedir (rota e botão no
+painel); antes o gerador existia e ninguém conseguia produzir o documento.
 
-Passei o dia caçando essa classe de defeito dentro do código, com teste e mutação.
-Estava num painel, do lado de fora, onde eu não olhei.
+**Importação de respostas de fora** — a tela de resolver pendências e conflitos de
+identidade, que antes exigia SQL na mão. E uma correção de integridade: a importação
+decidia fora da transação e gravava dentro dela, então se alguém respondesse pelo app
+nesse intervalo, **a resposta dele era sobrescrita em silêncio**. Agora o banco recusa.
 
-## Se o e-mail não sair a tempo
+**Dois defeitos que eu achei medindo, não lendo relatório:**
+- o gate de 30 respostas aprovava publicação com até 20 participantes contados
+  diferente pelo banco e pelo gerador, sem ruído nenhum;
+- o piso de privacidade e a supressão de células pequenas são **a mesma constante** hoje,
+  fazendo dois trabalhos diferentes. Separar é decisão de metodologia, não minha.
 
-O sábado acontece de qualquer jeito: é cartolina, matriz de SWOT e Mural em papel.
-O que se perde é o formulário pré-evento e, com ele, a base do direcionamento
-individual prometido para segunda.
-
-O CTO foi direto sobre isso: a promessa de segunda **só pode ser confirmada** quando
-importação, Mural, revisão e distribuição tiverem procedimento exercitável. Ajustar a
-expectativa dos participantes **antes** de assumir o compromisso é decisão sua.
+---
 
 ## Duas dívidas que eu declaro
 
-1. **Privilégio em produção verificado por amostragem minha, não pela suíte.** A suíte
-   escreve no banco, e a guarda de isolamento recusa alvo compartilhado — corretamente.
-   O schema está conferido; o privilégio está verificado por amostra.
+1. **Nenhuma tela foi vista em navegador.** Importação, decisões de identidade, Caderno e
+   Guia estão cobertos por teste de lógica contra as rotas de verdade e por Postgres real,
+   mas layout e interação precisam de olho humano antes de sábado. Vale abrir o
+   `.html` do Caderno e dar Ctrl+P uma vez.
 
-2. **A jornada completa não foi feita em produção.** Não consigo receber o código de
-   entrada, que é justamente o que está bloqueado.
+2. **O DNA Coletivo não sai para este evento.** Faltam três peças: não há código que o
+   gere a partir do banco, não há caminho para publicá-lo, e não há onde o banco guarde
+   o estado de publicação. O Guia é o que existe, e ele é suficiente para conduzir.

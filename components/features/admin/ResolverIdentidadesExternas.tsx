@@ -46,6 +46,7 @@ import type {
   FichaDeReconciliacao,
   FichaDeRevogacao,
   MesaDeDecisao,
+  Reversibilidade as ReversibilidadeDoContrato,
 } from "@/lib/importacao/decisao-do-operador";
 
 interface Props {
@@ -102,6 +103,47 @@ function Aviso({ falha }: { falha: Falha }) {
       <p className="text-sm font-medium text-foreground">{titulo}</p>
       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{falha.mensagem}</p>
       {acao && <p className="mt-2 text-xs font-medium text-foreground">{acao}</p>}
+    </div>
+  );
+}
+
+/**
+ * O CONTRATO DE REVERSIBILIDADE, mostrado PREVIAMENTE e por submissao.
+ *
+ * Nao e um aviso igual em toda a tela: um aviso que aparece sempre nao informa
+ * nada. Os tres estados tem textos, cores e consequencias diferentes, e o
+ * operador le o DESTA submissao antes de clicar nela.
+ */
+function Reversibilidade({ r }: { r: ReversibilidadeDoContrato }) {
+  const classe =
+    r.estado === "procedimento_excepcional"
+      ? "border-destructive/60 bg-destructive/10"
+      : r.estado === "operacao_controlada"
+        ? "border-amber-600/50 bg-amber-600/5"
+        : "border-emerald-600/40 bg-emerald-600/5";
+  const titulo =
+    r.estado === "procedimento_excepcional"
+      ? "Desfazer NÃO é ação simples aqui"
+      : r.estado === "operacao_controlada"
+        ? "Desfazer é possível, por operação controlada"
+        : "Desfazer é correção simples";
+  return (
+    <div className={`rounded border p-3 ${classe}`}>
+      <p className="text-xs font-medium text-foreground">{titulo}</p>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{r.texto}</p>
+      {r.efeitos_nao_reversiveis.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {r.efeitos_nao_reversiveis.map((e) => (
+            <li key={e} className="text-xs leading-relaxed text-destructive">
+              Não volta por ação simples: {e}.
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+        Em qualquer dos casos, o registro original da submissão é preservado: corrigir identidade nunca
+        apaga a evidência necessária para reconstruir o que aconteceu.
+      </p>
     </div>
   );
 }
@@ -168,6 +210,8 @@ function Ficha({ ficha }: { ficha: FichaDeReconciliacao }) {
           </ul>
         )}
       </div>
+
+      {ficha.reversibilidade && <Reversibilidade r={ficha.reversibilidade} />}
 
       {ficha.impedimento && (
         <p className="rounded border border-destructive/50 bg-destructive/10 p-3 text-xs leading-relaxed text-foreground">
@@ -469,6 +513,31 @@ export function ResolverIdentidadesExternas({ eventId }: Props) {
                       </li>
                     ))}
                   </ul>
+                </div>
+
+                <Reversibilidade r={ficha.reversibilidade} />
+
+                {/* O INVENTARIO: de quem era cada registro que sai. A reversao
+                    demonstra titularidade em vez de somar linhas, e este mesmo
+                    inventario vai para o histórico junto da sua justificativa. */}
+                <div>
+                  <p className="text-xs uppercase tracking-[0.1em] text-muted-foreground">
+                    Registros que seriam removidos
+                  </p>
+                  {ficha.registros.length === 0 ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Nenhum registro canônico nasceu desta submissão: não há o que remover.
+                    </p>
+                  ) : (
+                    <ul className="mt-1 space-y-0.5">
+                      {ficha.registros.map((r) => (
+                        <li key={r.stage_id} className="font-mono text-[11px] text-foreground">
+                          etapa {r.stage_id} · {ficha.participante.nome} · origem {r.origem}
+                          {r.submetida_em ? ` · ${r.submetida_em}` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">

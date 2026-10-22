@@ -263,11 +263,49 @@ export interface LinhaDeSubmissao {
   bloqueio: { motivo?: string } | null;
 }
 
-/** Quantas respostas canonicas nasceram de cada submissao, e de que origem. */
+/**
+ * Uma resposta canonica que nasceu de uma submissao externa, identificada: qual
+ * etapa, de quem, de que origem e de quando.
+ *
+ * Nao e contagem: e INVENTARIO. "Revogar remove 5" nao demonstra de quem era
+ * cada registro; a exigencia da revisao e que a reversao PROVE a titularidade, e
+ * prova-se nomeando os registros, nao somando-os.
+ */
 export interface RespostaDaSubmissao {
   external_submission_id: string;
   origem: string;
+  stage_id: number;
+  participant_id: string;
+  submitted_at: string | null;
 }
+
+/**
+ * O que JA FOI DERIVADO das respostas de um participante: documento e pontuacao.
+ *
+ * E isto que separa os tres estados do contrato de reversibilidade. Sem ler
+ * daqui, a tela so poderia prometer "e reversivel" -- e a promessa que nao se
+ * pode cumprir depois e pior que a recusa de agora.
+ */
+export interface DerivadosDoParticipante {
+  /** Existe linha de prognostico para esta pessoa. */
+  documento: boolean;
+  gerado: boolean;
+  revisado: boolean;
+  entregue: boolean;
+  /** Ha link publico de compartilhamento -- acesso que precisaria ser suspenso. */
+  link_publico: boolean;
+  /** Ha pontuacao calculada, que a remocao das respostas deixaria obsoleta. */
+  pontuacao: boolean;
+}
+
+export const SEM_DERIVADOS: DerivadosDoParticipante = {
+  documento: false,
+  gerado: false,
+  revisado: false,
+  entregue: false,
+  link_publico: false,
+  pontuacao: false,
+};
 
 export interface ClienteDeConsulta {
   from(tabela: string): {
@@ -286,6 +324,9 @@ export type FalhaDaLeitura = {
 export type LeituraDasSubmissoes =
   | { ok: true; submissoes: LinhaDeSubmissao[]; respostas: RespostaDaSubmissao[] }
   | ({ ok: false } & FalhaDaLeitura);
+
+const COLUNAS_DOS_DERIVADOS =
+  "participant_id, status, generated_at, reviewed_at, delivered_at, public_share_token, pdf_url";
 
 const COLUNAS_DA_SUBMISSAO =
   "id, submissao_id, formulario_id, formulario_nome, estado, email_coletado, email_verificado, nome_declarado, respostas_brutas, participant_id, identidade_via, quiz_version, questionario_impressao, bloqueio";
@@ -337,7 +378,9 @@ export async function lerSubmissoesDoEvento(
 
   let respostas: { data: unknown; error: unknown };
   try {
-    const sel = cliente.from("quiz_responses").select("external_submission_id, origem");
+    const sel = cliente
+      .from("quiz_responses")
+      .select("external_submission_id, origem, stage_id, participant_id, submitted_at");
     respostas = await ((sel as unknown as {
       in(c: string, v: readonly unknown[]): PromiseLike<{ data: unknown; error: unknown }>;
     }).in("external_submission_id", ids));
@@ -359,8 +402,80 @@ export async function lerSubmissoesDoEvento(
       .map((r) => ({
         external_submission_id: String(r.external_submission_id),
         origem: typeof r.origem === "string" ? r.origem : "",
+        stage_id: Number(r.stage_id ?? 0),
+        participant_id: typeof r.participant_id === "string" ? r.participant_id : "",
+        submitted_at: typeof r.submitted_at === "string" ? r.submitted_at : null,
       })),
   };
+}
+
+export type LeituraDosDerivados =
+  | { ok: true; derivados: Map<string, DerivadosDoParticipante> }
+  | { ok: false; codigo: Extract<CodigoDeErro, "IMPORT_DERIVATIVES_UNVERIFIABLE">; motivo: string };
+
+/**
+ * Le os DERIVADOS dos participantes do evento: prognosticos e pontuacoes.
+ *
+ * Falha NAO vira "nao ha derivado". Vira IMPORT_DERIVATIVES_UNVERIFIABLE, porque
+ * "nao consegui verificar" e "verifiquei e nao ha" sao dois fatos, e o segundo
+ * autorizaria a tela a prometer reversibilidade que ninguem conferiu.
+ */
+export async function lerDerivadosDosParticipantes(
+  cliente: ClienteDeConsulta,
+  participantIds: readonly string[],
+): Promise<LeituraDosDerivados> {
+  const derivados = new Map<string, DerivadosDoParticipante>();
+  if (participantIds.length === 0) return { ok: true, derivados };
+
+  const naoVerificado = (oQue: string, erro: unknown): LeituraDosDerivados => ({
+    ok: false,
+    codigo: "IMPORT_DERIVATIVES_UNVERIFIABLE",
+    motivo: `falha ao ler ${oQue}: ${(erro as ErroRpcCru | null)?.message ?? "sem detalhe"}`,
+  });
+
+  const emLote = (tabela: string, colunas: string) =>
+    (cliente.from(tabela).select(colunas) as unknown as {
+      in(c: string, v: readonly unknown[]): PromiseLike<{ data: unknown; error: unknown }>;
+    }).in("participant_id", participantIds);
+
+  let docs: { data: unknown; error: unknown };
+  try {
+    docs = await emLote("prognostics", COLUNAS_DOS_DERIVADOS);
+  } catch (e) {
+    return naoVerificado("os documentos derivados", { message: e instanceof Error ? e.message : String(e) });
+  }
+  if (docs.error || !Array.isArray(docs.data)) return naoVerificado("os documentos derivados", docs.error);
+
+  for (const bruto of docs.data as Record<string, unknown>[]) {
+    const id = typeof bruto.participant_id === "string" ? bruto.participant_id : null;
+    if (id === null) continue;
+    const atual = derivados.get(id) ?? { ...SEM_DERIVADOS };
+    const status = typeof bruto.status === "string" ? bruto.status : "";
+    atual.documento = true;
+    atual.gerado = atual.gerado || bruto.generated_at !== null || status !== "";
+    atual.revisado = atual.revisado || bruto.reviewed_at !== null;
+    atual.entregue = atual.entregue || bruto.delivered_at !== null || bruto.pdf_url !== null;
+    atual.link_publico = atual.link_publico || bruto.public_share_token !== null;
+    derivados.set(id, atual);
+  }
+
+  let scores: { data: unknown; error: unknown };
+  try {
+    scores = await emLote("participant_scores", "participant_id, computed_at");
+  } catch (e) {
+    return naoVerificado("as pontuacoes derivadas", { message: e instanceof Error ? e.message : String(e) });
+  }
+  if (scores.error || !Array.isArray(scores.data)) return naoVerificado("as pontuacoes derivadas", scores.error);
+
+  for (const bruto of scores.data as Record<string, unknown>[]) {
+    const id = typeof bruto.participant_id === "string" ? bruto.participant_id : null;
+    if (id === null) continue;
+    const atual = derivados.get(id) ?? { ...SEM_DERIVADOS };
+    atual.pontuacao = true;
+    derivados.set(id, atual);
+  }
+
+  return { ok: true, derivados };
 }
 
 function lerLinhaDeSubmissao(r: Record<string, unknown>): LinhaDeSubmissao {
@@ -440,10 +555,51 @@ export interface Divergencia {
 }
 
 export interface Impedimento {
-  codigo: "participante_ocupado" | "estado_nao_decidivel" | "participante_de_outro_evento";
+  codigo:
+    | "participante_ocupado"
+    | "estado_nao_decidivel"
+    | "participante_de_outro_evento"
+    /** Estado 3 do contrato: ha documento derivado, e desfazer simples esta bloqueado. */
+    | "derivado_ja_gerado";
   texto: string;
   /** Para a resposta de erro da rota: o que a tela ja mostra, em campo declarado. */
   detalhes: DetalhesDeErro;
+}
+
+/**
+ * O CONTRATO DE REVERSIBILIDADE, em tres estados -- e nao um botao de desfazer.
+ *
+ * Decisao da revisao, cumprida por este tipo:
+ *   1. `correcao_simples`          identidade vinculada e nada derivado ainda:
+ *      desfaz com um ato, mediante motivo e auditoria.
+ *   2. `operacao_controlada`       ha registro gravado e nenhum documento: desfaz
+ *      removendo os registros, preservando o historico e PROVANDO de quem era
+ *      cada registro (o inventario da ficha de revogacao).
+ *   3. `procedimento_excepcional`  ha documento gerado, revisado ou entregue:
+ *      desfazer simples fica BLOQUEADO. Antes, invalidar os derivados e suspender
+ *      o acesso indevido.
+ *
+ * E a exigencia de produto que vem junto: a tela informa isto PREVIAMENTE, por
+ * submissao, e nao com um aviso igual em toda tela -- um aviso que aparece sempre
+ * nao informa nada. Em todos os tres estados o registro cru da submissao
+ * PERMANECE: corrigir identidade nunca apaga a evidencia de reconstruir o
+ * ocorrido.
+ */
+export type EstadoDaReversibilidade =
+  | "correcao_simples"
+  | "operacao_controlada"
+  | "procedimento_excepcional";
+
+export interface Reversibilidade {
+  estado: EstadoDaReversibilidade;
+  /** O que acontece se esta decisao precisar ser desfeita. Lido ANTES do clique. */
+  texto: string;
+  /** O que NAO volta por acao simples. Vazio e uma afirmacao, nao uma omissao. */
+  efeitos_nao_reversiveis: string[];
+  /** Os derivados que existem HOJE para o participante envolvido. */
+  derivados: DerivadosDoParticipante;
+  /** Em qualquer dos tres estados: `true`. O payload cru nunca e apagado. */
+  evidencia_preservada: true;
 }
 
 export interface ConsequenciaDaReconciliacao {
@@ -471,6 +627,12 @@ export interface FichaDeReconciliacao {
   /** A frase que o operador esta assinando. Em primeira pessoa, sem eufemismo. */
   afirmacao: string;
   consequencia: ConsequenciaDaReconciliacao | null;
+  /**
+   * Em qual dos tres estados do contrato esta decisao cai, ANTES do clique.
+   * `null` so quando nao da para afirmar o que seria gravado (ai a ficha tambem
+   * nao e permitida): nunca se classifica reversibilidade por suposicao.
+   */
+  reversibilidade: Reversibilidade | null;
   /** `null` quando a decisao e permitida. */
   impedimento: Impedimento | null;
   permitida: boolean;
@@ -485,6 +647,14 @@ export interface FichaDeRevogacao {
   identidade_via: "email_verificado" | "decisao_do_operador" | null;
   /** Quantas respostas canonicas a revogacao REMOVE. Medido, nao estimado. */
   respostas_canonicas_a_remover: number;
+  /**
+   * O INVENTARIO dos registros que serao removidos: qual etapa, de quem, de que
+   * origem, de quando. E com ele que a reversao demonstra a titularidade em vez de
+   * apenas somar linhas -- e ele viaja para o livro-razao junto da justificativa.
+   */
+  registros: { stage_id: number; participante: string; origem: string; submetida_em: string | null }[];
+  /** Em qual dos tres estados do contrato esta revogacao cai. */
+  reversibilidade: Reversibilidade;
   /**
    * Linhas de resposta ligadas a esta submissao que NAO tem origem 'externo'.
    * Deveria ser sempre 0; se nao for, a remocao apagaria linha que a importacao
@@ -706,6 +876,82 @@ function fatosDoParticipante(
   };
 }
 
+function listaDeDerivados(d: DerivadosDoParticipante): string {
+  const partes: string[] = [];
+  if (d.entregue) partes.push("documento ENTREGUE");
+  else if (d.revisado) partes.push("documento REVISADO");
+  else if (d.gerado || d.documento) partes.push("documento GERADO");
+  if (d.link_publico) partes.push("link publico de compartilhamento ATIVO");
+  if (d.pontuacao) partes.push("pontuacao calculada");
+  return partes.join("; ");
+}
+
+/**
+ * Em qual dos tres estados do contrato cai DESFAZER esta decisao.
+ *
+ * `registros` e quantos registros canonicos estariam em jogo (os que a
+ * reconciliacao vai gravar, ou os que a revogacao vai remover).
+ */
+export function classificarReversibilidade(
+  registros: number,
+  derivados: DerivadosDoParticipante,
+  ato: "reconciliar" | "revogar",
+): Reversibilidade {
+  // ESTADO 3: ha documento. Desfazer deixou de ser um ato.
+  if (derivados.documento) {
+    const efeitos = [
+      `ja existe ${listaDeDerivados(derivados)} para este participante: desfazer nao invalida o documento nem suspende o acesso a ele`,
+    ];
+    if (derivados.link_publico) {
+      efeitos.push(
+        "o link publico continua funcionando depois de desfazer: suspender esse acesso e passo proprio, e nao acontece sozinho",
+      );
+    }
+    return {
+      estado: "procedimento_excepcional",
+      texto:
+        ato === "revogar"
+          ? "DESFAZER SIMPLES ESTA BLOQUEADO: ha documento gerado a partir destas respostas. Remover as respostas deixaria o documento de pe, falando sobre a pessoa errada. O caminho e excepcional: invalidar o derivado, suspender o acesso indevido e so entao corrigir a identidade, com registro de quem autorizou."
+          : "ATENCAO, LEIA ANTES DE CONFIRMAR: este participante JA TEM documento gerado. Confirmar aqui produz efeito que NAO se desfaz por acao simples -- o documento existente passa a nao corresponder as respostas, e corrigir depois exige invalidar o derivado e suspender o acesso a ele.",
+      efeitos_nao_reversiveis: efeitos,
+      derivados,
+      evidencia_preservada: true,
+    };
+  }
+
+  // ESTADO 1: nada gravado (ou nada a remover) e nada derivado.
+  if (registros === 0 && !derivados.pontuacao) {
+    return {
+      estado: "correcao_simples",
+      texto:
+        ato === "revogar"
+          ? "CORRECAO SIMPLES: nao ha registro canonico a remover. Desfazer e um ato, com motivo e auditoria, e nada mais sai."
+          : "CORRECAO SIMPLES: nenhuma resposta canonica seria gravada por esta decisao, entao desfazer e um ato, com motivo e auditoria.",
+      efeitos_nao_reversiveis: [],
+      derivados,
+      evidencia_preservada: true,
+    };
+  }
+
+  // ESTADO 2: ha registro, nenhum documento.
+  const efeitos: string[] = [];
+  if (derivados.pontuacao) {
+    efeitos.push(
+      "a pontuacao ja calculada deste participante fica OBSOLETA: desfazer remove as respostas e nao recalcula nada sozinho",
+    );
+  }
+  return {
+    estado: "operacao_controlada",
+    texto:
+      ato === "revogar"
+        ? `OPERACAO CONTROLADA: desfazer REMOVE ${registros} registro(s) canonico(s), preserva o historico e registra de quem era cada registro (o inventario abaixo). Nao ha documento gerado, entao nao ha derivado a invalidar.`
+        : `OPERACAO CONTROLADA: esta decisao grava ${registros} registro(s) canonico(s). Desfazer depois e possivel e remove esses registros -- com motivo, auditoria e o inventario de quem era cada um --, e NAO devolve nada que tenha sido sobrescrito.`,
+    efeitos_nao_reversiveis: efeitos,
+    derivados,
+    evidencia_preservada: true,
+  };
+}
+
 function impedimentoDoAlvo(p: FatosDoParticipante): Impedimento | null {
   const temRespostas = p.respostas_canonicas > 0;
   const temAtiva = p.submissao_externa_ativa !== null;
@@ -741,14 +987,17 @@ export function montarMesaDeDecisao(
   submissoes: readonly LinhaDeSubmissao[],
   respostas: readonly RespostaDaSubmissao[],
   operador: OperadorDaImportacao,
+  /** Os derivados por participante (`lerDerivadosDosParticipantes`). */
+  derivados: ReadonlyMap<string, DerivadosDoParticipante>,
 ): MesaDeDecisao {
-  const respostasPorSubmissao = new Map<string, { total: number; outraOrigem: number }>();
+  const registrosPorSubmissao = new Map<string, RespostaDaSubmissao[]>();
   for (const r of respostas) {
-    const atual = respostasPorSubmissao.get(r.external_submission_id) ?? { total: 0, outraOrigem: 0 };
-    atual.total++;
-    if (r.origem !== "externo") atual.outraOrigem++;
-    respostasPorSubmissao.set(r.external_submission_id, atual);
+    const atual = registrosPorSubmissao.get(r.external_submission_id) ?? [];
+    atual.push(r);
+    registrosPorSubmissao.set(r.external_submission_id, atual);
   }
+  const derivadoDe = (id: string | null): DerivadosDoParticipante =>
+    (id === null ? undefined : derivados.get(id)) ?? { ...SEM_DERIVADOS };
 
   const ativaDoParticipante = new Map<string, string>();
   for (const s of submissoes) {
@@ -772,14 +1021,19 @@ export function montarMesaDeDecisao(
         submissao: fatosDaSubmissao(s),
         identidade_automatica: { estado: s.estado, motivo: s.bloqueio?.motivo ?? null },
         candidatos: participantes.map((p) =>
-          montarFichaDeReconciliacao(contexto, manifesto, s, p, operador),
+          montarFichaDeReconciliacao(contexto, manifesto, s, p, operador, derivadoDe(p.id)),
         ),
       });
       continue;
     }
     if (ESTADOS_ATIVOS.includes(s.estado) && s.participant_id !== null) {
       revogaveis.push(
-        montarFichaDeRevogacao(s, porId.get(s.participant_id) ?? null, respostasPorSubmissao.get(s.id) ?? { total: 0, outraOrigem: 0 }),
+        montarFichaDeRevogacao(
+          s,
+          porId.get(s.participant_id) ?? null,
+          registrosPorSubmissao.get(s.id) ?? [],
+          derivadoDe(s.participant_id),
+        ),
       );
     }
   }
@@ -809,6 +1063,7 @@ export function montarFichaDeReconciliacao(
   s: LinhaDeSubmissao,
   p: FatosDoParticipante,
   operador: OperadorDaImportacao,
+  derivados: DerivadosDoParticipante = SEM_DERIVADOS,
 ): FichaDeReconciliacao {
   const divergencias = divergenciasEntre(s, p);
   const impedimentoDeEstado: Impedimento | null = ESTADOS_QUE_SE_DECIDEM.includes(s.estado)
@@ -880,6 +1135,12 @@ export function montarFichaDeReconciliacao(
     divergencias,
     afirmacao: afirmacaoDe(s, p, divergencias),
     consequencia,
+    // Sem consequencia nao se classifica reversibilidade: nao da para dizer o que
+    // seria preciso desfazer quando nao se sabe o que seria gravado.
+    reversibilidade:
+      consequencia === null
+        ? null
+        : classificarReversibilidade(consequencia.etapas_a_gravar, derivados, "reconciliar"),
     impedimento,
     permitida: impedimento === null && consequencia !== null,
   };
@@ -896,17 +1157,28 @@ export function montarFichaDeReconciliacao(
 export function montarFichaDeRevogacao(
   s: LinhaDeSubmissao,
   p: FatosDoParticipante | null,
-  respostas: { total: number; outraOrigem: number },
+  registros: readonly RespostaDaSubmissao[],
+  derivados: DerivadosDoParticipante = SEM_DERIVADOS,
 ): FichaDeRevogacao {
+  const total = registros.length;
+  const outraOrigem = registros.filter((r) => r.origem !== "externo").length;
+  const reversibilidade = classificarReversibilidade(total, derivados, "revogar");
+
   const avisos: string[] = [
-    `A revogacao REMOVE ${respostas.total} resposta(s) canonica(s) que nasceram desta submissao. O aplicativo nao as traz de volta: o que volta e a submissao externa, com o payload cru inteiro, para ser reconciliada outra vez.`,
+    `A revogacao REMOVE ${total} resposta(s) canonica(s) que nasceram desta submissao. O aplicativo nao as traz de volta: o que volta e a submissao externa, com o payload cru inteiro, para ser reconciliada outra vez.`,
     "A submissao NAO e apagada e o historico NAO e reescrito: a revogacao e um ato novo, que se soma aos anteriores.",
+    reversibilidade.texto,
+    ...reversibilidade.efeitos_nao_reversiveis.map((e) => `ATENCAO: ${e}.`),
   ];
-  if (respostas.outraOrigem > 0) {
+  if (outraOrigem > 0) {
     avisos.push(
-      `ATENCAO: ${respostas.outraOrigem} dessas linhas nao tem origem 'externo'. Isso indica resposta que a importacao sobrescreveu, e a remocao vai apagar essa linha tambem, sem devolver o conteudo anterior.`,
+      `ATENCAO: ${outraOrigem} dessas linhas nao tem origem 'externo'. Isso indica resposta que a importacao sobrescreveu, e a remocao vai apagar essa linha tambem, sem devolver o conteudo anterior.`,
     );
   }
+
+  // ESTADO 3 do contrato: desfazer simples BLOQUEADO. Nao e aviso, e recusa -- a
+  // revisao pediu "bloquear desfazer simples", e um aviso que se pode clicar
+  // atravessado nao bloqueia nada.
   const impedimento: Impedimento | null =
     p === null
       ? {
@@ -915,20 +1187,66 @@ export function montarFichaDeRevogacao(
             "a submissao aponta para um participante que nao esta na lista deste evento. Nao da para descrever o que a revogacao desfaz, entao ela nao e oferecida aqui",
           detalhes: { estado_da_submissao: s.estado, ato: "revogar" },
         }
-      : null;
+      : reversibilidade.estado === "procedimento_excepcional"
+        ? {
+            codigo: "derivado_ja_gerado",
+            texto: `ha ${listaDeDerivados(derivados)} para ${p.nome}. Desfazer aqui removeria as respostas e deixaria o derivado de pe: antes e preciso invalidar o derivado e suspender o acesso indevido, por procedimento excepcional registrado`,
+            detalhes: {
+              estado_da_submissao: s.estado,
+              ato: "revogar",
+              reversibilidade: "procedimento_excepcional",
+            },
+          }
+        : null;
 
   const semImpressao: Omit<FichaDeRevogacao, "impressao_da_ficha"> = {
     ato: "revogar",
     submissao: fatosDaSubmissao(s),
     participante: { id: p?.id ?? "", nome: p?.nome ?? "", email: p?.email ?? "" },
     identidade_via: s.identidade_via,
-    respostas_canonicas_a_remover: respostas.total,
-    respostas_de_outra_origem: respostas.outraOrigem,
+    respostas_canonicas_a_remover: total,
+    registros: [...registros]
+      .sort((a, b) => a.stage_id - b.stage_id)
+      .map((r) => ({
+        stage_id: r.stage_id,
+        participante: r.participant_id,
+        origem: r.origem,
+        submetida_em: r.submitted_at,
+      })),
+    reversibilidade,
+    respostas_de_outra_origem: outraOrigem,
     avisos,
     impedimento,
     permitida: impedimento === null,
   };
   return { ...semImpressao, impressao_da_ficha: impressaoDaFicha(semImpressao) };
+}
+
+/**
+ * A justificativa que vai para o livro-razao, com o INVENTARIO dos registros
+ * removidos anexado pelo sistema.
+ *
+ * Por que anexar em texto: `importacao_externa_revogar` (022) grava a
+ * justificativa e um `antes` resumido, e nao recebe inventario -- e esta unidade
+ * nao escreve migration. O inventario e a forma de a reversao DEMONSTRAR de quem
+ * era cada registro, e ele precisa ficar no livro-razao append-only, nao apenas na
+ * resposta HTTP. Entao ele entra por aqui, depois de um separador que deixa claro
+ * o que foi escrito pelo operador e o que foi escrito pelo sistema.
+ */
+export const SEPARADOR_DO_INVENTARIO = " || titularidade dos registros removidos (anexado pelo sistema): ";
+
+export function justificativaComInventario(texto: string, ficha: FichaDeRevogacao): string {
+  const quem = `participante ${ficha.participante.id} (${ficha.participante.nome}${ficha.participante.email ? `, ${ficha.participante.email}` : ""})`;
+  const quais =
+    ficha.registros.length === 0
+      ? "nenhum registro canonico"
+      : ficha.registros
+          .map((r) => `etapa ${r.stage_id} [origem ${r.origem}${r.submetida_em ? `, submetida em ${r.submetida_em}` : ""}]`)
+          .join("; ");
+  return (
+    `${texto.trim()}${SEPARADOR_DO_INVENTARIO}${quem}; ${ficha.registros.length} registro(s): ${quais}; ` +
+    `submissao de origem ${ficha.submissao.submissao_id}; reversibilidade ${ficha.reversibilidade.estado}`
+  );
 }
 
 // ===========================================================================
@@ -970,6 +1288,15 @@ export async function prepararMesaDeDecisao(
   if (!lidas.ok) {
     return { ok: false, codigo: lidas.codigo, motivo: lidas.motivo };
   }
+  // Os DERIVADOS, para a tela poder dizer PREVIAMENTE em qual dos tres estados do
+  // contrato cada decisao cai. Falha aqui NAO vira "nao ha derivado": vira recusa.
+  const derivados = await lerDerivadosDosParticipantes(
+    cliente,
+    contexto.contexto.participantes.map((p) => p.id),
+  );
+  if (!derivados.ok) {
+    return { ok: false, codigo: derivados.codigo, motivo: derivados.motivo };
+  }
   return {
     ok: true,
     mesa: montarMesaDeDecisao(
@@ -978,6 +1305,7 @@ export async function prepararMesaDeDecisao(
       lidas.submissoes,
       lidas.respostas,
       operador,
+      derivados.derivados,
     ),
     contexto: contexto.contexto,
     manifesto: contexto.manifesto,
@@ -992,7 +1320,10 @@ export async function prepararMesaDeDecisao(
 export type FalhaDaBuscaDaFicha = {
   codigo: Extract<
     CodigoDeErro,
-    "IMPORT_SUBMISSION_NOT_FOUND" | "IMPORT_DECISION_REFUSED" | "IMPORT_TARGET_OCCUPIED"
+    | "IMPORT_SUBMISSION_NOT_FOUND"
+    | "IMPORT_DECISION_REFUSED"
+    | "IMPORT_TARGET_OCCUPIED"
+    | "IMPORT_REVOKE_BLOCKED"
   >;
   motivo: string;
   detalhes?: DetalhesDeErro;
@@ -1072,6 +1403,17 @@ export function acharFichaDeRevogacao(
     };
   }
   const ficha = mesa.revogaveis.find((r) => r.submissao.id === submissionId);
+  // ESTADO 3 do contrato tem CODIGO PROPRIO: "ha documento gerado" nao e a mesma
+  // coisa que "nao ha reconciliacao a revogar", e a correcao de uma nao serve
+  // para a outra.
+  if (ficha !== undefined && ficha.impedimento?.codigo === "derivado_ja_gerado") {
+    return {
+      ok: false,
+      codigo: "IMPORT_REVOKE_BLOCKED",
+      motivo: ficha.impedimento.texto,
+      detalhes: ficha.impedimento.detalhes,
+    };
+  }
   if (ficha === undefined || !ficha.permitida) {
     return {
       ok: false,

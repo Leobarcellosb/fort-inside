@@ -128,6 +128,8 @@ export const DESFECHO_DO_CODIGO: Record<CodigoDeErro, { classe: ClasseDoDesfecho
   // O banco recusou na hora de gravar (024). Conferido e nao permitido -- e o
   // caminho de correcao e a ficha nova, nao a espera.
   IMPORT_REVALIDATION_REFUSED: { classe: "recusado", acao: "refazer_ficha" },
+  // Desfazer deixou de ser acao simples: quem resolve nao e o operador sozinho.
+  IMPORT_REVOKE_BLOCKED: { classe: "recusado", acao: "falar_com_equipe" },
 
   // --- nao consegui verificar ----------------------------------------------
   // AUTH_UNAVAILABLE e o caso que nomeia esta classe: NUNCA "sem permissao".
@@ -137,6 +139,8 @@ export const DESFECHO_DO_CODIGO: Record<CodigoDeErro, { classe: ClasseDoDesfecho
   // corrigir) e nao e ausencia de recurso (ele esta instalado): e "nao deu para
   // concluir", e a tela diz exatamente isso, sem inventar causa.
   IMPORT_ACT_NOT_APPLIED: { classe: "nao_verificado", acao: "aguardar" },
+  // NAO DEU PARA VERIFICAR os derivados. Nao e recusa e nao e ausencia de recurso.
+  IMPORT_DERIVATIVES_UNVERIFIABLE: { classe: "nao_verificado", acao: "aguardar" },
   IMPORT_MANIFEST_UNVERIFIABLE: { classe: "nao_verificado", acao: "corrigir_coleta" },
   QUIZ_STAGES_UNAVAILABLE: { classe: "nao_verificado", acao: "aguardar" },
   PARTICIPANTS_UNAVAILABLE: { classe: "nao_verificado", acao: "aguardar" },

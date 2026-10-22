@@ -31,10 +31,8 @@
 -- avaliado num instante em que ainda nao existia.
 --
 -- Reproduzido contra Postgres real, com as migrations 001..023, em
--- lib/importacao/provas/corrida-aplicacao.test.ts: plano montado com a pessoa
--- sem respostas, resposta do aplicativo inserida DEPOIS da montagem, funcao
--- executada -- e a resposta do aplicativo desaparecia, sem erro, sem conflito e
--- sem linha no livro-razao.
+-- lib/importacao/provas/corrida-aplicacao.test.ts: a resposta do aplicativo
+-- desaparecia, sem erro, sem conflito, e o livro-razao registrava "importada".
 --
 -- A impressao digital da previa NAO cobre isso, e nao poderia: ela amarra a
 -- previa ao PLANO, e o plano nao mudou. O que mudou foi o banco. Dito como a
@@ -42,75 +40,191 @@
 -- ser segura.
 --
 -- ===========================================================================
--- A CORRECAO: uma REGRA ESTRUTURAL, revalidada DENTRO da transacao
+-- A CORRECAO, em tres partes
 -- ===========================================================================
--- Nao se compara contagem com contagem (contagem e justamente o numero que
--- envelheceu). A regra e sobre a PROCEDENCIA da linha que existe:
+-- (I) SERIALIZACAO COMPARTILHADA entre os DOIS caminhos de escrita.
+--     Nao basta proteger a colisao da mesma chave: a pessoa pode estar
+--     respondendo OUTRA etapa no mesmo instante. Os dois caminhos -- aplicativo
+--     e importacao -- passam a disputar o MESMO bloqueio transacional, por
+--     participante. Quem chega depois ESPERA e, ao entrar, ve o que o outro fez.
 --
---   A importacao NUNCA sobrescreve uma resposta canonica que nao tenha sido
---   escrita POR ESTA MESMA SUBMISSAO EXTERNA.
+-- (II) REGRA ESTRUTURAL, revalidada sob o bloqueio.
+--     Nao se compara contagem com contagem (contagem e justamente o numero que
+--     envelheceu). A regra e sobre a PROCEDENCIA da linha que existe:
 --
--- Reimportar uma submissao externa e atualizacao legitima -- e o caso de uso
--- real: a correspondencia e corrigida e o lote entra de novo. Passar por cima
--- do que a pessoa respondeu no aplicativo nunca e. E linha existente vinda de
--- OUTRA submissao externa tambem nao e atualizacao: e conflito, porque significa
--- que duas coletas diferentes afirmam ser a resposta da mesma pessoa, e escolher
--- uma em silencio e a decisao que nao cabe a um `do update`.
+--       A importacao NUNCA sobrescreve resposta canonica que nao tenha sido
+--       escrita POR ESTA MESMA SUBMISSAO EXTERNA -- mesma submissao com
+--       IDENTIDADE e VERSAO verificadas.
 --
--- Revalidado dentro da transacao, por submissao, ANTES de qualquer escrita dela:
---   (a) IDENTIDADE      o participante do plano ainda existe, ainda e deste
---                       evento, e -- quando a identidade veio de e-mail
---                       verificado -- ainda tem aquele e-mail;
---   (b) DUPLICIDADE     nao existe OUTRA submissao externa ativa
---                       (importavel/incompativel) do mesmo participante neste
---                       evento. Sem esta checagem o indice unico parcial
---                       `external_submissions_participante_ativo_idx` estouraria
---                       e derrubaria o lote inteiro, em vez de retido um;
---   (c) LOTE            duas submissoes do mesmo plano nao gravam no mesmo
---                       participante (cinto e suspensorio do planejador);
---   (d) RESPOSTA EXISTENTE  nenhuma das etapas a gravar tem linha de
---                       `quiz_responses` que nao seja desta submissao.
+--     Reimportar a mesma submissao e atualizacao legitima -- e o caso de uso
+--     real: a correspondencia e corrigida e o lote entra de novo. Passar por
+--     cima do que a pessoa respondeu no aplicativo nunca e. Linha vinda de OUTRA
+--     submissao externa tambem nao e atualizacao: e conflito.
+--
+-- (III) LOTE ATOMICO.
+--     Ou o conjunto elegivel que o operador aprovou na previa entra INTEIRO, ou
+--     NADA entra. Nao existe importacao parcial inesperada.
 --
 -- ===========================================================================
--- A DECISAO SOBRE ATOMICIDADE, declarada
+-- ATOMICIDADE E AUDITORIA: a decisao, e por que ela nao mente
 -- ===========================================================================
--- Duas leituras da ordem "gravar tudo atomicamente ou nao gravar nada" tem
--- defesa: derrubar a transacao inteira, ou RETER a submissao em conflito e
--- deixar as outras passarem. Esta funcao faz a SEGUNDA, e a unidade de
--- atomicidade e A SUBMISSAO: ou ela entra inteira (todas as etapas), ou nao
--- entra nada dela. Nenhuma submissao fica pela metade.
+-- ORDEM DA REVISAO: "aplicar exatamente aquele conjunto elegivel ou recusar a
+-- operacao inteira quando surgir um conflito novo. Nao autorizo uma importacao
+-- parcial inesperada." E, sobre o historico: "Como a transacao de importacao
+-- sera revertida, esse registro deve ser persistido por um mecanismo separado e
+-- confiavel, sem fingir que uma escrita revertida ficou gravada."
 --
--- O que decide e o livro-razao. A ordem tambem diz que a submissao em conflito
--- deve ser recusada COMO CONFLITO -- um desfecho previsto e REGISTRADO, nao um
--- erro -- e que o recusado tem de aparecer em `external_submission_events`.
--- `raise exception` faria rollback da transacao inteira, inclusive da linha do
--- livro-razao: a recusa desapareceria exatamente no lugar onde foi mandado que
--- ela aparecesse. Nao existe transacao autonoma em plpgsql para contornar isso.
--- Entao: a submissao e retida, com estado proprio, bloqueio proprio, acao
--- propria no historico, e nomeada no resumo que volta para o operador.
+-- O PROBLEMA REAL: em plpgsql nao existe transacao autonoma. `raise exception`
+-- desfaz TUDO, inclusive a linha de auditoria -- a recusa desapareceria
+-- exatamente no lugar onde foi mandado que ela aparecesse. E os unicos jeitos de
+-- escapar da atomicidade da transacao corrente, em Postgres, sao: outra conexao
+-- (dblink/pg_background), o log do servidor, ou mensagem nao-transacional no
+-- WAL. dblink para a MESMA base exige senha no conninfo para role nao-superuser
+-- (ou `dblink_connect_u` com SECURITY DEFINER escalado): credencial dentro de
+-- uma migration e escalada de privilegio num banco que serve um evento real.
+-- RECUSADO -- nao e um mecanismo confiavel, e um risco novo.
 --
--- O que o operador ve, sem precisar abrir o banco:
---   - `importacao_externa_aplicar` devolve `recusadas_na_revalidacao`, com
---     submissao, codigo, motivo, participante pretendido e etapas envolvidas;
---   - `por_estado` conta o estado FINAL (a recusada conta como conflito ou
---     pendente, nao como importavel), e por isso a conferencia que a tela ja faz
---     (`conferirPreviaContraGravado`) ACUSA divergencia em vez de dizer "pronto";
---   - a linha da submissao guarda `bloqueio.motivo` e `bloqueio.codigo`;
---   - `v_aptidao_pontuacao_externa` passa a devolver o codigo
---     'RECUSADA_NA_REVALIDACAO', que nao se confunde com identidade nao
---     resolvida.
+-- O MECANISMO ESCOLHIDO, e por que ele sobrevive ao rollback sem mentir:
+-- ELE NAO PRECISA SOBREVIVER A ROLLBACK NENHUM, porque na recusa NAO HA
+-- ROLLBACK -- nao ha o que reverter. A funcao e dividida em fases:
 --
--- NADA e descartado: o payload cru, a proveniencia e os itens pergunta-por-
--- pergunta continuam gravados. Dado coletado de uma pessoa nao se joga fora; o
--- que se recusa e SOBRESCREVER a resposta dela.
+--   FASE 1  trava todos os participantes do lote (ordem crescente de id:
+--           ordem determinista, sem ciclo, sem deadlock);
+--   FASE 2  REVALIDA o lote inteiro SEM ESCREVER UMA LINHA DO PLANO;
+--   FASE 3  havendo QUALQUER conflito: grava SO o registro de auditoria da
+--           recusa (em `external_import_rejections`, tabela append-only que
+--           NUNCA faz parte do conjunto de escrita de uma importacao) e DEVOLVE
+--           a recusa. O conjunto de escrita desta transacao e EXATAMENTE
+--           {registro de recusa}: zero submissoes, zero itens, zero respostas
+--           canonicas. Nada parcial, nada revertido, nada fingido;
+--   FASE 4  nao havendo conflito: aplica o lote INTEIRO. Como o bloqueio da
+--           FASE 1 continua nas maos desta transacao, nenhum conflito novo pode
+--           surgir entre a FASE 2 e a FASE 4 -- a hipotese "conflito aparece no
+--           meio da escrita" deixa de existir, em vez de ser tratada. Qualquer
+--           OUTRA falha (constraint, FK, disco) reverte tudo do lote, que e o
+--           desfecho que a propria tabela da revisao manda: "falha durante a
+--           transacao -> reverter todas as escritas daquele lote". Falha nao e
+--           recusa decidida, e nao inventa linha de auditoria.
+--
+-- O custo, declarado: a recusa chega ao chamador como VALOR DE RETORNO
+-- (`ok: false`, com codigo, motivo e zeros em todos os contadores), nao como
+-- excecao. Trocar por `raise` devolveria o problema que a propria revisao
+-- apontou -- a linha de auditoria iria junto. O que falta para o operador LER
+-- "conflito, peca previa nova" em vez de uma divergencia generica e uma mudanca
+-- pequena no TypeScript (lib/importacao/borda.ts + a tela), fora do escopo
+-- desta unidade e anotada no relatorio.
+--
+-- O CAMINHO DE PROGRESSO (ordem da revisao) nao precisa de nada novo aqui: o
+-- operador pede PREVIA NOVA sem as submissoes conflitantes e aplica o novo
+-- conjunto elegivel. A previa continua funcionando; quem recusa e a aplicacao.
+--
+-- NADA e descartado: na recusa, o payload cru anterior continua onde estava, e a
+-- submissao nova simplesmente nao entra -- a coleta inteira segue no arquivo de
+-- origem e entra na previa seguinte. Dado coletado de uma pessoa nao se joga
+-- fora; o que se recusa e SOBRESCREVER a resposta dela.
 
 -- ===========================================================================
--- 1. O HISTORICO GANHA A ACAO PROPRIA DA RECUSA
+-- 1. O REGISTRO DURAVEL DA RECUSA
 -- ===========================================================================
--- Append-only: a recusa nao e um estado que substitui outro, e uma linha nova.
--- Sem este nome, a recusa teria de se disfarcar de 'retida_conflito' -- que diz
--- "o planejador viu conflito de identidade", coisa diferente de "o plano estava
--- certo quando foi montado e deixou de estar".
+-- Tabela PROPRIA, e e proposital que ela nao tenha FK para
+-- `external_submissions`: a recusa precisa poder ser registrada para uma
+-- submissao que NUNCA foi gravada (lote recusado = nenhuma submissao entrou).
+-- Com FK, o registro da recusa dependeria justamente da escrita que a recusa
+-- impede -- e so existiria se mentisse. A chave natural (evento, formulario,
+-- submissao) identifica a submissao sem precisar que ela exista.
+--
+-- Append-only pelo mesmo desenho do livro-razao da 022: sem UPDATE e sem DELETE
+-- para ninguem alem do dono da tabela. Historico que da para reescrever nao e
+-- historico.
+create table if not exists public.external_import_rejections (
+  id uuid primary key default gen_random_uuid(),
+
+  -- QUAL LOTE. `lote_impressao` e o md5 do plano inteiro: duas recusas do mesmo
+  -- lote compartilham a marca, e e por ela que se le "esta tentativa inteira foi
+  -- recusada", nao "estas submissoes avulsas".
+  event_id uuid not null,
+  lote_impressao text not null,
+  questionario_impressao text not null,
+  quiz_version int not null,
+  formulario_id text not null,
+
+  -- QUAL SUBMISSAO, pela chave natural (ela pode nao existir no banco).
+  submissao_id text not null,
+
+  -- POR QUE. `codigo` e vocabulario fechado: cada recusa tem nome proprio, e
+  -- nenhum nome diz outra coisa.
+  codigo text not null,
+  motivo text not null,
+
+  -- O QUE SERIA FEITO E NAO FOI.
+  participante_pretendido uuid,
+  identidade_via text,
+  etapas_em_conflito jsonb not null default '[]'::jsonb,
+  etapas_nao_gravadas int not null default 0,
+  estado_do_plano text,
+  detalhes jsonb,
+
+  -- QUEM TENTOU.
+  operador uuid not null,
+  operador_email text,
+
+  criado_em timestamptz not null default now()
+);
+
+do $$
+begin
+  alter table public.external_import_rejections
+    drop constraint if exists external_import_rejections_codigo_check;
+  alter table public.external_import_rejections
+    add constraint external_import_rejections_codigo_check
+    check (codigo in (
+      'resposta_do_aplicativo',                 -- a pessoa respondeu no app
+      'outra_submissao_externa',                -- a linha e de outra coleta
+      'outra_submissao_ativa_do_participante',  -- duas coletas, uma pessoa
+      'duplicidade_no_lote',                    -- duas submissoes do mesmo plano
+      'participante_inexistente',
+      'participante_fora_do_evento',
+      'email_do_participante_mudou',
+      'versao_da_submissao_mudou',              -- nao e a MESMA submissao
+      'identidade_da_submissao_mudou'
+    ));
+
+  alter table public.external_import_rejections
+    drop constraint if exists external_import_rejections_motivo_check;
+  alter table public.external_import_rejections
+    add constraint external_import_rejections_motivo_check
+    check (length(btrim(motivo)) >= 3);
+end $$;
+
+create index if not exists external_import_rejections_evento_idx
+  on public.external_import_rejections (event_id, criado_em desc);
+create index if not exists external_import_rejections_lote_idx
+  on public.external_import_rejections (lote_impressao);
+create index if not exists external_import_rejections_submissao_idx
+  on public.external_import_rejections (event_id, formulario_id, submissao_id);
+
+comment on table public.external_import_rejections is
+  'Registro DURAVEL de lote de importacao externa RECUSADO na revalidacao. Gravado numa transacao cujo conjunto de escrita e SO este registro (nenhuma submissao, nenhum item, nenhuma resposta canonica), por isso nao depende de sobreviver a rollback: nao ha rollback. Sem FK para external_submissions de proposito -- a recusa e justamente o caso em que a submissao nao foi gravada.';
+comment on column public.external_import_rejections.lote_impressao is
+  'md5 do plano inteiro. Marca comum das recusas de UMA tentativa: o lote e atomico, e a recusa tambem.';
+
+alter table public.external_import_rejections enable row level security;
+
+drop policy if exists external_import_rejections_admin_select on public.external_import_rejections;
+create policy external_import_rejections_admin_select on public.external_import_rejections
+  for select using (is_admin());
+
+drop policy if exists external_import_rejections_admin_insert on public.external_import_rejections;
+create policy external_import_rejections_admin_insert on public.external_import_rejections
+  for insert with check (is_admin());
+
+revoke all on public.external_import_rejections from anon, authenticated;
+revoke update, delete on public.external_import_rejections from anon, authenticated, service_role;
+
+-- A ACAO PROPRIA tambem no livro-razao da 022, para a submissao que JA EXISTE.
+-- Quando a submissao recusada ja estava gravada de uma importacao anterior, o
+-- historico DELA tem de contar que houve uma tentativa recusada -- senao quem
+-- auditar aquela submissao ve um buraco. Append-only: linha nova, nada alterado.
 do $$
 begin
   alter table public.external_submission_events
@@ -122,9 +236,9 @@ begin
       'retida_incompativel',       -- gravada e MARCADA: dado incompativel
       'retida_pendente',           -- identidade nao casou: espera humano
       'retida_conflito',           -- mais de um candidato: espera humano
-      'recusada_na_revalidacao',   -- 024: o plano envelheceu entre a previa e a
-                                   -- aplicacao. NADA desta submissao foi gravado
-                                   -- como resposta canonica.
+      'lote_recusado_na_revalidacao', -- 024: o plano envelheceu entre a previa e
+                                   -- a aplicacao. O LOTE INTEIRO foi recusado e
+                                   -- NADA dele foi gravado.
       'reconciliada_pelo_operador',
       'revogada'
     ));
@@ -135,15 +249,69 @@ begin
   alter table public.external_submission_events
     add constraint external_submission_events_justificativa_check
     check (
-      acao not in ('reconciliada_pelo_operador', 'revogada', 'recusada_na_revalidacao')
+      acao not in ('reconciliada_pelo_operador', 'revogada', 'lote_recusado_na_revalidacao')
       or (justificativa is not null and length(btrim(justificativa)) >= 3)
     );
 end $$;
 
 -- ===========================================================================
--- 2. A PROCEDENCIA DA LINHA CANONICA PARA DE MENTIR
+-- 2. O BLOQUEIO COMPARTILHADO: a chave por participante
 -- ===========================================================================
--- A regra estrutural do item (d) so vale se `origem = 'externo'` com
+-- Bloqueio CONSULTIVO (advisory), de transacao, e nao `select ... for update` na
+-- linha do participante. O motivo e medido, nao estetico: a 014 REVOGOU
+-- `update` em `participants` de `authenticated`, e `select ... for update` exige
+-- privilegio de UPDATE na tabela -- a escrita do participante estouraria em vez
+-- de esperar. Bloqueio consultivo nao depende de privilegio de tabela, nao toca
+-- dado do usuario, e o Postgres o solta sozinho no fim da transacao (nenhum
+-- caminho de erro deixa trava pendurada).
+create or replace function public.participante_lock_key(p_participant uuid)
+returns bigint
+language sql
+immutable
+as $$
+  -- Namespace proprio ('fort.participante') no hash: a chave nao colide com
+  -- bloqueio consultivo de outro assunto do projeto.
+  select hashtextextended('fort.participante:' || p_participant::text, 0);
+$$;
+
+comment on function public.participante_lock_key(uuid) is
+  'Chave do bloqueio consultivo que SERIALIZA as escritas de resposta de um participante entre os dois caminhos: aplicativo e importacao externa.';
+
+-- O APLICATIVO ENTRA NO BLOQUEIO SEM SABER. O caminho de escrita do
+-- participante (app/(participant)/quiz/[stageId]/page.tsx) e um upsert pelo
+-- PostgREST: ele nao tem como pedir trava nenhuma. Entao a trava e pedida pelo
+-- BANCO, no gatilho, em INSERT e em UPDATE -- e com isso TODO caminho de escrita
+-- de `quiz_responses` (aplicativo, importacao, painel, psql) disputa a mesma
+-- chave, sem uma linha de TypeScript.
+--
+-- SEM DEADLOCK, por desenho: a importacao pega TODAS as chaves do lote em ordem
+-- crescente de id ANTES de escrever; cada transacao do aplicativo pega UMA
+-- chave. Um conjunto ordenado contra detentores de recurso unico nao fecha
+-- ciclo. Bloqueio consultivo e reentrante na mesma sessao, entao a importacao
+-- pedir de novo pelo gatilho nao custa nem trava.
+create or replace function public.quiz_responses_serializa_participante()
+returns trigger
+language plpgsql
+as $$
+begin
+  perform pg_advisory_xact_lock(public.participante_lock_key(new.participant_id));
+  return new;
+end;
+$$;
+
+comment on function public.quiz_responses_serializa_participante() is
+  'Toda escrita em quiz_responses pega o bloqueio consultivo do participante. E o que faz a importacao e a resposta do aplicativo ESPERAREM uma pela outra em vez de uma passar por cima da outra.';
+
+drop trigger if exists quiz_responses_serializa_participante on public.quiz_responses;
+create trigger quiz_responses_serializa_participante
+  before insert or update on public.quiz_responses
+  for each row
+  execute function public.quiz_responses_serializa_participante();
+
+-- ===========================================================================
+-- 3. A PROCEDENCIA DA LINHA CANONICA PARA DE MENTIR
+-- ===========================================================================
+-- A regra estrutural (II) so vale se `origem = 'externo'` com
 -- `external_submission_id = X` significar DE FATO "o conteudo desta linha foi
 -- escrito pela submissao X e ninguem digitou por cima".
 --
@@ -154,17 +322,16 @@ end $$;
 -- `importacao` ficam como estavam -- e `submitted_at` tambem nao se move,
 -- porque default so vale em INSERT. Ou seja: a pessoa responder no aplicativo
 -- por cima de uma linha importada NAO DEIXA NENHUM RASTRO no banco. Sem rastro,
--- "mesma submissao -> atualizacao legitima" ficaria sendo uma porta aberta: a
--- reimportacao passaria por cima da resposta dela achando que estava
--- atualizando a propria linha.
+-- "mesma submissao -> atualizacao legitima" seria porta aberta: a reimportacao
+-- passaria por cima da resposta dela achando que atualizava a propria linha.
 --
--- Este gatilho e o rastro. Ele dispara SO em linha que hoje e 'externo' (toda a
+-- Este gatilho e o rastro. Dispara SO em linha que hoje e 'externo' (toda a
 -- escrita normal do aplicativo, que e a maioria absoluta, nao passa por aqui) e
 -- SO quando a escrita nao veio desta funcao de importacao. O efeito e dizer a
 -- verdade: a linha passou a ser a resposta da pessoa, e a proveniencia externa
 -- sai dela. A submissao externa continua inteira na sua propria tabela, com o
 -- payload cru -- nada e perdido, e a reimportacao pode ser refeita (e, agora,
--- sera RECUSADA como conflito, que e o desfecho certo).
+-- sera RECUSADA, que e o desfecho certo).
 --
 -- Nao se recusa a escrita do aplicativo: a resposta da pessoa tem de entrar.
 -- Quem e recusado e quem quer passar por cima dela.
@@ -197,13 +364,13 @@ create trigger quiz_responses_proveniencia_do_app
   execute function public.quiz_responses_proveniencia_do_app();
 
 -- ===========================================================================
--- 3. A APLICACAO DO PLANO, com a revalidacao DENTRO da transacao
+-- 4. A APLICACAO DO LOTE: trava, revalida, e so depois escreve
 -- ===========================================================================
 -- Substitui a funcao da 022. O que ela continua NAO fazendo: nao escolhe
 -- participante, nao cria participante, nao pontua, nao reconcilia identidade --
--- isso e do planejador. O que ela passa a fazer: CONFERIR, no momento da
--- escrita, que o que o plano autorizou continua verdade; e recusar, com nome, o
--- que deixou de ser.
+-- isso e do planejador. O que ela passa a fazer: TRAVAR, CONFERIR que o que o
+-- plano autorizou continua verdade, e recusar o LOTE INTEIRO quando deixou de
+-- ser.
 --
 -- SECURITY INVOKER de proposito, como na 022. A revalidacao le `participants` e
 -- `quiz_responses` com o privilegio de quem chamou, e isso e seguro aqui porque
@@ -226,6 +393,7 @@ declare
   v_versao int;
   v_form_id text;
   v_form_nome text;
+  v_lote text;
   s jsonb;
   e jsonb;
   it jsonb;
@@ -237,13 +405,13 @@ declare
   v_acao text;
   v_gravadas int := 0;
   v_itens int := 0;
-  v_resumo jsonb := '{}'::jsonb;
   v_por_estado jsonb := '{}'::jsonb;
-  -- --- revalidacao (024) ---
+  -- --- revalidacao e lote atomico (024) ---
+  v_participantes uuid[];
+  v_p uuid;
   v_recusa_codigo text;
   v_recusa_motivo text;
-  v_bloqueio jsonb;
-  v_revalidacao jsonb;
+  v_recusas jsonb := '[]'::jsonb;
   v_evento_do_part uuid;
   v_email_part text;
   v_email_plano text;
@@ -251,8 +419,11 @@ declare
   v_etapas_conflito text[];
   v_n_app int;
   v_n_ext int;
-  v_participantes_no_lote uuid[] := '{}'::uuid[];
-  v_recusadas jsonb := '[]'::jsonb;
+  v_vistos uuid[] := '{}'::uuid[];
+  v_sub_versao int;
+  v_sub_impressao text;
+  v_sub_participant uuid;
+  v_r jsonb;
 begin
   if plano is null or coalesce((plano ->> 'ok')::boolean, false) is not true then
     raise exception
@@ -268,6 +439,7 @@ begin
   v_operador_email := plano -> 'operador' ->> 'email';
   v_form_id  := plano -> 'origem' ->> 'formulario_id';
   v_form_nome := plano -> 'origem' ->> 'formulario_nome';
+  v_lote := md5(plano::text);
 
   if v_operador is null then
     raise exception 'importacao_externa_aplicar: plano sem operador responsavel. Nada foi gravado.';
@@ -279,46 +451,71 @@ begin
     raise exception 'importacao_externa_aplicar: plano sem impressao digital valida do questionario. Nada foi gravado.';
   end if;
 
-  -- A marca que o gatilho da secao 2 le: daqui para a frente, nesta transacao, as
-  -- escritas em quiz_responses SAO da importacao e podem carregar proveniencia
-  -- externa. Local da transacao: nao vaza para outra conexao, nao sobrevive ao
-  -- commit.
+  -- Cinto e suspensorio do plano, ANTES de qualquer trava: o check da tabela ja
+  -- proibiria, mas a mensagem daqui diz qual submissao, e e ela que o operador
+  -- vai ler. Plano mal formado e erro de programa, nao conflito de corrida.
+  for s in select * from jsonb_array_elements(plano -> 'submissoes')
+  loop
+    if coalesce((s ->> 'apto_para_pontuar')::boolean, false)
+       and (s ->> 'estado') <> 'importavel' then
+      raise exception
+        'importacao_externa_aplicar: submissao % pede apto_para_pontuar com estado %. Recusado.',
+        s ->> 'submissao_id', s ->> 'estado';
+    end if;
+  end loop;
+
+  -- =======================================================================
+  -- FASE 1: TRAVA TODOS OS PARTICIPANTES DO LOTE, EM ORDEM
+  -- =======================================================================
+  -- Ordem crescente de id: determinista, e por isso sem ciclo de espera. A
+  -- trava e pedida para TODOS antes de revalidar QUALQUER UM -- senao o
+  -- participante B poderia responder no aplicativo enquanto A esta sendo
+  -- revalidado, e a janela voltaria pela porta de tras.
+  select array_agg(distinct x.pid order by x.pid)
+    into v_participantes
+    from jsonb_array_elements(plano -> 'submissoes') ss
+    cross join lateral (
+      select nullif(ss ->> 'participant_id', '')::uuid as pid,
+             ss ->> 'estado' as est
+    ) x
+   where x.pid is not null and x.est in ('importavel', 'incompativel');
+
+  foreach v_p in array coalesce(v_participantes, '{}'::uuid[])
+  loop
+    perform pg_advisory_xact_lock(public.participante_lock_key(v_p));
+  end loop;
+
+  -- A marca que o gatilho de proveniencia le: daqui para a frente, nesta
+  -- transacao, as escritas em quiz_responses SAO da importacao e podem carregar
+  -- proveniencia externa. Local da transacao: nao vaza para outra conexao, nao
+  -- sobrevive ao commit.
   perform set_config('fort.importacao_externa', 'on', true);
 
+  -- =======================================================================
+  -- FASE 2: REVALIDA O LOTE INTEIRO, SEM ESCREVER NADA DO PLANO
+  -- =======================================================================
   for s in select * from jsonb_array_elements(plano -> 'submissoes')
   loop
     v_estado := s ->> 'estado';
     v_participant := nullif(s ->> 'participant_id', '')::uuid;
-    v_apto := coalesce((s ->> 'apto_para_pontuar')::boolean, false);
     v_recusa_codigo := null;
     v_recusa_motivo := null;
-    v_bloqueio := null;
-    v_revalidacao := null;
     v_etapas_conflito := null;
 
-    -- Cinto e suspensorio: o check da tabela ja proibiria, mas a mensagem daqui
-    -- diz qual submissao, e e ela que o operador vai ler.
-    if v_apto and v_estado <> 'importavel' then
-      raise exception
-        'importacao_externa_aplicar: submissao % pede apto_para_pontuar com estado %. Recusado.',
-        s ->> 'submissao_id', v_estado;
-    end if;
-
-    -- A linha desta submissao, se ela ja existe. E a chave da regra estrutural:
-    -- "escrita por ESTA submissao" quer dizer `external_submission_id` igual a
-    -- este id. Submissao nova (id nulo) nao escreveu nada antes -- logo
-    -- QUALQUER linha existente nas etapas dela e de outra procedencia.
-    select es.id into v_sub_existente
-      from public.external_submissions es
-     where es.event_id = v_event_id
-       and es.formulario_id = v_form_id
-       and es.submissao_id = s ->> 'submissao_id';
-
-    -- =====================================================================
-    -- REVALIDACAO (024), para quem vai gravar resposta canonica
-    -- =====================================================================
     if v_participant is not null and v_estado in ('importavel', 'incompativel') then
-      -- (a) IDENTIDADE
+      -- A linha desta submissao, se ela ja existe. E a chave da regra
+      -- estrutural: "escrita por ESTA submissao" quer dizer
+      -- `external_submission_id` igual a este id. Submissao nova (id nulo) nao
+      -- escreveu nada antes -- logo QUALQUER linha existente do participante e
+      -- de outra procedencia.
+      select es.id, es.quiz_version, es.questionario_impressao, es.participant_id
+        into v_sub_existente, v_sub_versao, v_sub_impressao, v_sub_participant
+        from public.external_submissions es
+       where es.event_id = v_event_id
+         and es.formulario_id = v_form_id
+         and es.submissao_id = s ->> 'submissao_id';
+
+      -- (a) IDENTIDADE do participante
       select p.event_id, lower(btrim(coalesce(p.email, '')))
         into v_evento_do_part, v_email_part
         from public.participants p
@@ -329,13 +526,12 @@ begin
       if v_evento_do_part is null then
         v_recusa_codigo := 'participante_inexistente';
         v_recusa_motivo := format(
-          'RECUSADA NA REVALIDACAO: o participante %s que o plano reconciliou nao existe mais. Nada foi gravado desta submissao.',
+          'o participante %s que o plano reconciliou nao existe mais',
           v_participant);
       elsif v_evento_do_part <> v_event_id then
         v_recusa_codigo := 'participante_fora_do_evento';
         v_recusa_motivo := format(
-          'RECUSADA NA REVALIDACAO: o participante %s nao e deste evento (%s). Nada foi gravado desta submissao.',
-          v_participant, v_event_id);
+          'o participante %s nao e deste evento (%s)', v_participant, v_event_id);
       elsif (s -> 'proveniencia' ->> 'identidade_via') = 'email_verificado'
             and v_email_plano <> ''
             and v_email_part <> v_email_plano then
@@ -343,11 +539,33 @@ begin
         -- depois da previa, a correspondencia que autorizou isto nao existe mais.
         v_recusa_codigo := 'email_do_participante_mudou';
         v_recusa_motivo := format(
-          'RECUSADA NA REVALIDACAO: a identidade veio de e-mail verificado (%s) e o participante agora tem outro e-mail. Nada foi gravado desta submissao.',
+          'a identidade veio de e-mail verificado (%s) e o participante agora tem outro e-mail',
           v_email_plano);
       end if;
 
-      -- (b) OUTRA SUBMISSAO EXTERNA ATIVA do mesmo participante
+      -- (b) A SUBMISSAO EXISTENTE E, DE FATO, A MESMA COISA?
+      --     Atualizar registro externo so quando se demonstrar MESMA submissao,
+      --     com IDENTIDADE e VERSAO verificadas. Versao ou impressao diferente
+      --     nao e "a mesma submissao atualizada": e outro questionario com o
+      --     mesmo numero de protocolo, e trocar um pelo outro em silencio e
+      --     exatamente o que a impressao digital existe para impedir.
+      if v_recusa_codigo is null and v_sub_existente is not null then
+        if v_sub_versao is distinct from v_versao
+           or v_sub_impressao is distinct from v_impressao then
+          v_recusa_codigo := 'versao_da_submissao_mudou';
+          v_recusa_motivo := format(
+            'a submissao %s esta gravada na versao %s / impressao %s e o plano traz versao %s / impressao %s: nao e a mesma submissao',
+            s ->> 'submissao_id', v_sub_versao, left(coalesce(v_sub_impressao, '-'), 12),
+            v_versao, left(v_impressao, 12));
+        elsif v_sub_participant is not null and v_sub_participant <> v_participant then
+          v_recusa_codigo := 'identidade_da_submissao_mudou';
+          v_recusa_motivo := format(
+            'a submissao %s esta gravada para o participante %s e o plano a atribui a %s',
+            s ->> 'submissao_id', v_sub_participant, v_participant);
+        end if;
+      end if;
+
+      -- (c) OUTRA SUBMISSAO EXTERNA ATIVA do mesmo participante
       if v_recusa_codigo is null then
         select es.id into v_outra
           from public.external_submissions es
@@ -359,22 +577,27 @@ begin
         if v_outra is not null then
           v_recusa_codigo := 'outra_submissao_ativa_do_participante';
           v_recusa_motivo := format(
-            'RECUSADA NA REVALIDACAO: a submissao externa %s ja esta ativa para este participante. Duas coletas para a mesma pessoa e CONFLITO, nao atualizacao. Nada foi gravado desta submissao.',
+            'a submissao externa %s ja esta ativa para este participante: duas coletas para a mesma pessoa e CONFLITO, nao atualizacao',
             v_outra);
         end if;
       end if;
 
-      -- (c) DUPLICIDADE DENTRO DO LOTE
-      if v_recusa_codigo is null and v_participant = any (v_participantes_no_lote) then
+      -- (d) DUPLICIDADE DENTRO DO LOTE
+      if v_recusa_codigo is null and v_participant = any (v_vistos) then
         v_recusa_codigo := 'duplicidade_no_lote';
         v_recusa_motivo :=
-          'RECUSADA NA REVALIDACAO: outra submissao DESTE MESMO plano ja gravou para este participante. A segunda nao passa por cima da primeira. Nada foi gravado desta submissao.';
+          'outra submissao DESTE MESMO plano ja grava para este participante: a segunda nao passa por cima da primeira';
+      end if;
+      if v_recusa_codigo is null then
+        v_vistos := v_vistos || v_participant;
       end if;
 
-      -- (d) RESPOSTA EXISTENTE QUE NAO E DESTA SUBMISSAO
-      --     A REGRA: nunca sobrescrever resposta cuja procedencia nao seja ESTA
-      --     submissao externa. 'app' = a pessoa respondeu no aplicativo;
-      --     'externo' de outro id = outra coleta. As duas sao conflito.
+      -- (e) RESPOSTA EXISTENTE QUE NAO E DESTA SUBMISSAO
+      --     A REGRA. E ela olha TODAS as respostas do participante, nao apenas
+      --     as etapas que este plano grava: proteger so a colisao da mesma
+      --     chave nao basta se a pessoa estiver respondendo a etapa vizinha.
+      --     Qualquer resposta dela que nao tenha sido escrita por ESTA submissao
+      --     e motivo de recusa do lote.
       if v_recusa_codigo is null then
         select count(*) filter (where r.origem <> 'externo'),
                count(*) filter (where r.origem = 'externo'),
@@ -382,10 +605,6 @@ begin
           into v_n_app, v_n_ext, v_etapas_conflito
           from public.quiz_responses r
          where r.participant_id = v_participant
-           and r.stage_id in (
-             select (x ->> 'stage_id')::int
-               from jsonb_array_elements(coalesce(s -> 'etapas', '[]'::jsonb)) x
-           )
            and (
              r.origem <> 'externo'
              or r.external_submission_id is null
@@ -397,61 +616,126 @@ begin
           if coalesce(v_n_app, 0) > 0 then
             v_recusa_codigo := 'resposta_do_aplicativo';
             v_recusa_motivo := format(
-              'RECUSADA NA REVALIDACAO: o participante respondeu PELO APLICATIVO nas etapas %s depois que esta previa foi montada. A resposta dele fica; a importacao e recusada como CONFLITO. Nada foi gravado desta submissao.',
+              'o participante respondeu PELO APLICATIVO nas etapas %s depois que esta previa foi montada: a resposta dele fica',
               array_to_string(v_etapas_conflito, ', '));
           else
             v_recusa_codigo := 'outra_submissao_externa';
             v_recusa_motivo := format(
-              'RECUSADA NA REVALIDACAO: as etapas %s ja tem resposta de OUTRA submissao externa. Trocar uma coleta por outra em silencio nao e atualizacao: e CONFLITO. Nada foi gravado desta submissao.',
+              'as etapas %s ja tem resposta de OUTRA submissao externa: trocar uma coleta por outra em silencio nao e atualizacao',
               array_to_string(v_etapas_conflito, ', '));
           end if;
         end if;
       end if;
 
-      -- O DESFECHO DA RECUSA. 'conflito' quando ha dois dados disputando a mesma
-      -- resposta; 'pendente' quando a identidade deixou de se sustentar -- os dois
-      -- exigem participant_id nulo (check da 022), e e por isso que o participante
-      -- pretendido fica registrado dentro de `bloqueio`, nomeado, em vez de
-      -- perdido.
       if v_recusa_codigo is not null then
-        v_revalidacao := jsonb_build_object(
-          'codigo', v_recusa_codigo,
-          'participante_pretendido', v_participant,
-          'identidade_via_do_plano', s -> 'proveniencia' ->> 'identidade_via',
-          'email_reconciliado_do_plano', s -> 'proveniencia' ->> 'email_reconciliado',
-          'estado_do_plano', v_estado,
-          'etapas_em_conflito', coalesce(to_jsonb(v_etapas_conflito), '[]'::jsonb),
-          'etapas_nao_gravadas', jsonb_array_length(coalesce(s -> 'etapas', '[]'::jsonb)),
-          -- O bloqueio que o plano tinha (ex.: DADO INCOMPATIVEL) nao se perde ao
-          -- ser substituido pelo da recusa.
-          'bloqueio_do_plano', coalesce(nullif(s -> 'bloqueio', 'null'::jsonb), 'null'::jsonb));
-
-        v_bloqueio := jsonb_build_object(
-          'motivo', v_recusa_motivo,
-          'codigo', v_recusa_codigo,
-          'perguntas', '[]'::jsonb,
-          'revalidacao', v_revalidacao);
-
-        v_estado := case
-          when v_recusa_codigo in ('participante_inexistente',
-                                   'participante_fora_do_evento',
-                                   'email_do_participante_mudou')
-            then 'pendente'
-          else 'conflito'
-        end;
-        v_participant := null;
-        v_apto := false;
-
-        v_recusadas := v_recusadas || jsonb_build_array(jsonb_build_object(
+        v_recusas := v_recusas || jsonb_build_array(jsonb_build_object(
           'submissao_id', s ->> 'submissao_id',
           'codigo', v_recusa_codigo,
           'motivo', v_recusa_motivo,
-          'estado', v_estado,
-          'participante_pretendido', v_revalidacao -> 'participante_pretendido',
-          'etapas_em_conflito', v_revalidacao -> 'etapas_em_conflito',
-          'etapas_nao_gravadas', v_revalidacao -> 'etapas_nao_gravadas'));
+          'estado_do_plano', v_estado,
+          'participante_pretendido', v_participant,
+          'identidade_via', s -> 'proveniencia' ->> 'identidade_via',
+          'etapas_em_conflito', coalesce(to_jsonb(v_etapas_conflito), '[]'::jsonb),
+          'etapas_nao_gravadas', jsonb_array_length(coalesce(s -> 'etapas', '[]'::jsonb)),
+          'submissao_existente', v_sub_existente,
+          'bloqueio_do_plano', coalesce(nullif(s -> 'bloqueio', 'null'::jsonb), 'null'::jsonb)));
       end if;
     end if;
+  end loop;
+
+  -- =======================================================================
+  -- FASE 3: LOTE RECUSADO -- grava SO o registro da recusa e devolve
+  -- =======================================================================
+  -- O conjunto de escrita desta transacao e EXATAMENTE este registro. Nenhuma
+  -- submissao, nenhum item, nenhuma resposta canonica. Nao ha escrita parcial e
+  -- nao ha rollback: por isso o registro nao precisa sobreviver a nenhum, e
+  -- nada aqui finge estar gravado.
+  if jsonb_array_length(v_recusas) > 0 then
+    for v_r in select * from jsonb_array_elements(v_recusas)
+    loop
+      insert into public.external_import_rejections (
+        event_id, lote_impressao, questionario_impressao, quiz_version,
+        formulario_id, submissao_id, codigo, motivo,
+        participante_pretendido, identidade_via,
+        etapas_em_conflito, etapas_nao_gravadas, estado_do_plano, detalhes,
+        operador, operador_email
+      ) values (
+        v_event_id, v_lote, v_impressao, v_versao,
+        v_form_id, v_r ->> 'submissao_id',
+        v_r ->> 'codigo',
+        format('LOTE RECUSADO NA REVALIDACAO: %s. NADA do lote foi gravado. Peca uma previa nova sem as submissoes conflitantes.',
+               v_r ->> 'motivo'),
+        nullif(v_r ->> 'participante_pretendido', '')::uuid,
+        v_r ->> 'identidade_via',
+        coalesce(v_r -> 'etapas_em_conflito', '[]'::jsonb),
+        coalesce((v_r ->> 'etapas_nao_gravadas')::int, 0),
+        v_r ->> 'estado_do_plano',
+        jsonb_build_object(
+          'submissoes_no_lote', jsonb_array_length(plano -> 'submissoes'),
+          'recusas_no_lote', jsonb_array_length(v_recusas),
+          'bloqueio_do_plano', v_r -> 'bloqueio_do_plano'),
+        v_operador, v_operador_email
+      );
+
+      -- E, quando a submissao JA EXISTIA, o historico DELA tambem conta a
+      -- tentativa recusada. Para submissao que nunca foi gravada nao ha linha a
+      -- que apontar -- e e por isso que o registro duravel acima nao tem FK.
+      if nullif(v_r ->> 'submissao_existente', '') is not null then
+        insert into public.external_submission_events (
+          submission_id, acao, operador, operador_email, justificativa, detalhes
+        ) values (
+          (v_r ->> 'submissao_existente')::uuid,
+          'lote_recusado_na_revalidacao',
+          v_operador, v_operador_email,
+          format('LOTE RECUSADO NA REVALIDACAO: %s. NADA do lote foi gravado.', v_r ->> 'motivo'),
+          jsonb_build_object(
+            'codigo', v_r ->> 'codigo',
+            'lote_impressao', v_lote,
+            'etapas_em_conflito', v_r -> 'etapas_em_conflito',
+            'etapas_nao_gravadas', v_r -> 'etapas_nao_gravadas',
+            'questionario_impressao', v_impressao)
+        );
+      end if;
+    end loop;
+
+    -- No log do servidor tambem, que e canal separado e nao depende de ninguem
+    -- consultar tabela: um lote recusado no meio do evento precisa aparecer para
+    -- quem esta olhando o log, na hora.
+    raise log 'importacao_externa_aplicar: LOTE RECUSADO na revalidacao (evento=%, formulario=%, lote=%, recusas=%). Nada foi gravado.',
+      v_event_id, v_form_id, v_lote, jsonb_array_length(v_recusas);
+
+    return jsonb_build_object(
+      'ok', false,
+      'codigo', 'LOTE_RECUSADO_NA_REVALIDACAO',
+      'motivo', format(
+        '%s submissao(oes) do lote entraram em conflito depois da previa. O LOTE INTEIRO foi recusado e NADA foi gravado. Peca uma previa nova sem as submissoes conflitantes.',
+        jsonb_array_length(v_recusas)),
+      'evento_id', v_event_id,
+      'formulario_id', v_form_id,
+      'questionario_impressao', v_impressao,
+      'lote_impressao', v_lote,
+      -- Contadores em ZERO porque nada foi gravado. Nao e omissao: e a
+      -- afirmacao de que o lote nao entrou.
+      'por_estado', '{}'::jsonb,
+      'linhas_de_resposta_gravadas', 0,
+      'itens_registrados', 0,
+      'importado_por', v_operador,
+      'recusas_na_revalidacao', jsonb_array_length(v_recusas),
+      'recusadas_na_revalidacao', v_recusas
+    );
+  end if;
+
+  -- =======================================================================
+  -- FASE 4: LOTE INTEGRO -- aplica INTEIRO
+  -- =======================================================================
+  -- A trava da FASE 1 continua nas maos desta transacao: nenhum conflito novo
+  -- pode surgir entre a revalidacao e a escrita. Qualquer falha daqui para a
+  -- frente reverte TODAS as escritas do lote.
+  for s in select * from jsonb_array_elements(plano -> 'submissoes')
+  loop
+    v_estado := s ->> 'estado';
+    v_participant := nullif(s ->> 'participant_id', '')::uuid;
+    v_apto := coalesce((s ->> 'apto_para_pontuar')::boolean, false);
 
     insert into public.external_submissions (
       event_id, formulario_id, formulario_nome, submissao_id,
@@ -468,13 +752,10 @@ begin
       s -> 'coleta' ->> 'nome_declarado',
       coalesce(s -> 'coleta' -> 'respostas_brutas', '{}'::jsonb),
       v_participant,
-      -- Recusada: a identidade nao autoriza mais nada, e o check da 022 nao
-      -- aceitaria 'via' com participante nulo fazendo sentido. O que o plano
-      -- afirmava fica em `bloqueio.revalidacao`.
-      case when v_recusa_codigo is null then s -> 'proveniencia' ->> 'identidade_via' else null end,
+      s -> 'proveniencia' ->> 'identidade_via',
       s -> 'proveniencia' ->> 'email_reconciliado',
       v_estado, v_apto,
-      case when v_recusa_codigo is null then nullif(s -> 'bloqueio', 'null'::jsonb) else v_bloqueio end,
+      nullif(s -> 'bloqueio', 'null'::jsonb),
       nullif(s -> 'contagens', 'null'::jsonb),
       v_operador, v_operador_email
     )
@@ -499,9 +780,7 @@ begin
 
     -- Os itens: o desfecho de cada resposta, inclusive (e principalmente) os
     -- incompativeis. Reimportacao substitui o conjunto da submissao, nunca
-    -- mistura o antigo com o novo. Gravados TAMBEM quando a submissao e recusada:
-    -- eles descrevem a COLETA, nao a resposta canonica, e jogar fora o que a
-    -- pessoa respondeu porque a gravacao foi recusada seria perder dado dela.
+    -- mistura o antigo com o novo.
     delete from public.external_response_items where submission_id = v_sub_id;
     for it in select * from jsonb_array_elements(coalesce(s -> 'itens', '[]'::jsonb))
     loop
@@ -522,13 +801,9 @@ begin
       v_itens := v_itens + 1;
     end loop;
 
-    -- As respostas canonicas. SO com participante reconciliado, SO com os
-    -- valores COMPATIVEIS que o plano montou (nenhum zero, nenhum placeholder) e
-    -- -- desde a 024 -- SO quando a revalidacao nao recusou. `v_recusa_codigo`
-    -- nulo aqui e a unica porta: recusada nao grava etapa nenhuma, nem as etapas
-    -- que por si nao conflitariam. A unidade de atomicidade e a submissao.
-    if v_recusa_codigo is null and v_participant is not null
-       and v_estado in ('importavel', 'incompativel') then
+    -- As respostas canonicas. SO com participante reconciliado e SO com os
+    -- valores COMPATIVEIS que o plano montou: nenhum zero, nenhum placeholder.
+    if v_participant is not null and v_estado in ('importavel', 'incompativel') then
       for e in select * from jsonb_array_elements(coalesce(s -> 'etapas', '[]'::jsonb))
       loop
         insert into public.quiz_responses (
@@ -565,32 +840,26 @@ begin
           submitted_at = now();
         v_gravadas := v_gravadas + 1;
       end loop;
-      v_participantes_no_lote := v_participantes_no_lote || v_participant;
     end if;
 
-    v_acao := case
-      when v_recusa_codigo is not null then 'recusada_na_revalidacao'
-      when v_estado = 'importavel'   then 'importada'
-      when v_estado = 'incompativel' then 'retida_incompativel'
-      when v_estado = 'pendente'     then 'retida_pendente'
-      when v_estado = 'conflito'     then 'retida_conflito'
+    v_acao := case v_estado
+      when 'importavel'   then 'importada'
+      when 'incompativel' then 'retida_incompativel'
+      when 'pendente'     then 'retida_pendente'
+      when 'conflito'     then 'retida_conflito'
       else 'retida_pendente'
     end;
     insert into public.external_submission_events (
       submission_id, acao, operador, operador_email, justificativa, detalhes
     ) values (
       v_sub_id, v_acao, v_operador, v_operador_email,
-      case when v_recusa_codigo is not null then v_recusa_motivo
-           else s -> 'bloqueio' ->> 'motivo' end,
+      s -> 'bloqueio' ->> 'motivo',
       jsonb_build_object(
         'estado', v_estado,
         'contagens', s -> 'contagens',
-        'etapas_gravadas', case
-          when v_recusa_codigo is not null then 0
-          else jsonb_array_length(coalesce(s -> 'etapas', '[]'::jsonb))
-        end,
+        'etapas_gravadas', jsonb_array_length(coalesce(s -> 'etapas', '[]'::jsonb)),
         'questionario_impressao', v_impressao,
-        'revalidacao', v_revalidacao
+        'lote_impressao', v_lote
       )
     );
 
@@ -600,66 +869,56 @@ begin
     );
   end loop;
 
-  v_resumo := jsonb_build_object(
+  return jsonb_build_object(
+    'ok', true,
     'evento_id', v_event_id,
     'formulario_id', v_form_id,
     'questionario_impressao', v_impressao,
+    'lote_impressao', v_lote,
     'por_estado', v_por_estado,
     'linhas_de_resposta_gravadas', v_gravadas,
     'itens_registrados', v_itens,
     'importado_por', v_operador,
-    -- O operador tem de saber EXATAMENTE o que nao entrou, e por que. Vazio
-    -- quando nada foi recusado: lista vazia e uma afirmacao, nao uma omissao.
-    'recusadas_na_revalidacao', v_recusadas,
-    'recusas_na_revalidacao', jsonb_array_length(v_recusadas)
+    -- Lista vazia e uma AFIRMACAO: nada foi recusado neste lote.
+    'recusas_na_revalidacao', 0,
+    'recusadas_na_revalidacao', '[]'::jsonb
   );
-  return v_resumo;
 end;
 $$;
 
 comment on function public.importacao_externa_aplicar(jsonb) is
-  'Grava um plano de importacao externa numa transacao e REVALIDA dentro dela (identidade, duplicidade, respostas existentes). Nunca sobrescreve resposta canonica que nao tenha sido escrita por ESTA submissao externa: resposta do aplicativo ou de outra coleta vira recusa como conflito, registrada em external_submission_events com acao propria. Nao decide identidade nem pontuacao (isso e lib/importacao/*).';
+  'Aplica um LOTE de importacao externa: trava os participantes (bloqueio consultivo compartilhado com a escrita do aplicativo), REVALIDA o lote inteiro sem escrever nada (identidade, versao da submissao, duplicidade, respostas existentes em QUALQUER etapa) e so entao aplica. Qualquer conflito novo recusa o LOTE INTEIRO: nada e gravado, e a recusa fica em external_import_rejections (e no livro-razao da submissao, quando ela ja existia). Nao decide identidade nem pontuacao (isso e lib/importacao/*).';
 
 -- ===========================================================================
--- 4. A VISAO DE APTIDAO APRENDE O NOVO DESFECHO
+-- 5. AS VISOES: o novo desfecho tem nome proprio
 -- ===========================================================================
--- Sem isto, uma submissao recusada na revalidacao apareceria como
--- 'IDENTIDADE_NAO_RESOLVIDA' -- que e falso: a identidade estava resolvida; o
--- que aconteceu e que a resposta canonica passou a ter outro dono. Codigo novo,
--- nome proprio, nenhum nome reaproveitado dizendo outra coisa. As colunas e os
--- tipos sao os mesmos da 022 (requisito de `create or replace view`).
-create or replace view public.v_aptidao_pontuacao_externa as
+-- Um lote recusado NAO deixa submissao em estado nenhum (nada e gravado), entao
+-- `v_aptidao_pontuacao_externa` continua como a 022 a escreveu. O que faltava
+-- era onde LER as recusas: por lote, com motivo, sem abrir o banco com a mao.
+create or replace view public.v_importacoes_recusadas as
 select
-  es.event_id,
-  es.participant_id,
-  es.id            as submission_id,
-  es.estado,
-  es.apto_para_pontuar as pode_pontuar,
-  case
-    when es.apto_para_pontuar then null
-    when es.bloqueio ->> 'codigo' in (
-      'resposta_do_aplicativo', 'outra_submissao_externa',
-      'outra_submissao_ativa_do_participante', 'duplicidade_no_lote',
-      'participante_inexistente', 'participante_fora_do_evento',
-      'email_do_participante_mudou'
-    ) then 'RECUSADA_NA_REVALIDACAO'
-    when es.estado = 'incompativel' then 'DADO_INCOMPATIVEL'
-    when es.estado in ('pendente', 'conflito') then 'IDENTIDADE_NAO_RESOLVIDA'
-    else 'APTIDAO_INDETERMINADA'
-  end as codigo,
-  es.bloqueio ->> 'motivo' as motivo,
-  coalesce(es.bloqueio -> 'perguntas', '[]'::jsonb) as perguntas,
-  (select jsonb_agg(jsonb_build_object(
-            'pergunta_id', i.pergunta_id,
-            'causa', i.causa,
-            'motivo', i.motivo,
-            'respondido', i.valor_bruto,
-            'pontuada', i.pontuada) order by i.pergunta_id)
-     from public.external_response_items i
-    where i.submission_id = es.id and i.estado = 'incompativel') as incompativeis
-from public.external_submissions es;
+  r.event_id,
+  r.lote_impressao,
+  r.formulario_id,
+  r.quiz_version,
+  r.questionario_impressao,
+  min(r.criado_em)                      as recusado_em,
+  r.operador,
+  r.operador_email,
+  count(*)                              as submissoes_recusadas,
+  jsonb_agg(jsonb_build_object(
+    'submissao_id', r.submissao_id,
+    'codigo', r.codigo,
+    'motivo', r.motivo,
+    'participante_pretendido', r.participante_pretendido,
+    'etapas_em_conflito', r.etapas_em_conflito,
+    'etapas_nao_gravadas', r.etapas_nao_gravadas
+  ) order by r.submissao_id)            as recusas
+from public.external_import_rejections r
+group by r.event_id, r.lote_impressao, r.formulario_id, r.quiz_version,
+         r.questionario_impressao, r.operador, r.operador_email;
 
-comment on view public.v_aptidao_pontuacao_externa is
-  'Pode pontuar as respostas externas deste participante? Quatro desfechos: apto, DADO_INCOMPATIVEL (respondeu e nao casou -- nunca zero), RECUSADA_NA_REVALIDACAO (o plano envelheceu: alguem respondeu no aplicativo ou outra coleta ja ocupa a linha) ou identidade/aptidao nao verificada.';
+comment on view public.v_importacoes_recusadas is
+  'Lotes de importacao externa RECUSADOS na revalidacao, um por tentativa, com cada submissao conflitante nomeada e o motivo. Lote recusado nao gravou nada: e aqui que ele existe.';
 
-revoke all on public.v_aptidao_pontuacao_externa from anon, authenticated;
+revoke all on public.v_importacoes_recusadas from anon, authenticated;

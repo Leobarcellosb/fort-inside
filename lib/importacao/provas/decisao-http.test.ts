@@ -38,7 +38,11 @@
 //  10. ficha VENCIDA e recusada, e nada e escrito (e a ficha nova e aceita);
 //  11. O CASO QUE MAIS MACHUCA, medido: sem o portao do alvo ocupado, a gravacao
 //      sobrescreve a resposta que a pessoa tinha e a revogacao NAO a devolve;
-//  12. o recurso ausente no banco -> "nao esta instalado", nunca "nao respondeu".
+//  12. o recurso ausente no banco -> "nao esta instalado", nunca "nao respondeu";
+//  13. o CONTRATO DE REVERSIBILIDADE: os tres estados se comportam diferente, a
+//      tela os informa PREVIAMENTE e por submissao, a titularidade dos registros
+//      removidos fica provada no livro-razao, e a evidencia crua permanece nos
+//      tres.
 
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -137,6 +141,9 @@ function erroDoPsql(e: unknown): ErroSimulado {
   return { message: (err.stderr ?? err.message ?? String(e)).trim() };
 }
 
+/** Ver o gancho em `rpc`. `null` fora do cenario da corrida. */
+let noMeioDaGravacao: (() => void) | null = null;
+
 function clienteViaPsql() {
   function consulta(tabela: string, colunas: string) {
     const cols = colunas
@@ -213,6 +220,16 @@ function clienteViaPsql() {
       };
     },
     async rpc(nome: string, args: Record<string, unknown>) {
+      // O GANCHO DA CORRIDA. Serve a um proposito so: fazer a escrita concorrente
+      // acontecer DEPOIS de a rota ter lido a mesa e montado o plano, e ANTES de a
+      // funcao do banco gravar. E a unica forma de exercitar a segunda camada do
+      // portao -- se a escrita concorrente acontecesse antes do pedido, a PRIMEIRA
+      // camada a pegaria, e o teste mediria a camada errada.
+      if (noMeioDaGravacao !== null) {
+        const f = noMeioDaGravacao;
+        noMeioDaGravacao = null;
+        f();
+      }
       try {
         const chamada =
           nome === "importacao_externa_aplicar"
@@ -939,20 +956,27 @@ descreve("PROVA: a borda da DECISAO DO OPERADOR, contra Postgres real", () => {
     // --- CAMADA 2: a CORRIDA, que so o banco pode pegar ----------------------
     // A ficha e gerada quando `machuca` ainda nao tem resposta nenhuma: a camada 1
     // permite, e esta certa -- naquele instante nao havia nada por cima.
-    const importada = await importar([linha(EMAIL.machuca, "resp-machuca")]);
+    // E-mail que nao e de participante nenhum: ela chega PENDENTE, para a decisao
+    // do operador ser a unica coisa que a liga a alguem.
+    const importada = await importar([linha("corrida@example.org", "resp-machuca")]);
     expect(importada.tipo).toBe("aplicado");
     const corrida = await fichaPara("resp-machuca", P.machuca);
     expect(corrida.permitida).toBe(true);
     expect(corrida.consequencia?.respostas_sobrescritas).toBe(0);
     expect(corrida.consequencia?.reversivel).toBe(true);
 
-    // ENTRE a ficha e a confirmacao, a pessoa responde PELO APLICATIVO.
-    sql(`
-      insert into quiz_responses (participant_id, stage_id, answers, origem)
-      values ('${P.machuca}', 101, '{"q1": "ANTES: isto a pessoa respondeu no aplicativo"}'::jsonb, 'app')
-    `);
+    // A CORRIDA: a pessoa responde PELO APLICATIVO depois de a rota ter lido a
+    // mesa e registrado o ato, e antes de a funcao do banco gravar. E a janela que
+    // a camada 1 nao tem como fechar, porque ela conferiu antes de a linha existir.
+    noMeioDaGravacao = () => {
+      sql(`
+        insert into quiz_responses (participant_id, stage_id, answers, origem)
+        values ('${P.machuca}', 101, '{"q1": "ANTES: isto a pessoa respondeu no aplicativo"}'::jsonb, 'app')
+      `);
+    };
 
     const r2 = await reconciliar(corrida, "confirmando a atribuicao conferida no credenciamento");
+    expect(noMeioDaGravacao).toBeNull(); // o gancho rodou: a corrida aconteceu
     // O banco conferiu NA HORA DE GRAVAR e recusou. Nao e "pronto" e nao e
     // "nao respondeu": e conferido e recusado, com codigo proprio.
     expect(r2.tipo).toBe("recusado");
@@ -989,7 +1013,7 @@ descreve("PROVA: a borda da DECISAO DO OPERADOR, contra Postgres real", () => {
     // O HISTORICO guarda o ATO e a RECUSA, os dois. A decisao do operador nao e
     // apagada por nao ter pego, e fica escrito que nao pegou.
     expect(historicoDe("resp-machuca")).toEqual([
-      "importada",
+      "retida_pendente",
       "reconciliada_pelo_operador",
       "recusada_na_revalidacao",
     ]);
@@ -1025,4 +1049,153 @@ descreve("PROVA: a borda da DECISAO DO OPERADOR, contra Postgres real", () => {
     // E o ambiente volta: o recurso existe outra vez.
     expect((await pedirMesa(EVENTO, FETCH_MESA, () => {})).tipo).toBe("mesa");
   });
+
+  // =======================================================================
+  it("13. O CONTRATO DE REVERSIBILIDADE: os tres estados se comportam DIFERENTE, e a tela sabe ANTES", async () => {
+    // A exigencia da revisao: "A tela deve informar previamente quando a resolucao
+    // puder produzir efeitos que nao sao reversiveis por uma acao simples" -- e os
+    // tres estados sao tres coisas distintas, nao um aviso generico:
+    //   1. correcao_simples        nada derivado: desfaz com um ato;
+    //   2. operacao_controlada     ha registro: desfaz removendo, com historico e
+    //                              TITULARIDADE provada;
+    //   3. procedimento_excepcional ha documento: desfazer simples BLOQUEADO.
+    // Em todos: o registro cru da submissao permanece.
+
+    // --- ESTADO 2: ha registro, nenhum documento -----------------------------
+    const estado2 = await fichaDeRevogacao("resp-vencida");
+    expect(estado2.reversibilidade.estado).toBe("operacao_controlada");
+    expect(estado2.permitida).toBe(true);
+    expect(estado2.respostas_canonicas_a_remover).toBe(5);
+    // INVENTARIO, nao contagem: cada registro nomeado, com etapa, dono e origem.
+    expect(estado2.registros.map((r) => r.stage_id)).toEqual([101, 102, 103, 104, 105]);
+    expect(estado2.registros.every((r) => r.participante === P.vencida && r.origem === "externo")).toBe(true);
+    expect(estado2.reversibilidade.efeitos_nao_reversiveis).toEqual([]);
+
+    const r2 = await revogarSubmissao(
+      { eventId: EVENTO, ficha: estado2, justificativa: "conferido depois: a submissao era de outra turma" },
+      FETCH_REVOGAR,
+      () => {},
+    );
+    expect(r2.tipo).toBe("revogado");
+    if (r2.tipo === "revogado") expect(r2.revogado.respostas_canonicas_removidas).toBe(5);
+
+    // A TITULARIDADE fica PROVADA no livro-razao: o texto do operador, o separador
+    // do sistema, e o inventario dos registros removidos.
+    const registrada = um(`
+      select e.justificativa from external_submission_events e
+        join external_submissions s on s.id = e.submission_id
+       where s.submissao_id = 'resp-vencida' and e.acao = 'revogada'`);
+    expect(registrada).toMatch(/^conferido depois: a submissao era de outra turma/);
+    expect(registrada).toContain("titularidade dos registros removidos");
+    expect(registrada).toContain(P.vencida);
+    expect(registrada).toContain("etapa 101");
+    expect(registrada).toContain("etapa 105");
+    expect(registrada).toContain("5 registro(s)");
+    expect(registrada).toContain("reversibilidade operacao_controlada");
+    // A EVIDENCIA permanece: o payload cru inteiro continua la.
+    expect(
+      numero(`select count(*) from jsonb_object_keys(
+        (select respostas_brutas from external_submissions where submissao_id = 'resp-vencida'))`),
+    ).toBe(52);
+
+    // --- ESTADO 3: ha documento gerado -> desfazer simples BLOQUEADO ---------
+    // `resp-dupla-1` esta reconciliada com `livre` desde o cenario 8.
+    sql(`
+      insert into prognostics (participant_id, raw_ai_output, status, generated_at, delivered_at, public_share_token)
+      values ('${P.livre}', '{"texto": "prognostico gerado e entregue"}'::jsonb, 'delivered',
+              now(), now(), 'token-publico-de-prova')
+    `);
+    const antesDoEstado3 = contarNoBanco();
+    const estado3 = await fichaDeRevogacao("resp-dupla-1");
+    expect(estado3.reversibilidade.estado).toBe("procedimento_excepcional");
+    expect(estado3.permitida).toBe(false);
+    expect(estado3.impedimento?.codigo).toBe("derivado_ja_gerado");
+    // A tela nomeia O QUE existe, e nomeia o acesso que precisaria ser suspenso.
+    expect(estado3.reversibilidade.efeitos_nao_reversiveis.join(" ")).toMatch(/documento ENTREGUE/);
+    expect(estado3.reversibilidade.efeitos_nao_reversiveis.join(" ")).toMatch(/link publico/);
+
+    const r3 = await revogarSubmissao(
+      { eventId: EVENTO, ficha: estado3, justificativa: "tentativa de desfazer com documento ja entregue" },
+      FETCH_REVOGAR,
+      () => {},
+    );
+    expect(r3.tipo).toBe("recusado");
+    if (r3.tipo === "recusado") {
+      expect(r3.codigo).toBe("IMPORT_REVOKE_BLOCKED");
+      expect(r3.mensagem).toMatch(/já existe documento gerado/);
+      expect(r3.mensagem).toMatch(/invalidar o documento derivado/);
+      expect(r3.acao).toBe("falar_com_equipe");
+    }
+    // NADA foi alterado, e as respostas continuam onde estavam.
+    expect(contarNoBanco()).toEqual(antesDoEstado3);
+    expect(numero(`select count(*) from quiz_responses where participant_id = '${P.livre}'`)).toBe(5);
+    expect(um(`select estado from external_submissions where submissao_id = 'resp-dupla-1'`)).toBe("importavel");
+
+    // CONTROLE POSITIVO: invalidado o derivado, a MESMA revogacao passa a ser
+    // operacao controlada e e permitida.
+    sql(`delete from prognostics where participant_id = '${P.livre}'`);
+    const semDerivado = await fichaDeRevogacao("resp-dupla-1");
+    expect(semDerivado.reversibilidade.estado).toBe("operacao_controlada");
+    expect(semDerivado.permitida).toBe(true);
+    const r3b = await revogarSubmissao(
+      { eventId: EVENTO, ficha: semDerivado, justificativa: "derivado invalidado antes; corrigindo a identidade" },
+      FETCH_REVOGAR,
+      () => {},
+    );
+    expect(r3b.tipo).toBe("revogado");
+    if (r3b.tipo === "revogado") expect(r3b.revogado.respostas_canonicas_removidas).toBe(5);
+
+    // --- A RECONCILIACAO tambem avisa PREVIAMENTE, e por submissao -----------
+    // `orfa` esta livre (a reconciliacao dela foi revogada no cenario 7) e passa a
+    // ter um documento. A ficha avisa ANTES do clique, nesta submissao -- e a de
+    // outro participante, na mesma mesa, continua dizendo operacao controlada.
+    sql(`
+      insert into prognostics (participant_id, raw_ai_output, status, generated_at)
+      values ('${P.orfa}', '{"texto": "prognostico gerado"}'::jsonb, 'generated', now())
+    `);
+    const comDocumento = await fichaPara("resp-sem-dono", P.orfa);
+    expect(comDocumento.reversibilidade?.estado).toBe("procedimento_excepcional");
+    expect(comDocumento.reversibilidade?.texto).toMatch(/LEIA ANTES DE CONFIRMAR/);
+    const semDocumento = await fichaPara("resp-sem-dono", P.vencida);
+    expect(semDocumento.reversibilidade?.estado).toBe("operacao_controlada");
+    expect(semDocumento.reversibilidade?.texto).not.toBe(comDocumento.reversibilidade?.texto);
+    sql(`delete from prognostics where participant_id = '${P.orfa}'`);
+
+    // --- ESTADO 1: nada a remover -> correcao simples ------------------------
+    // `livre` voltou a ter zero resposta; `resp-dupla-2` pode ser atribuida a ele.
+    const nova = await fichaPara("resp-dupla-2", P.livre);
+    expect(nova.permitida).toBe(true);
+    expect((await reconciliar(nova, "escolhida a submissao completa das duas da mesma pessoa")).tipo).toBe(
+      "reconciliado",
+    );
+    // Uma limpeza administrativa remove as respostas por fora (e o unico jeito de
+    // chegar ao estado 1 neste sistema, onde vincular e gravar sao o mesmo ato).
+    sql(`delete from quiz_responses where participant_id = '${P.livre}'`);
+    const estado1 = await fichaDeRevogacao("resp-dupla-2");
+    expect(estado1.reversibilidade.estado).toBe("correcao_simples");
+    expect(estado1.respostas_canonicas_a_remover).toBe(0);
+    expect(estado1.registros).toEqual([]);
+    expect(estado1.permitida).toBe(true);
+
+    const r1 = await revogarSubmissao(
+      { eventId: EVENTO, ficha: estado1, justificativa: "correcao simples: nao havia registro canonico" },
+      FETCH_REVOGAR,
+      () => {},
+    );
+    expect(r1.tipo).toBe("revogado");
+    if (r1.tipo === "revogado") expect(r1.revogado.respostas_canonicas_removidas).toBe(0);
+    const inventarioVazio = um(`
+      select e.justificativa from external_submission_events e
+        join external_submissions s on s.id = e.submission_id
+       where s.submissao_id = 'resp-dupla-2' and e.acao = 'revogada'`);
+    expect(inventarioVazio).toContain("nenhum registro canonico");
+    expect(inventarioVazio).toContain("reversibilidade correcao_simples");
+
+    // E A EVIDENCIA PERMANECE NOS TRES ESTADOS.
+    const brutas = sql(`
+      select submissao_id || '=' || (select count(*) from jsonb_object_keys(respostas_brutas))
+        from external_submissions where event_id = '${EVENTO}' order by submissao_id`);
+    expect(brutas.split("\n").every((l) => l.endsWith("=52"))).toBe(true);
+  });
+
 });
