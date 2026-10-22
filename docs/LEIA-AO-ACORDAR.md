@@ -9,8 +9,17 @@ sua sobre código que já existe.
 
 Cinco alterações de banco foram escritas esta noite — a revalidação da importação, o selo
 que amarra a aprovação ao conteúdo, o histórico do que o jovem leu, a suspensão/retificação
-e a trava da etapa. **Nenhuma delas está aplicada em lugar nenhum**, nem no ambiente local
-nem no banco que serve sábado.
+e a trava da etapa. **Nenhuma delas está aplicada no banco que serve sábado.**
+
+> **Correção.** Uma versão anterior deste documento dizia que nenhuma estava aplicada *em
+> lugar nenhum, nem no ambiente local*. Isso era falso, e a culpa é minha: eu mesmo apliquei
+> as duas primeiras no ambiente local às 7h, para conseguir abrir o app no navegador, e
+> depois escrevi a frase esquecendo disso. Uma auditoria encontrou o erro.
+>
+> E ele importa mais do que parece: todo teste do fluxo de entrega feito esta madrugada
+> rodou contra um banco que **já tinha** essa alteração. Foi por isso que o pior modo de
+> falha deste release — descrito em [RELEASE-23-OUT.md](RELEASE-23-OUT.md) — não apareceu
+> para ninguém.
 
 Dito sem rodeio: as proteções existem no código e **não existem no banco que vai rodar o
 evento**. Hoje, lá, a importação ainda pode sobrescrever a resposta de quem respondeu pelo

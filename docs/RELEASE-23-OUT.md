@@ -53,31 +53,72 @@ o painel parou de mostrar "0 de 4 responderam" num evento onde todos responderam
 
 ---
 
-## O que pode quebrar, e é o risco número um
+## O risco número um: a segunda-feira trava em silêncio
 
-**O código e o banco são promovidos em momentos diferentes.** Se o código novo for para o
-ar sem as alterações de banco, há telas que procuram colunas que ainda não existem.
+**Se o código for para o ar sem a alteração 025, os 50 documentos não são entregues. Nenhum.**
 
-Por isso a ordem recomendada é **banco primeiro, código depois** — e se você só quiser
-fazer uma das duas coisas, faça **só o banco**, nunca só o código.
+Não é um erro visível. É pior: na tela de revisão, o botão "Entregar" aparece desligado nos
+50 cartões, com a frase *"Este documento ainda não tem revisão salva. Abra em Editar, revise
+o texto e salve: a entrega é liberada em seguida."*
 
-O inverso (banco novo com código antigo) é mais seguro: as travas novas recusam operações
-que o código antigo não faz de qualquer forma — com uma exceção que está na tabela abaixo.
+**Essa frase passa a ser mentira nessa situação.** A pessoa abre, revisa, salva — e o botão
+continua desligado. Para sempre, porque o que gravaria a aprovação é justamente a alteração
+que não foi aplicada. Não existe nada que ela possa clicar para destravar, e nada na tela
+diz o que está acontecendo. Ela fica num laço, seguindo uma instrução que não pode funcionar.
+
+Por isso a regra é simples: **nunca publique o código sem aplicar o banco.** Se for fazer só
+uma das duas coisas, faça **só o banco**.
+
+*(Uma versão anterior deste documento dizia que "telas procuram colunas que não existem",
+sugerindo um erro alto e visível. Uma auditoria mostrou que não é assim: as telas pedem
+todas as colunas de uma vez, então nada estoura — a falha é silenciosa. Corrigido.)*
+
+### E na direção contrária?
+
+Banco novo com código antigo é bem mais seguro, com **uma exceção que eu nomeio**: a
+alteração **028** recusa uma operação que o painel antigo faz. Se alguém abrir o painel ao
+vivo num evento de cinco etapas e clicar "liberar etapa 6", o banco recusa e o painel antigo
+não sabe traduzir a recusa — aparece um erro cru. Está certo recusar (a etapa 6 não existe),
+mas é feio no meio de um evento.
 
 ---
 
-## As cinco alterações de banco, uma a uma
+## As cinco alterações, uma a uma
 
-| | O que faz | Risco de aplicar na véspera |
+| | O que faz | Aplicar na véspera? |
 |---|---|---|
-| **024** | Impede a importação de sobrescrever a resposta de quem respondeu pelo app | **Baixo.** Só recusa o que hoje destrói dado |
-| **025** | Amarra a aprovação ao texto aprovado | **Médio.** Passa a exigir revisão salva antes de entregar — muda o procedimento de segunda |
-| **026** | Guarda o que cada jovem leu e quando | **Baixo.** Só grava; não impede nada |
-| **027** | Permite tirar do ar e corrigir um documento entregue | **Baixo.** Só acrescenta um caminho que não existia |
-| **028** | Impede gravar etapa que não existe no evento | **Baixo.** O caminho normal continua aberto |
+| **024** | Impede a importação de sobrescrever a resposta de quem respondeu pelo app | **Sim.** Só recusa o que hoje destrói dado |
+| **025** | Amarra a aprovação ao texto aprovado | **Sim, e combine o procedimento antes.** Não aplicar é pior: trava a segunda inteira |
+| **026** | Guarda o que cada jovem leu e quando | **Sim, mas só depois da 025** — veja abaixo |
+| **027** | Permite tirar do ar e corrigir um documento entregue | **Sim, de preferência depois da 026** |
+| **028** | Impede gravar etapa que não existe no evento | **Confira o evento primeiro** — é a única com ressalva |
 
-A **025** é a única que muda como alguém trabalha. As outras quatro impedem coisas que
-ninguém quer fazer.
+### A ordem não é detalhe: fora de ordem, a 026 quebra tudo
+
+Aplicar a **026 antes da 025** falha no meio — e **deixa estrago**. Ela alcança a criar a
+tabela e o gatilho antes de abortar, e aquele gatilho fica vivo e quebrado: a partir daí
+**nenhum documento pode ser entregue**, e não se desfaz sozinho — precisa de limpeza manual
+no banco.
+
+Então a 026 não é "baixo risco" como este documento dizia antes. O risco dela é **a ordem**,
+não o conteúdo. Em ordem crescente, tudo bem.
+
+### Sobre a 028
+
+É a única que eu **não aplicaria sem conferir antes** se o evento de sábado é "ao vivo" e
+quantas etapas o questionário dele tem. Se for assíncrono (que é o caso previsto), ela nem
+chega a ser exercitada — e aí pode esperar até depois do evento. **É a que sábado menos usa.**
+
+---
+
+## O que eu recomendaria
+
+**Aplicar 024, 025, 026 e 027, em ordem crescente.** Adiar a 028 até alguém confirmar o modo
+e a versão do evento real. **Publicar o código só depois disso** — nunca antes.
+
+E, antes da segunda, **combinar com uma pessoa, por escrito, que os 50 documentos serão
+abertos e salvos um por um.** É isso que a 025 passa a exigir, e é a diferença entre cumprir
+a promessa de revisão humana e ter uma segunda-feira travada.
 
 ---
 
@@ -118,7 +159,22 @@ permanente, e quem já o tiver continua abrindo.
 
 **3. Não consegui medir o banco de produção.** Ele está fora do meu alcance até para
 leitura, por uma regra que eu não contornei. A fronteira exata do que falta lá precisa ser
-conferida por quem tem acesso.
+conferida por quem tem acesso — e existe ferramenta no próprio projeto para isso
+(`scripts/guard-drift.sh`), que compara o banco real contra os arquivos e diz o que falta.
+**Vale rodar antes de aplicar qualquer coisa**, porque o registro interno de migrations não
+é confiável: no ambiente local ele diz que parou na 018, quando na verdade há coisas da 025
+aplicadas.
+
+**4. `npm test` não roda as provas de banco.** Ele mostra 1.363 testes verdes e zero
+falhas — mas os 219 "pulados" são justamente **toda a evidência contra Postgres de verdade**.
+Elas existem, são boas, e eu rodei várias à mão esta noite. Mas quem rodar só o comando
+padrão vê verde e conclui que as garantias de banco estão provadas, quando o que rodou
+foram as funções puras.
+
+**5. Uma dívida com prova anexada, que não bloqueia o release.** O livro de registro de
+recusas da importação pode ser apagado inteiro em um comando pelo mesmo papel que as telas
+de administração usam. Os outros dois livros feitos esta noite estão corretos; esse ficou
+fora do padrão da casa. Não impede nada hoje, e precisa ser corrigido depois.
 
 ---
 
