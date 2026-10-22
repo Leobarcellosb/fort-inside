@@ -13,8 +13,10 @@
 --
 -- Tambem serve HOJE: o bloco 1 sozinho responde se o prazo esta cadastrado.
 
--- 1. O EVENTO. form_closes_at deve ser sexta 23/10 23h59 em Sao Paulo
---    (= 2026-10-24 02:59:00+00). Se vier nulo ou diferente, NAO publicar a trava
+-- 1. O EVENTO. form_closes_at e o PRIMEIRO instante em que o formulario recusa.
+--    Recomendado: 2026-10-24 03:00:00+00 (meia-noite em Sao Paulo: "aberto ate
+--    sexta, 23h59" com o minuto 23h59 inteiro). 02:59:00+00 fecha no inicio do
+--    minuto 23h59. Se vier nulo ou fora dessas duas, NAO publicar a trava
 --    de prazo antes de corrigir.
 select event_code, name, status, mode, quiz_version,
        form_opens_at, form_closes_at,

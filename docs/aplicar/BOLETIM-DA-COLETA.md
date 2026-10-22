@@ -25,7 +25,7 @@ Os blocos 2 a 6 são detalhe, para quando o boletim acender algum alerta (`<<`).
 | Quinta, depois do disparo da Malu | "Último questionário recebido" com horário depois do disparo, e "Cadastros com 52/52" subindo. |
 | Sexta, 12h | "Erros de gravação" e "Conflitos aguardando" em zero ou com tempo de resolver. |
 | Sexta, 18h | Lembretes: ver abaixo. |
-| Sexta, 22h30 | Último recebido recente, nenhum erro novo, prazo confere com sexta 23h59. |
+| Sexta, 22h30 | Último recebido recente, nenhum erro novo, prazo como decidido pelo dono. |
 
 ## O que cada linha quer dizer
 
@@ -47,7 +47,9 @@ Os blocos 2 a 6 são detalhe, para quando o boletim acender algum alerta (`<<`).
   sinal é o log da Vercel, respostas 503 em `/api/formulario-publico`.
 - **Último questionário recebido:** muitas horas sem nada no meio da tarde de sexta
   pode ser formulário fora do ar. Abrir o link do formulário no celular e conferir.
-- **Prazo:** precisa dizer "23/10 23:59 em São Paulo (confere com sexta 23h59)".
+- **Prazo:** o valor é a hora em que o formulário passa a recusar. Recomendado: "24/10
+  00:00 em São Paulo (fecha à meia-noite: o minuto 23h59 de sexta fica aberto)". Se
+  aparecer "fecha às 23h59min00s", o último minuto de sexta fica de fora: é escolha do dono.
 - **Estado cadastral do formulário:** o que o banco diz. Prazo cadastrado e prazo
   aplicado pelo servidor são coisas diferentes: o prazo estar certo no banco **não
   prova** que o formulário recusa envios depois dele. Isso só vale quando a trava de

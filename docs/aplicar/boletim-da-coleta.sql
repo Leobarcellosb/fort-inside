@@ -106,10 +106,12 @@ select concat_ws(E'\n',
   '',
   'Prazo cadastrado: '
     || coalesce(to_char(ev.form_closes_at at time zone 'America/Sao_Paulo', 'DD/MM HH24:MI') || ' em São Paulo', 'NÃO CADASTRADO  << ATENÇÃO')
-    || case when ev.form_closes_at = timestamptz '2026-10-24 02:59:00+00' then ' (confere com sexta 23h59)'
+    || case when ev.form_closes_at = timestamptz '2026-10-24 03:00:00+00' then ' (fecha à meia-noite: o minuto 23h59 de sexta fica aberto)'
+            when ev.form_closes_at = timestamptz '2026-10-24 02:59:00+00' then '  << fecha às 23h59min00s: o último minuto de sexta fica de fora'
             when ev.form_closes_at is null then ''
             else '  << DIFERENTE DE SEXTA 23h59' end,
   'Estado cadastral do formulário: ' || case when ev.status = 'completed' then 'evento concluído (o formulário recusa envios)'
+                         when ev.status = 'processing' then 'evento em processamento'
                          when ev.form_closes_at is not null and now() >= ev.form_closes_at then 'prazo cadastrado já passou'
                          else 'dentro do prazo cadastrado' end,
   'Prazo cadastrado e prazo aplicado pelo servidor são verificações distintas: este boletim só confere o cadastrado.'
@@ -145,12 +147,15 @@ join public.events e on e.id = s.event_id
 where e.event_code = 'MARCOZERO'
 group by 1 order by 1;
 
--- 5. PRAZO, em UTC e em Sao Paulo. Deve ser 2026-10-24 02:59:00+00
---    (= sexta 23/10, 23h59 em Sao Paulo).
+-- 5. PRAZO, em UTC e em Sao Paulo. form_closes_at e o PRIMEIRO instante em que o
+--    formulario recusa. Recomendado: 2026-10-24 03:00:00+00 (meia-noite em Sao
+--    Paulo, o minuto 23h59 de sexta aberto). 02:59:00+00 fecha no inicio do
+--    minuto 23h59. A escolha e do proprietario.
 select event_code, status, mode,
        form_closes_at                                        as fecha_em_utc,
        form_closes_at at time zone 'America/Sao_Paulo'       as fecha_em_sao_paulo,
-       form_closes_at = timestamptz '2026-10-24 02:59:00+00' as confere_com_sexta_23h59
+       form_closes_at = timestamptz '2026-10-24 03:00:00+00' as fecha_a_meia_noite,
+       form_closes_at = timestamptz '2026-10-24 02:59:00+00' as fecha_no_inicio_de_23h59
 from public.events where event_code = 'MARCOZERO';
 
 -- 6. ISOLAMENTO: as tabelas com dado pessoal estao com RLS ligada, e quais
