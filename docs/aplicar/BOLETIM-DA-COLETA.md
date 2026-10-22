@@ -5,13 +5,17 @@ e nada mostra nome, e-mail, telefone ou resposta de ninguém.
 
 ## Como tirar o boletim
 
-1. Supabase do projeto do Marco Zero, **SQL Editor**, nova consulta.
+1. Supabase do projeto do Marco Zero, **SQL Editor**, nova consulta. Confira no endereço
+   da página que é o projeto de produção do Marco Zero, não outro.
 2. Cole e rode primeiro: `set default_transaction_read_only = on;`
    (garante que nada vai ser escrito, mesmo por engano).
 3. Cole o **bloco 1** de `docs/aplicar/boletim-da-coleta.sql` e rode.
-4. Copie a célula `boletim` e mande no grupo da equipe.
+4. Copie a célula `boletim` e mande no grupo da equipe. Ela já traz o horário da leitura
+   e o id do evento: é o que permite comparar uma leitura com a seguinte.
 
 Se o bloco 1 não devolver nenhuma linha, o código do evento está errado.
+Se der erro, o boletim desta leitura é **não verificado** em todos os campos. Nunca
+preencha com zero o que a consulta não conseguiu ler.
 Os blocos 2 a 6 são detalhe, para quando o boletim acender algum alerta (`<<`).
 
 ## Os quatro momentos
@@ -27,20 +31,43 @@ Os blocos 2 a 6 são detalhe, para quando o boletim acender algum alerta (`<<`).
 
 - **Convidados informados (50):** o número que a organização passou. Não é contado
   no banco. Não dá para tirar porcentagem de resposta a partir dele.
-- **Questionários completos:** pessoas com as 52 respostas obrigatórias **gravadas no
-  banco**. A tela de agradecimento sozinha não prova isso; esta linha prova.
-- **Concluídos com resposta faltando:** deve ser 0. Se não for, avise a equipe técnica.
+- **Cadastros registrados:** cadastro não é pessoa confirmada. Duas linhas podem ser a
+  mesma pessoa, e um e-mail digitado não foi verificado.
+- **Cadastros com 52/52 respostas:** as respostas obrigatórias estão **gravadas no banco**,
+  presentes e não vazias. A tela de agradecimento sozinha não prova isso; esta linha
+  prova. Não prova que as respostas fazem sentido, nem quem respondeu.
+- **Concluídos sem as 52 respostas:** deve ser 0.
 - **Conflitos de identidade aguardando:** o mesmo e-mail respondeu duas vezes com
   conteúdo diferente. A segunda resposta está guardada; a equipe decide qual vale
   antes de segunda.
 - **Nomes iguais em cadastros diferentes:** pode ser a mesma pessoa com dois e-mails.
   Conferir com a lista oficial antes de gerar documento.
-- **Erros de gravação:** envios que o banco não confirmou (a pessoa viu aviso para
+- **Erros de gravação registrados no banco:** envios que o banco não confirmou (a pessoa viu aviso para
   tentar de novo). Se o banco inteiro cair, nem esse registro entra: nesse caso o
   sinal é o log da Vercel, respostas 503 em `/api/formulario-publico`.
 - **Último questionário recebido:** muitas horas sem nada no meio da tarde de sexta
   pode ser formulário fora do ar. Abrir o link do formulário no celular e conferir.
 - **Prazo:** precisa dizer "23/10 23:59 em São Paulo (confere com sexta 23h59)".
+- **Estado cadastral do formulário:** o que o banco diz. Prazo cadastrado e prazo
+  aplicado pelo servidor são coisas diferentes: o prazo estar certo no banco **não
+  prova** que o formulário recusa envios depois dele. Isso só vale quando a trava de
+  prazo estiver publicada e testada.
+
+## Quando acender um alerta
+
+Nem toda variação de número é incidente.
+
+| No boletim | O que fazer |
+|---|---|
+| Concluído sem as 52 respostas | Investigar já, antes de usar esses dados para gerar documento. |
+| Conflito de identidade | Levar para a regularização na mesa de decisão. Nunca mudar resposta à mão. |
+| Erro de gravação | Conferir o log da Vercel e se o formulário está gravando agora. |
+| Horas sem nada recebido | Perguntar à Malu se era esperado receber algo. Silêncio sozinho não prova que caiu. |
+| Prazo errado ou ausente | Corrigir só com autorização do dono, e testar a trava antes de sexta 23h59. |
+| Zero erros | Não dizer "não houve falha" sem conferir que o próprio registro estava funcionando. |
+
+No boletim compartilhado nunca entram nome, e-mail, telefone ou resposta, nem
+porcentagem de participação sobre os 50 convidados.
 
 ## Lembretes de sexta, 18h
 

@@ -83,12 +83,13 @@ m as (
 )
 select concat_ws(E'\n',
   'MARCO ZERO: COLETA PRÉ-EVENTO',
-  'Boletim de ' || to_char(now() at time zone 'America/Sao_Paulo', 'DD/MM HH24:MI') || ' (horário de São Paulo)',
+  'Leitura de ' || to_char(now() at time zone 'America/Sao_Paulo', 'DD/MM/YYYY HH24:MI:SS') || ' (horário de São Paulo)',
+  'Evento ' || ev.event_code || ', id ' || ev.id,
   '',
   'Convidados informados pela organização: 50 (referência, não verificado no banco)',
-  'Pessoas registradas no evento: ' || m.registrados,
-  'Questionários completos (' || m.perguntas || ' de ' || m.perguntas || ' respostas gravadas): ' || m.completos,
-  'Concluídos com resposta faltando: ' || m.concluidos_incompletos || case when m.concluidos_incompletos > 0 then '  << ATENÇÃO' else '' end,
+  'Cadastros de participantes registrados: ' || m.registrados,
+  'Cadastros com ' || m.perguntas || '/' || m.perguntas || ' respostas obrigatórias presentes e não vazias: ' || m.completos,
+  'Concluídos sem as ' || m.perguntas || ' respostas obrigatórias: ' || m.concluidos_incompletos || case when m.concluidos_incompletos > 0 then '  << ATENÇÃO' else '' end,
   'Registrados sem conclusão: ' || m.sem_conclusao,
   'Reenvios idênticos (já estavam gravados): ' || m.reenvios_identicos,
   '',
@@ -97,8 +98,9 @@ select concat_ws(E'\n',
   'E-mails que enviaram mais de uma vez: ' || m.emails_repetidos,
   'Nomes iguais em cadastros diferentes: ' || m.nomes_repetidos || case when m.nomes_repetidos > 0 then '  << conferir com a lista' else '' end,
   '',
-  'Erros de gravação registrados: ' || m.falhas
-    || coalesce(' (último às ' || to_char(m.ultima_falha at time zone 'America/Sao_Paulo', 'DD/MM HH24:MI') || ')', ''),
+  'Erros de gravação registrados no banco: ' || m.falhas
+    || coalesce(' (último às ' || to_char(m.ultima_falha at time zone 'America/Sao_Paulo', 'DD/MM HH24:MI') || ')', '')
+    || case when m.falhas = 0 then ' (zero registrado não prova ausência de falha: conferir o log da Vercel)' else '' end,
   'Último questionário recebido: '
     || coalesce(to_char(greatest(m.ultima_conclusao, m.ultimo_recebido) at time zone 'America/Sao_Paulo', 'DD/MM HH24:MI'), 'nenhum ainda'),
   '',
@@ -107,9 +109,10 @@ select concat_ws(E'\n',
     || case when ev.form_closes_at = timestamptz '2026-10-24 02:59:00+00' then ' (confere com sexta 23h59)'
             when ev.form_closes_at is null then ''
             else '  << DIFERENTE DE SEXTA 23h59' end,
-  'Formulário: ' || case when ev.status in ('closed', 'completed') then 'fechado'
+  'Estado cadastral do formulário: ' || case when ev.status in ('closed', 'completed') then 'fechado'
                          when ev.form_closes_at is not null and now() >= ev.form_closes_at then 'prazo encerrado'
-                         else 'aberto' end
+                         else 'aberto' end,
+  'Prazo cadastrado e prazo aplicado pelo servidor são verificações distintas: este boletim só confere o cadastrado.'
 ) as boletim
 from m, ev;
 
