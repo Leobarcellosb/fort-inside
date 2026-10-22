@@ -199,6 +199,15 @@ export const DEFINICOES_DE_ERRO = {
   /** CONFERIDO e NÃO PERMITIDO: o documento já avançou (entregue) e não volta para revisão. */
   PROGNOSTIC_STATE_REGRESSION: { status: 400, error: "O documento não volta para o estado de revisão" },
   /**
+   * CONFERIDO e NÃO PERMITIDO pelo banco (migration 027): só um documento
+   * ENTREGUE sai do ar. É um fato DIFERENTE de PROGNOSTIC_STATE_REGRESSION e
+   * colapsá-los mandaria o operador investigar a coisa errada: lá o documento
+   * está adiante do que se pediu, aqui ele está ATRÁS -- ninguém leu nada, e não
+   * há o que tirar do ar. A correção também é outra: lá é "não insista", aqui é
+   * "entregue primeiro, se for para entregar".
+   */
+  PROGNOSTIC_SUSPENSION_REFUSED: { status: 400, error: "Só um documento entregue pode sair do ar" },
+  /**
    * CONFERIDO e NÃO PERMITIDO pelo banco (migration 025): o conteúdo a entregar
    * não é o conteúdo aprovado, ou não há aprovação vigente sobre ele.
    */
@@ -212,6 +221,50 @@ export const DEFINICOES_DE_ERRO = {
   COVERAGE_UNAVAILABLE: { status: 503, error: "A cobertura oficial do evento não respondeu" },
   /** Verificado: o banco não tem fotografia de convite utilizável, então o total de convidados não é conhecido. */
   INVITE_COUNT_UNDETERMINED: { status: 503, error: "O total de convidados do evento não está determinado" },
+
+  // --- a LIBERAÇÃO DE ETAPA pelo painel ao vivo (migration 028)
+  //
+  // O painel ao vivo não passa por rota de API para liberar etapa: ele grava
+  // `events.current_stage` DIRETO na tabela, pelo cliente do navegador. Até a
+  // migration 028 não havia gatilho, CHECK nem restrição nenhuma sobre esse
+  // campo -- foi medido: etapa 6 num evento de cinco etapas, etapa 3 num evento
+  // assíncrono e etapa 99 eram todas ACEITAS por uma sessão de administrador.
+  // A contenção que existia era só de interface (etapas-do-painel.ts): a tela
+  // parou de OFERECER a operação, e o sistema não parou de ACEITÁ-LA.
+  //
+  // A 028 pôs a trava no banco. Esta família é o que a tela diz quando ela
+  // recusa, e ela tem a MESMA divisão de sempre, porque são fatos diferentes
+  // com correções diferentes:
+  //
+  //   conferi e recusei          STAGE_RELEASE_MODE_MISMATCH (a operação não se
+  //                              aplica ao evento -- nada a corrigir)
+  //                              STAGE_RELEASE_STAGE_ABSENT (a tela está velha
+  //                              -- recarregar resolve)
+  //   não deu p/ verificar       STAGE_RELEASE_STAGES_UNUSABLE (configuração do
+  //                              questionário; tentar de novo não resolve)
+  //   recusou e não nomeou       STAGE_RELEASE_REFUSED_UNNAMED (o banco conferiu
+  //                              e recusou com um nome que esta versão da tela
+  //                              não conhece: nada foi gravado, e a tela NÃO
+  //                              inventa a causa)
+  //   não consegui gravar        STAGE_RELEASE_UNAVAILABLE (não se afirma recusa:
+  //                              não se sabe se foi)
+  //
+  // NÃO há código para "a trava não está instalada". A ausência da 028 não
+  // produz erro nenhum -- produz uma gravação que PASSA --, então a tela não tem
+  // como detectá-la a partir de um sucesso. Quem cobre essa ausência é o guarda
+  // de drift (`scripts/drift`), comparando o banco com as migrations; não há
+  // mensagem de host possível para um fato que o aplicativo não observa.
+
+  /** CONFERIDO pelo banco e NÃO PERMITIDO: o evento não é `live`, e liberar etapa não existe nesses modos. */
+  STAGE_RELEASE_MODE_MISMATCH: { status: 400, error: "Este evento não libera etapa" },
+  /** CONFERIDO pelo banco e NÃO PERMITIDO: a etapa não existe na versão do questionário do evento. */
+  STAGE_RELEASE_STAGE_ABSENT: { status: 400, error: "A etapa não existe na versão do questionário do evento" },
+  /** NÃO DEU PARA VERIFICAR: a versão do questionário do evento não tem lista de etapas utilizável. */
+  STAGE_RELEASE_STAGES_UNUSABLE: { status: 503, error: "As etapas da versão do questionário do evento não são utilizáveis" },
+  /** O banco RECUSOU e nomeou a causa com um nome fora deste vocabulário. Nada foi gravado; a causa não se afirma. */
+  STAGE_RELEASE_REFUSED_UNNAMED: { status: 503, error: "A liberação de etapa foi recusada por causa não nomeada" },
+  /** NÃO DEU PARA GRAVAR: o banco não respondeu ou falhou por causa não prevista. Nem recusa nem ausência. */
+  STAGE_RELEASE_UNAVAILABLE: { status: 503, error: "Não foi possível liberar a etapa" },
 
   // --- o que ninguém previu -------------------------------------------------
   INTERNAL_ERROR: { status: 500, error: "Erro interno" },
@@ -234,22 +287,45 @@ export type CodigoDeErroDocumento = Extract<
   keyof typeof DEFINICOES_DE_ERRO,
   `PROGNOSTIC_${string}`
 >;
+/**
+ * A FAMÍLIA DA LIBERAÇÃO DE ETAPA (prefixo `STAGE_RELEASE_`), fora de
+ * `CodigoDeErro` pela MESMA razão da família do documento, escrita acima: quem
+ * emite estes códigos é o painel ao vivo, lendo a recusa do gatilho da migration
+ * 028 numa gravação DIRETA à tabela -- não há rota de API no caminho, e as telas
+ * de processamento e de importação nunca recebem um código desta família. Fechar
+ * os mapas exaustivos daquelas telas sobre os códigos que elas de fato recebem é
+ * mais honesto do que obrigá-las a classificar um desfecho que não chega lá.
+ */
+export type CodigoDeLiberacaoDeEtapa = Extract<
+  keyof typeof DEFINICOES_DE_ERRO,
+  `STAGE_RELEASE_${string}`
+>;
 export type CodigoDeErro = Exclude<
   keyof typeof DEFINICOES_DE_ERRO,
-  CodigoDeErroDocumento
+  CodigoDeErroDocumento | CodigoDeLiberacaoDeEtapa
 >;
-/** Qualquer código do vocabulário, das duas famílias. É o que `erroHttp` aceita. */
-export type TodoCodigoDeErro = CodigoDeErro | CodigoDeErroDocumento;
+/** Qualquer código do vocabulário, das três famílias. É o que `erroHttp` aceita. */
+export type TodoCodigoDeErro =
+  | CodigoDeErro
+  | CodigoDeErroDocumento
+  | CodigoDeLiberacaoDeEtapa;
 
 const EH_DOCUMENTO = (k: string) => k.startsWith("PROGNOSTIC_");
+const EH_LIBERACAO_DE_ETAPA = (k: string) => k.startsWith("STAGE_RELEASE_");
+/** Tem família própria, ou seja, está FORA do tipo `CodigoDeErro`. */
+const EH_FAMILIA_PROPRIA = (k: string) => EH_DOCUMENTO(k) || EH_LIBERACAO_DE_ETAPA(k);
 
 export const CODIGOS_DE_ERRO = Object.keys(DEFINICOES_DE_ERRO).filter(
-  (k) => !EH_DOCUMENTO(k),
+  (k) => !EH_FAMILIA_PROPRIA(k),
 ) as CodigoDeErro[];
 
 export const CODIGOS_DE_ERRO_DOCUMENTO = Object.keys(DEFINICOES_DE_ERRO).filter(
   EH_DOCUMENTO,
 ) as CodigoDeErroDocumento[];
+
+export const CODIGOS_DE_LIBERACAO_DE_ETAPA = Object.keys(DEFINICOES_DE_ERRO).filter(
+  EH_LIBERACAO_DE_ETAPA,
+) as CodigoDeLiberacaoDeEtapa[];
 
 /**
  * Reconhece um código das telas de processamento/importação. NÃO reconhece a
@@ -261,7 +337,7 @@ export const CODIGOS_DE_ERRO_DOCUMENTO = Object.keys(DEFINICOES_DE_ERRO).filter(
 export function ehCodigoDeErro(valor: unknown): valor is CodigoDeErro {
   return (
     typeof valor === "string" &&
-    !EH_DOCUMENTO(valor) &&
+    !EH_FAMILIA_PROPRIA(valor) &&
     Object.prototype.hasOwnProperty.call(DEFINICOES_DE_ERRO, valor)
   );
 }
@@ -272,6 +348,16 @@ export function ehCodigoDeErroDocumento(
   return (
     typeof valor === "string" &&
     EH_DOCUMENTO(valor) &&
+    Object.prototype.hasOwnProperty.call(DEFINICOES_DE_ERRO, valor)
+  );
+}
+
+export function ehCodigoDeLiberacaoDeEtapa(
+  valor: unknown,
+): valor is CodigoDeLiberacaoDeEtapa {
+  return (
+    typeof valor === "string" &&
+    EH_LIBERACAO_DE_ETAPA(valor) &&
     Object.prototype.hasOwnProperty.call(DEFINICOES_DE_ERRO, valor)
   );
 }
@@ -353,6 +439,21 @@ export interface DetalhesDeErro {
   /** Estado em que o documento está AGORA, quando é ele que impede a escrita. */
   estado_do_documento?: string;
 
+  // --- liberação de etapa (migration 028) -----------------------------------
+  // Tudo aqui é o que a própria tela do host já mostra: a etapa que ele clicou e
+  // quantas etapas o evento tem. Nunca texto interno de banco.
+
+  /** A etapa que o painel TENTOU liberar. Distinta de `etapa_atual`, que é onde o evento está. */
+  etapa_pedida?: number;
+  /**
+   * O modo do evento, quando é ele que impede a liberação. Fechado em três
+   * valores: `desconhecido` é o que a tela diz quando o banco recusou por modo e
+   * a tela não conseguiu ler qual era -- não é "é assíncrono".
+   */
+  modo_do_evento?: "live" | "async" | "desconhecido";
+  /** O nome que o banco deu à causa, quando esta versão da tela não o conhece. Citável pelo host. */
+  fato_do_banco?: string;
+
   /** O código com que a revalidação do banco (migration 024) recusou a gravação. */
   revalidacao?: CodigoDaRevalidacao;
   /**
@@ -413,6 +514,50 @@ const CAUSAS_DA_REVALIDACAO: Record<CodigoDaRevalidacao, true> = {
 };
 
 export const CODIGOS_DA_REVALIDACAO = Object.keys(CAUSAS_DA_REVALIDACAO) as CodigoDaRevalidacao[];
+
+/**
+ * O vocabulário FECHADO dos fatos com que a trava da liberação de etapa recusa
+ * (migration 028).
+ *
+ * Este é o espelho, em TypeScript, dos nomes que o gatilho
+ * `events_valida_liberacao_de_etapa()` põe no campo DETAIL da exceção. O nome
+ * viaja no DETAIL, e não na prosa da MESSAGE, justamente para que a tela leia um
+ * NOME FECHADO em vez de interpretar texto de banco em português -- o PostgREST
+ * entrega DETAIL em `error.details`.
+ *
+ * Os dois lados têm de dizer o mesmo: um nome que o banco emite e o TypeScript
+ * não conhece cai em STAGE_RELEASE_REFUSED_UNNAMED -- degradação honesta e
+ * IMPRECISA, porque o banco conferiu e recusou e a tela não sabe dizer o quê. Um
+ * teste compara esta lista com o SQL da 028 (components/features/admin/
+ * liberar-etapa.test.ts) para que elas não divirjam em silêncio, na mesma
+ * disciplina do vocabulário da revalidação, acima.
+ */
+export type FatoDaLiberacaoDeEtapa =
+  /** CONFERIDO: o evento não é `live`. Liberar etapa não existe nesses modos. */
+  | "modo_nao_libera_etapa"
+  /** CONFERIDO: a versão do questionário do evento está coerente e não tem esta etapa. */
+  | "etapa_fora_da_versao_do_evento"
+  /** NÃO DEU PARA VERIFICAR: a versão não tem lista de etapas 1..N utilizável. */
+  | "versao_sem_etapas_utilizaveis";
+
+/** Exaustiva por construção: um fato novo no tipo acima NÃO COMPILA sem entrar aqui. */
+const FATOS_DA_LIBERACAO_DE_ETAPA: Record<FatoDaLiberacaoDeEtapa, true> = {
+  modo_nao_libera_etapa: true,
+  etapa_fora_da_versao_do_evento: true,
+  versao_sem_etapas_utilizaveis: true,
+};
+
+export const FATOS_DA_LIBERACAO = Object.keys(
+  FATOS_DA_LIBERACAO_DE_ETAPA,
+) as FatoDaLiberacaoDeEtapa[];
+
+/** O nome que o banco mandou é um fato DESTE vocabulário? */
+export function ehFatoDaLiberacaoDeEtapa(valor: unknown): valor is FatoDaLiberacaoDeEtapa {
+  return (
+    typeof valor === "string" &&
+    Object.prototype.hasOwnProperty.call(FATOS_DA_LIBERACAO_DE_ETAPA, valor)
+  );
+}
 
 /** O nome que o banco mandou é uma causa DESTE vocabulário? */
 export function ehCodigoDaRevalidacao(valor: unknown): valor is CodigoDaRevalidacao {

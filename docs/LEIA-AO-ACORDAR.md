@@ -1,6 +1,30 @@
 # Leia ao acordar — 23 de outubro
 
-Três coisas têm prazo **hoje ou amanhã**, e nenhuma das três é código.
+Quatro coisas têm prazo **hoje ou amanhã**. Três não são código; a quarta é uma decisão
+sua sobre código que já existe.
+
+---
+
+## 0. O que a madrugada construiu está no repositório, não no banco
+
+Cinco alterações de banco foram escritas esta noite — a revalidação da importação, o selo
+que amarra a aprovação ao conteúdo, o histórico do que o jovem leu, a suspensão/retificação
+e a trava da etapa. **Nenhuma delas está aplicada em lugar nenhum**, nem no ambiente local
+nem no banco que serve sábado.
+
+Dito sem rodeio: as proteções existem no código e **não existem no banco que vai rodar o
+evento**. Hoje, lá, a importação ainda pode sobrescrever a resposta de quem respondeu pelo
+app, e a aprovação continua solta do conteúdo entregue.
+
+Eu **não apliquei nada** e não vou aplicar sozinho: mexer no banco de produção na véspera
+de um evento é exatamente o tipo de ato que passamos a semana cercando. E também não
+consigo medir o que falta lá, porque o banco de produção está fora do meu alcance até para
+leitura — essa regra foi posta por um bom motivo e eu não a contornei para conferir.
+
+A decisão é sua, e são três caminhos: aplicar tudo antes de sábado, aplicar só o que sábado
+exercita, ou não aplicar nada e deixar para depois do evento. **Os três têm custo** — e o
+custo de não aplicar é ir para sábado com o banco sem travas que protegem dado de
+participante.
 
 ---
 

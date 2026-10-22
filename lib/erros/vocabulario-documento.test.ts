@@ -22,13 +22,27 @@ import { MENSAGEM_GENERICA, mensagemParaHost } from "./mensagens-host";
 import { erroHttp } from "./resposta";
 
 describe("vocabulário do documento individual", () => {
-  it("são os seis códigos do documento, e nenhum deles está na família das telas de processamento", () => {
+  it("são os SETE códigos do documento, e nenhum deles está na família das telas de processamento", () => {
+    // ASSERÇÃO REESCRITA. Ela listava SEIS códigos, e os seis continuam todos
+    // aqui -- nenhum foi removido e nenhum trocou de status. O sétimo é
+    // PROGNOSTIC_SUSPENSION_REFUSED, da migration 027: "só um documento ENTREGUE
+    // sai do ar".
+    //
+    // Por que ele é um código e não um ramo de PROGNOSTIC_STATE_REGRESSION, que é
+    // a evidência nova que esta linha passa a apontar: os dois significam coisas
+    // OPOSTAS sobre o mesmo documento. Na regressão o documento está ADIANTE do
+    // que se pediu (já entregue, não volta); aqui ele está ATRÁS (não entregue,
+    // ninguém leu nada, não há o que tirar do ar). E a correção de cada um é
+    // diferente -- lá é "use Tirar do ar e corrija", aqui é "corrija direto, ele
+    // ainda não chegou a ninguém". Colapsá-los mandaria o operador investigar a
+    // coisa errada, que é o critério que governa este vocabulário desde o começo.
     expect([...CODIGOS_DE_ERRO_DOCUMENTO].sort()).toEqual([
       "PROGNOSTIC_APPROVAL_STALE",
       "PROGNOSTIC_NOT_FOUND",
       "PROGNOSTIC_RESPONSES_INSUFFICIENT",
       "PROGNOSTIC_RESPONSES_UNREADABLE",
       "PROGNOSTIC_STATE_REGRESSION",
+      "PROGNOSTIC_SUSPENSION_REFUSED",
       "PROGNOSTIC_WRITE_UNAVAILABLE",
     ]);
     // As duas listas não se cruzam: `ehCodigoDeErro` NÃO reconhece um código do
@@ -60,6 +74,9 @@ describe("vocabulário do documento individual", () => {
     expect(statusDoCodigo("PROGNOSTIC_RESPONSES_INSUFFICIENT")).toBe(400);
     expect(statusDoCodigo("PROGNOSTIC_STATE_REGRESSION")).toBe(400);
     expect(statusDoCodigo("PROGNOSTIC_APPROVAL_STALE")).toBe(400);
+    // ASSERÇÃO ACRESCENTADA (027): recusa CONFERIDA é 400, como as outras três.
+    // Tentar tirar do ar um documento que ninguém leu não é falha de servidor.
+    expect(statusDoCodigo("PROGNOSTIC_SUSPENSION_REFUSED")).toBe(400);
     expect(statusDoCodigo("PROGNOSTIC_NOT_FOUND")).toBe(404);
     expect(statusDoCodigo("PROGNOSTIC_RESPONSES_UNREADABLE")).toBe(422);
     // "Não consegui gravar" NUNCA vira recusa: é 503 e a mensagem manda

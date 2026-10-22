@@ -300,10 +300,19 @@ const MENSAGENS: Record<TodoCodigoDeErro, Mensagem> = {
   },
   PROGNOSTIC_RESPONSES_UNREADABLE:
     "Há uma resposta deste participante que está PRESENTE e fora do que o questionário aceita, então o documento não foi gerado e nada foi cobrado. Isso não é pergunta em branco: é valor que o sistema não sabe ler, e tratá-lo como ausente produziria uma leitura falsa da pessoa. Avise a equipe técnica informando o número da ocorrência.",
+  // MENSAGEM REESCRITA com a migration 027. O FATO que ela afirmava continua
+  // verdadeiro -- o documento entregue não volta para revisão e não é alterado
+  // por baixo do participante --, mas o que ela mandava fazer deixou de ser
+  // verdade: "fale com a equipe técnica, é procedimento à parte" era a única
+  // saída enquanto o operador não tinha botão. Agora ele tem, e ele é o caminho
+  // da própria tela. Uma mensagem que manda procurar outra pessoa quando existe
+  // um botão a dois cliques é pior do que nenhuma: ela faz o operador desistir.
   PROGNOSTIC_STATE_REGRESSION: (d) =>
-    `Este documento já está em "${d?.estado_do_documento ?? "entregue"}" e não volta para revisão, então a correção não foi gravada. O documento que o participante recebeu não é alterado por baixo dele: o que já foi entregue permanece como foi entregue. Para corrigir um documento entregue, fale com a equipe técnica -- é procedimento à parte, porque exige avisar o participante.`,
+    `Este documento já está em "${d?.estado_do_documento ?? "entregue"}" e não volta para revisão, então a correção não foi gravada. O documento que o participante recebeu não é alterado por baixo dele: o que já foi entregue permanece como foi entregue. Para corrigir um documento já entregue, use "Tirar do ar" no cartão dele: o participante para de ver o texto errado na hora e passa a ver um aviso de que a versão corrigida está sendo preparada. Depois disso, abra em Editar, corrija e salve -- salvar é a nova aprovação --, e entregue de novo. A versão anterior não é reaberta e não é apagada: ela fica no histórico, com a data em que ele a leu.`,
   PROGNOSTIC_APPROVAL_STALE:
     "O conteúdo deste documento mudou depois da última revisão, então a aprovação anterior não cobre o texto que seria entregue e a entrega foi recusada. Isso é proposital: o selo de revisão vale para o texto que foi revisado, não para qualquer texto que ocupe o lugar dele. Abra o documento, revise o texto como ele está agora e salve a revisão; depois disso a entrega é liberada.",
+  PROGNOSTIC_SUSPENSION_REFUSED:
+    "Só um documento já entregue pode sair do ar, e este ainda não foi entregue -- então o participante não está lendo nada e não há o que tirar do ar. Nada foi alterado. Se o texto deste documento está errado, abra em Editar, corrija e salve: ele ainda não chegou a ninguém.",
   PROGNOSTIC_NOT_FOUND:
     "Este documento não foi encontrado. Recarregue a página: ele pode ter sido removido junto com o participante ou com o evento.",
   PROGNOSTIC_WRITE_UNAVAILABLE:
@@ -313,6 +322,33 @@ const MENSAGENS: Record<TodoCodigoDeErro, Mensagem> = {
     "A cobertura oficial deste evento não respondeu agora, e sem ela não há população verificada para o guia nem veredito do volume mínimo. Nada foi gerado. Aguarde alguns instantes e tente de novo; se persistir, avise a equipe técnica informando o número da ocorrência.",
   INVITE_COUNT_UNDETERMINED:
     "O total de convidados deste evento não está determinado: não há fotografia da lista de convites, ou ela não fecha com as pessoas registradas nela. O guia não foi gerado porque as contagens de participação sairiam sobre um total estimado, e estimativa não é população verificada. Encerre a lista de convites do evento e tente de novo.",
+
+  // --- a liberação de etapa, recusada pelo banco (migration 028) ------------
+  //
+  // A exigência que governa estes cinco textos: um host vendo a recusa precisa
+  // entender que A OPERAÇÃO NÃO SE APLICA AQUELE EVENTO, não que o sistema
+  // quebrou. Nenhum deles diz "erro"; nenhum deles manda tentar de novo quando
+  // tentar de novo não resolve; e os dois que são indisponibilidade dizem, em
+  // palavras, que nada foi liberado.
+  STAGE_RELEASE_MODE_MISMATCH: (d) =>
+    d?.modo_do_evento === "desconhecido"
+      ? "Liberar etapa não se aplica a este evento: o banco verificou o modo dele e recusou, e esta tela não conseguiu ler qual é o modo. Nenhuma etapa foi liberada e nada foi alterado. Isso não é defeito: liberar etapa só existe em evento presencial, conduzido ao vivo. Confira o modo do evento; se ele deveria ser presencial, avise a equipe técnica."
+      : "Liberar etapa não se aplica a este evento: ele é assíncrono — as pessoas respondem por conta própria, dentro do prazo da coleta, e não há etapa para o host liberar. Nenhuma etapa foi liberada e nada foi alterado. O que controla o acesso num evento assíncrono é o prazo da coleta, não a etapa atual. Para acompanhar este evento, use a seção Prognósticos, que não depende de etapa.",
+  STAGE_RELEASE_STAGE_ABSENT: (d) => {
+    const pedida = d?.etapa_pedida;
+    const total = d?.total_etapas;
+    const quais =
+      typeof pedida === "number" && typeof total === "number"
+        ? `a etapa ${pedida} não existe neste evento, que tem ${total} etapa${total === 1 ? "" : "s"} (1 a ${total})`
+        : "a etapa pedida não existe no questionário deste evento";
+    return `A etapa não foi liberada porque ${quais}. Nada foi alterado. Isso normalmente quer dizer que esta tela está desatualizada em relação ao evento: recarregue a página para ver em que etapa ele realmente está. Se depois de recarregar o botão continuar oferecendo uma etapa que não existe, avise a equipe técnica.`;
+  },
+  STAGE_RELEASE_STAGES_UNUSABLE:
+    "A etapa não foi liberada porque as etapas da versão do questionário deste evento não estão utilizáveis: a numeração delas tem falha, repetição ou a versão não tem etapa cadastrada. Sem uma numeração de 1 a N não dá para dizer se a etapa pedida existe, e liberar sem saber poderia pôr o evento numa etapa que ninguém consegue responder. Nada foi alterado. Tentar de novo não resolve: é configuração do questionário. Avise a equipe técnica.",
+  STAGE_RELEASE_REFUSED_UNNAMED: (d) =>
+    `A liberação da etapa foi RECUSADA pelo banco, e nada foi gravado: o evento continua na etapa em que estava. A causa tem um nome que esta versão da tela ainda não conhece${d?.fato_do_banco ? ` ("${d.fato_do_banco}")` : ""}, então ela não é afirmada aqui em vez de ser adivinhada. Recarregue a página para ver a etapa atual e avise a equipe técnica, informando esse nome e o número da ocorrência.`,
+  STAGE_RELEASE_UNAVAILABLE:
+    "Não foi possível liberar a etapa agora, porque o banco não respondeu. Isso NÃO quer dizer que a liberação foi recusada, e também não quer dizer que ela passou: quer dizer que não deu para saber. Recarregue a página para ver em que etapa o evento está antes de tentar de novo; se persistir, avise a equipe técnica informando o número da ocorrência.",
 
   INTERNAL_ERROR: MENSAGEM_GENERICA,
 };

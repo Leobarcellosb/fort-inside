@@ -7,7 +7,19 @@ export type PrognosticStatus =
   | "generated"
   | "in_review"
   | "reviewed"
-  | "delivered";
+  | "delivered"
+  /**
+   * FORA DO AR (migration 027). Documento que foi entregue e que um operador
+   * tirou do ar, com motivo, porque havia algo errado nele. O conteúdo continua
+   * guardado e o histórico continua dizendo o que o jovem leu e quando;
+   * suspender não reescreve o passado.
+   *
+   * Fica FORA do vetor de ordem do gatilho da 015 de propósito -- é o que
+   * permite `delivered -> suspended -> reviewed -> delivered` sem abrir nenhuma
+   * regressão entre os seis estados ordenados. A cerca deste valor é o gatilho
+   * `prognostics_suspensao`.
+   */
+  | "suspended";
 export type TrailRecommendation =
   | "Exploração"
   | "Direção"
@@ -136,6 +148,23 @@ export interface Prognostic {
   conteudo_aprovado_hash: string | null;
   /** Instante do ato de aprovacao a que `conteudo_aprovado_hash` se refere. */
   aprovado_em: string | null;
+  /**
+   * Instante em que o documento saiu do ar -- migration 027. Escrito SOMENTE
+   * pelo gatilho do banco, com `now()`: o relogio de quem chamou nao entra.
+   * Nulo quando o documento NAO esta suspenso (as quatro colunas abaixo
+   * significam "esta fora do ar AGORA", e um CHECK as mantem nulas fora disso).
+   */
+  suspenso_em: string | null;
+  /** Administrador que suspendeu, lido da SESSAO no servidor -- nunca do corpo do pedido. */
+  suspenso_por: string | null;
+  /** E-mail desse administrador, como estava na sessao. */
+  suspenso_por_email: string | null;
+  /**
+   * POR QUE o documento saiu do ar, nas palavras do operador. Obrigatorio por
+   * CHECK (minimo de 10 caracteres uteis). E registro INTERNO: a pagina do
+   * participante nunca o exibe.
+   */
+  suspensao_motivo: string | null;
 }
 
 export interface PrognosticContent {

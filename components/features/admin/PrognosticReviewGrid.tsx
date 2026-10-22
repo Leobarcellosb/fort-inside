@@ -7,7 +7,12 @@ import type { Prognostic, PrognosticContent } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EditPrognosticDialog } from "./EditPrognosticDialog";
+import { SuspenderDocumentoDialog } from "./SuspenderDocumentoDialog";
 import { idDaRazao, situacaoDaEntrega } from "./entrega-do-documento";
+import {
+  ROTULO_SUSPENDER,
+  situacaoDaSuspensao,
+} from "./suspensao-do-documento";
 
 interface Participant {
   id: string;
@@ -34,6 +39,7 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
   const [localPrognostics, setLocalPrognostics] = useState<Prognostic[]>(prognostics);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [suspendingId, setSuspendingId] = useState<string | null>(null);
 
   // Realtime: sincroniza localPrognostics quando IA gera ou outro admin entrega.
   useEffect(() => {
@@ -160,6 +166,13 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
     ? participants.find((pt) => pt.id === editingProg.participant_id)?.full_name ?? ""
     : "";
 
+  const suspendingProg = suspendingId
+    ? localPrognostics.find((p) => p.id === suspendingId) ?? null
+    : null;
+  const suspendingParticipantName = suspendingProg
+    ? participants.find((pt) => pt.id === suspendingProg.participant_id)?.full_name ?? ""
+    : "";
+
   return (
     <>
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -175,6 +188,10 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
         // quando aquele documento ganha revisão salva. Um aviso só no topo da
         // tela seria igual em todos os cartões e não diria QUAL documento.
         const entrega = prog ? situacaoDaEntrega(prog) : null;
+        // E a MESMA ideia para "Tirar do ar" (migration 027): quem decide se o
+        // controle aparece e uma funcao pura, e o banco e quem garante.
+        const suspensao = prog ? situacaoDaSuspensao(prog) : null;
+        const foraDoAr = prog?.status === "suspended";
 
         return (
           <div
@@ -191,6 +208,8 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
                   className={`text-xs shrink-0 border ${
                     prog.status === "delivered"
                       ? "bg-success/20 text-success border-success/30"
+                      : prog.status === "suspended"
+                      ? "bg-chart-4/20 text-chart-4 border-chart-4/30"
                       : prog.status === "reviewed"
                       ? "bg-primary/20 text-primary border-primary/30"
                       : "bg-muted text-muted-foreground border-border"
@@ -198,6 +217,11 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
                 >
                   {prog.status === "delivered"
                     ? "Entregue"
+                    : prog.status === "suspended"
+                    ? // "Fora do ar" e nao "Suspenso": o rotulo fala do ponto de
+                      // vista de quem lia o documento, que e o que o operador
+                      // precisa decidir. "Suspenso" e o nome da coluna.
+                      "Fora do ar"
                     : prog.status === "reviewed"
                     ? "Revisado"
                     : "Gerado"}
@@ -252,13 +276,21 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
                 Aqui o texto é lido por quem olha, por quem toca e por quem
                 ouve a página, sem gesto nenhum. */}
             {prog && prog.status !== "delivered" && entrega && !entrega.liberada && (
-              <p
+              <div
                 id={idDaRazao(prog.id)}
                 data-testid={idDaRazao(prog.id)}
-                className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs leading-relaxed text-foreground/80"
+                className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs leading-relaxed text-foreground/80 space-y-2"
               >
-                {entrega.texto}
-              </p>
+                {/* No documento FORA DO AR, a primeira coisa que o operador
+                    precisa saber é o que o PARTICIPANTE está vendo agora -- é o
+                    que ele vai ter de responder se o jovem ligar. Depois vem o
+                    caminho de volta, que é `entrega.texto`. São dois fatos
+                    diferentes, não a mesma frase duas vezes. */}
+                {foraDoAr && suspensao && !suspensao.disponivel && (
+                  <p>{suspensao.texto}</p>
+                )}
+                <p>{entrega.texto}</p>
+              </div>
             )}
 
             <div className="flex gap-2 pt-1">
@@ -310,11 +342,48 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
                   Copiar link
                 </Button>
               )}
+              {/* TIRAR DO AR (migration 027). Aparece SÓ no documento entregue,
+                  que é o único que alguém está lendo -- e é a mesma condição que
+                  o banco impõe, então a tela não oferece um caminho sem saída.
+                  `situacaoDaSuspensao` é quem decide, e quando ela recusa a razão
+                  vai para o conteúdo da tela, nunca para um `title`. */}
+              {prog && suspensao?.disponivel && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSuspendingId(prog.id)}
+                  disabled={saving}
+                  className="text-xs border-chart-4/40 text-chart-4 hover:bg-chart-4/10"
+                >
+                  {ROTULO_SUSPENDER}
+                </Button>
+              )}
             </div>
           </div>
         );
       })}
     </div>
+
+    {suspendingProg && (
+      <SuspenderDocumentoDialog
+        prognosticId={suspendingProg.id}
+        participantName={suspendingParticipantName}
+        onClose={() => setSuspendingId(null)}
+        onSuspenso={() => {
+          // A subscription de realtime propaga, mas atualiza localmente tambem
+          // pra o cartao mudar na hora: o operador acabou de tirar um documento
+          // do ar e precisa VER que saiu. `pdf_url` vira nulo porque o gatilho
+          // da 027 o zera -- o PDF era do texto suspenso.
+          setLocalPrognostics((prev) =>
+            prev.map((p) =>
+              p.id === suspendingProg.id
+                ? { ...p, status: "suspended", pdf_url: null }
+                : p,
+            ),
+          );
+        }}
+      />
+    )}
 
     {editingProg && (
       <EditPrognosticDialog

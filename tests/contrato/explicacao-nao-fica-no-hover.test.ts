@@ -101,6 +101,35 @@ describe("a razão de 'Entregar' estar desligado está no conteúdo, não no hov
     expect(codigo).toContain("idDaRazao(prog.id)");
   });
 
+  it("o cartão de um documento FORA DO AR explica em texto o que o jovem está vendo", () => {
+    // ASSERÇÕES ACRESCENTADAS com a migration 027, e nenhuma das acima foi
+    // tocada. A doença de origem foi de LUGAR, e os controles novos
+    // ("Tirar do ar", e "Entregar" desligado por suspensão) são exatamente o tipo
+    // de coisa em que ela reincide: um botão cinza, um ícone de cadeado e a
+    // explicação no hover.
+    //
+    // A EVIDÊNCIA NOVA que estas linhas apontam: o cartão suspenso renderiza DOIS
+    // fatos como conteúdo -- o que o participante está vendo agora
+    // (`suspensao.texto`) e o caminho de volta (`entrega.texto`) -- e o segundo é
+    // o que o botão "Entregar" aponta por `aria-describedby`.
+    expect(codigo).toContain("suspensao-do-documento");
+    expect(codigo).toContain("situacaoDaSuspensao");
+    expect(codigo).toContain("suspensao.texto");
+    // Condicionado ao estado DAQUELE documento, então desaparece sozinho quando a
+    // retificação é salva -- a mesma regra da razão da entrega.
+    expect(codigo).toContain("!suspensao.disponivel");
+  });
+
+  it("o botão de tirar do ar não tem `title`, e o rótulo fala do documento", () => {
+    // O `it` acima já cobre a razão visível; este cobre o controle novo em si. A
+    // asserção `not.toMatch(/title=/)` do caso anterior vale para o arquivo
+    // inteiro, inclusive para este botão -- aqui o que se prova é que o rótulo
+    // vem do módulo puro (e portanto é o texto provado lá), e não uma string
+    // escrita à mão no JSX que poderia divergir dele.
+    expect(codigo).toContain("ROTULO_SUSPENDER");
+    expect(codigo).not.toContain("Suspender documento<");
+  });
+
   it("a razão é renderizada dentro do cartão do documento, por documento", () => {
     // `idDaRazao(prog.id)` como `id` do parágrafo: o aviso pertence AQUELE
     // documento. Um aviso único no topo da tela não teria id por documento.
@@ -158,6 +187,68 @@ describe("o painel ao vivo diz o que não sabe, em texto visível", () => {
 
   it("a contagem por etapa não compara mais ordinal com id de linha", () => {
     expect(codigo).not.toMatch(/stage_id === currentStage/);
+  });
+});
+
+describe("o diálogo de tirar do ar explica o botão desligado em texto visível", () => {
+  const DIALOGO = join(RAIZ, "components/features/admin/SuspenderDocumentoDialog.tsx");
+  const codigo = semComentarios(ler(DIALOGO));
+
+  it("a razão do campo e do botão é um parágrafo, ligado por aria-describedby", () => {
+    // O botão "Tirar do ar" do diálogo fica DESLIGADO enquanto o motivo não
+    // serve, e por que ele está desligado é conteúdo da tela. Sem isto, o
+    // operador de celular veria um botão cinza e nenhuma palavra -- exatamente o
+    // defeito que este arquivo existe para impedir de voltar.
+    expect(codigo).toContain("aria-describedby");
+    expect(codigo).toContain("validacao.texto");
+    expect(codigo).toMatch(/id=\{idDaRazaoDoCampo\}/);
+  });
+
+  it("nada aqui está num atributo `title`", () => {
+    expect(codigo).not.toMatch(/[\s{]title=/);
+  });
+
+  it("o texto vem dos módulos puros, não de strings escritas no JSX", () => {
+    // Uma frase escrita à mão aqui divergiria da que o teste prova em
+    // `suspensao-do-documento.test.ts` na primeira vez que alguém corrigisse uma
+    // das duas.
+    expect(codigo).toContain("TEXTO_DA_CONFIRMACAO");
+    expect(codigo).toContain("TITULO_DA_CONFIRMACAO");
+    expect(codigo).toContain("validarMotivoDaSuspensao");
+  });
+});
+
+describe("a página do participante não devolve erro cru num documento fora do ar", () => {
+  // Teste de FONTE, pela mesma razão declarada no topo deste arquivo: o ambiente
+  // do vitest é `node`, sem DOM e sem servidor Next, e o que se prova aqui é de
+  // LUGAR -- que o ramo suspenso existe na página e que ele NÃO passa conteúdo.
+  const PAGINA = join(RAIZ, "app/(participant)/prognostic/[token]/page.tsx");
+  const codigo = semComentarios(ler(PAGINA));
+
+  it("o estado suspenso é consultado, e não cai em notFound()", () => {
+    expect(codigo).toContain("suspended");
+    expect(codigo).toContain("DocumentoSuspensoView");
+    // O ramo suspenso vem ANTES de montar `content`: ele retorna o aviso e para.
+    const posSuspenso = codigo.indexOf("DocumentoSuspensoView");
+    const posConteudo = codigo.indexOf("prognostic.final_content");
+    expect(posSuspenso).toBeGreaterThan(-1);
+    expect(posConteudo).toBeGreaterThan(posSuspenso);
+  });
+
+  it("o aviso NÃO recebe conteúdo nem o motivo interno do operador", () => {
+    // A metade "não deixar o jovem exposto ao conteúdo incorreto": o texto
+    // suspenso não chega ao navegador dele nem escondido no HTML.
+    expect(codigo).toMatch(/<DocumentoSuspensoView\s+participantName=\{[^}]*\}\s*\/>/);
+    expect(codigo).not.toContain("suspensao_motivo");
+  });
+
+  it("nenhum outro estado passou a aparecer neste link", () => {
+    // `generated`, `in_review` e `reviewed` continuam caindo em notFound():
+    // documento não entregue nunca foi para ser lido.
+    expect(codigo).toContain("notFound()");
+    for (const estado of ["generated", "in_review", '"reviewed"']) {
+      expect(codigo).not.toContain(estado);
+    }
   });
 });
 

@@ -28,6 +28,8 @@
 //
 // Tudo aqui e funcao pura (sem rede, sem React) para poder ser provado em teste.
 
+import { TEXTO_CAMINHO_DA_RETIFICACAO } from "./suspensao-do-documento";
+
 /**
  * O texto que o operador le no cartao de um documento sem revisao salva.
  *
@@ -37,7 +39,26 @@
 export const TEXTO_SEM_REVISAO_SALVA =
   "Este documento ainda não tem revisão salva. Abra em Editar, revise o texto e salve: a entrega é liberada em seguida.";
 
-export type MotivoDeBloqueio = "sem_revisao_salva";
+/**
+ * O SEGUNDO motivo, acrescentado com a migration 027.
+ *
+ * Um documento fora do ar CONTINUA com o selo da última aprovação -- o selo é
+ * imutável fora do ato de aprovação (025) e a suspensão não o toca. Então, para
+ * esta função, "tem selo" continuaria verdadeiro e o botão "Entregar" ficaria
+ * LIGADO sobre um documento suspenso. O banco recusaria (a 027 só aceita sair de
+ * `suspended` para nova revisão), mas um botão que só pode falhar é exatamente o
+ * que este módulo existe para não ter.
+ *
+ * E a razão da recusa é a parte que importa do produto: reentregar sem nova
+ * revisão devolveria ao ar o MESMO texto errado, porque o conteúdo não mudou e o
+ * selo bateria. O caminho é para a frente: corrigir, salvar (nova aprovação) e
+ * entregar.
+ *
+ * O TEXTO vem de `suspensao-do-documento.ts` e NÃO é reescrito aqui: há UMA frase
+ * por fato nesta tela. Duas redações do mesmo bloqueio divergiriam na primeira
+ * vez que alguém corrigisse uma delas.
+ */
+export type MotivoDeBloqueio = "sem_revisao_salva" | "suspenso_aguardando_nova_revisao";
 
 export type SituacaoDaEntrega =
   | { liberada: true }
@@ -53,10 +74,23 @@ export type SituacaoDaEntrega =
  * 23514), e nao entregue sem revisao.
  *
  * Hash vazio ou so com espacos conta como ausente: um selo em branco nao e selo.
+ *
+ * A SUSPENSAO e conferida ANTES do selo, de proposito: um documento fora do ar
+ * TEM selo (a suspensao nao o toca), e perguntar primeiro pelo selo responderia
+ * "liberada" para ele. A ordem das duas perguntas e a diferenca entre um botao
+ * que explica e um botao que mente.
  */
 export function situacaoDaEntrega(documento: {
+  status?: string | null;
   conteudo_aprovado_hash?: string | null;
 }): SituacaoDaEntrega {
+  if (documento.status === "suspended") {
+    return {
+      liberada: false,
+      motivo: "suspenso_aguardando_nova_revisao",
+      texto: TEXTO_CAMINHO_DA_RETIFICACAO,
+    };
+  }
   const selo = documento.conteudo_aprovado_hash;
   const temSelo = typeof selo === "string" && selo.trim() !== "";
   return temSelo

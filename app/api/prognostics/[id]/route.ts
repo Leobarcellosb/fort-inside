@@ -71,12 +71,26 @@ const contentSchema = z.object({
 // Estados em que salvar uma revisão ainda é legítimo. `delivered` fica FORA: o
 // documento entregue não volta (migration 015), e tentar é desfecho de produto
 // com código próprio, não erro de servidor.
+//
+// `suspended` ENTRA, com a migration 027, e é o caminho da RETIFICAÇÃO. Não é
+// uma regressão disfarçada: `suspended -> reviewed` é para a FRENTE no desenho
+// da 027 (o documento já saiu de `delivered` por um ato de operador registrado,
+// e está fora do ar), e é o único caminho de volta ao ar -- de `suspended` o
+// banco só aceita `in_review` ou `reviewed`, nunca `delivered` direto, porque
+// reentregar sem nova revisão devolveria ao ar o mesmo texto errado.
+//
+// Salvar aqui sobre um documento suspenso é o ATO DE APROVAÇÃO do texto novo
+// (migration 025, inalterada): `reviewed_at` novo faz o banco selar a impressão
+// digital deste instante, e só então a entrega é liberada. A versão anterior NÃO
+// é reaberta -- ela continua em `prognostic_delivery_history` (026), com a data
+// em que o participante a leu.
 const ESTADOS_REVISAVEIS = [
   "pending",
   "generating",
   "generated",
   "in_review",
   "reviewed",
+  "suspended",
 ] as const;
 
 const bodySchema = z.object({

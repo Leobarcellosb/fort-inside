@@ -39,9 +39,22 @@ export type EstadoDocumento =
   | "generated"
   | "in_review"
   | "reviewed"
-  | "delivered";
+  | "delivered"
+  | "suspended";
 
-/** Mesma ordem do gatilho da migration 015. Posição maior = mais avançado. */
+/**
+ * A ordem dos SEIS primeiros é a do gatilho da migration 015. Posição maior =
+ * mais avançado.
+ *
+ * `suspended` (migration 027) fica no fim desta lista e NÃO está no vetor de
+ * ordem da 015 -- é justamente por estar fora dele que
+ * `delivered -> suspended -> reviewed -> delivered` existe sem abrir nenhuma
+ * regressão entre os seis. Então esta posição NÃO afirma "mais avançado que
+ * entregue": ela existe porque este vetor é usado para UMA pergunta só
+ * (`documentoTemConteudo`: índice >= `generated`), e um documento suspenso tem
+ * conteúdo -- ele esteve entregue. Nada aqui compara posições para decidir
+ * transição; quem decide transição é o banco.
+ */
 export const ORDEM_DOCUMENTO: readonly EstadoDocumento[] = [
   "pending",
   "generating",
@@ -49,10 +62,24 @@ export const ORDEM_DOCUMENTO: readonly EstadoDocumento[] = [
   "in_review",
   "reviewed",
   "delivered",
+  "suspended",
 ];
 
-/** Estados com trabalho humano em cima: gerar de novo é recusado pelo sistema. */
-const PROTEGIDOS: readonly EstadoDocumento[] = ["in_review", "reviewed", "delivered"];
+/**
+ * Estados com trabalho humano em cima: gerar de novo é recusado pelo sistema.
+ *
+ * `suspended` entra: regerar um documento que já foi lido e tirado do ar
+ * apagaria a edição humana e a razão de ele ter saído do ar. (A recusa de verdade
+ * é de `lib/ai/generate-prognostic.ts`, que trabalha com lista de estados
+ * REGERÁVEIS -- `pending`, `generating`, `generated` --, então `suspended` já era
+ * recusado lá antes desta linha existir. Aqui é o painel dizendo o mesmo fato.)
+ */
+const PROTEGIDOS: readonly EstadoDocumento[] = [
+  "in_review",
+  "reviewed",
+  "delivered",
+  "suspended",
+];
 
 export const ROTULO_DOCUMENTO: Record<EstadoDocumento, string> = {
   pending: "Aguardando geração",
@@ -61,6 +88,9 @@ export const ROTULO_DOCUMENTO: Record<EstadoDocumento, string> = {
   in_review: "Em revisão",
   reviewed: "Revisado",
   delivered: "Entregue",
+  // O rótulo fala do ponto de vista de quem lia o documento, não do banco:
+  // "suspenso" é o nome da coluna, "fora do ar" é o fato.
+  suspended: "Fora do ar, aguardando correção",
 };
 
 export function ehEstadoDocumento(v: unknown): v is EstadoDocumento {

@@ -46,6 +46,12 @@ import { achatarRespostas, ErroNormalizacaoResposta } from "../../lib/scoring/ac
 import { calcularMarcoZero } from "../../lib/scoring/marco-zero";
 import { prepararBriefing } from "../../lib/ai/briefing-prognostico";
 import {
+  PARAGRAFOS_DOCUMENTO_SUSPENSO,
+  RODAPE_DOCUMENTO_SUSPENSO,
+  TITULO_DOCUMENTO_SUSPENSO,
+  textoIntegralDoAviso,
+} from "../../components/features/prognostic/documento-suspenso";
+import {
   IMPRESSAO_PUBLICADA,
   TOTAL_DE_PERGUNTAS,
   impressaoCanonica,
@@ -1708,4 +1714,724 @@ descreve("cadeia pos-coleta do documento individual", () => {
       expect(docsDeA).toBe(1);
     });
   });
+
+  // ================================================================= ELO 7
+  //
+  // SUSPENDER UM DOCUMENTO JA ENTREGUE, E CORRIGI-LO POR NOVA REVISAO APROVADA
+  // (migration 027).
+  //
+  // O IMPASSE QUE ESTE ELO FECHA, e que os testes do elo 4 mediram: um documento
+  // `delivered` nao podia ser corrigido por caminho nenhum. O gatilho da 015
+  // recusa `delivered -> reviewed`, e sem voltar a `reviewed` com `reviewed_at`
+  // novo o selo da 025 nao se refaz, entao a reentrega tambem era recusada. O
+  // teste "HISTORICO: entregue, CORRIGIDO e REENTREGUE" do elo 4 declarou isso em
+  // voz alta e precisou do PROCEDIMENTO EXCEPCIONAL (`alter table ... disable
+  // trigger`, que exige ser dono da tabela) para medir o que queria medir.
+  //
+  // O QUE MUDOU, e e a evidencia nova deste elo: existe um caminho PARA A FRENTE,
+  // sem nenhum gatilho desligado e sem nenhuma regressao nova --
+  //
+  //     delivered -> suspended -> reviewed -> delivered
+  //
+  // e `suspended` fica FORA do vetor de ordem da 015, que e por isso que a trava
+  // dela continua inteira (o ultimo teste deste elo mede isso).
+  //
+  // NADA AQUI DESLIGA NADA. Se alguem precisar de `disable trigger` para fazer
+  // este elo passar, o desenho esta errado.
+  describe("elo 7 - SUSPENSAO SEGURA e RETIFICACAO VERSIONADA (migration 027)", () => {
+    /** Operador ficticio: a rota le o id da SESSAO, aqui ele e fixado. */
+    const OPERADOR = "99999999-9999-9999-9999-999999999999";
+    const OPERADOR_EMAIL = "host@127.0.0.1";
+    const MOTIVO =
+      "A trilha recomendada saiu trocada: o texto cita Aceleracao e a analise e de Direcao.";
+
+    const TEXTO_ERRADO = "TEXTO COM O ERRO, QUE M LEU (marca da prova).";
+    const TEXTO_CORRIGIDO = "TEXTO CORRIGIDO DE M, SEGUNDA VERSAO (marca da prova).";
+    const TEXTO_NAO_APROVADO = "TEXTO QUE NINGUEM APROVOU (marca da prova).";
+
+    let docM = "";
+    let tokenDeM = "";
+
+    /** A consulta EXATA de app/(participant)/prognostic/[token]/page.tsx. */
+    async function paginaDoParticipante(token: string) {
+      const { data } = await db
+        .from("prognostics")
+        .select("*, participants(full_name, event_id)")
+        .eq("public_share_token", token)
+        .in("status", ["delivered", "suspended"])
+        .single();
+      return data as Record<string, any> | null;
+    }
+
+    /** A consulta que a pagina fazia ANTES da 027 -- e o que produzia notFound(). */
+    async function paginaAntesDa027(token: string) {
+      const { data } = await db
+        .from("prognostics")
+        .select("final_content")
+        .eq("public_share_token", token)
+        .eq("status", "delivered")
+        .maybeSingle();
+      return data as Record<string, any> | null;
+    }
+
+    /** O UPDATE que a rota /api/prognostics/[id]/suspender escreve. */
+    async function suspender(
+      id: string,
+      campos: Partial<{
+        suspenso_por: string | null;
+        suspenso_por_email: string | null;
+        suspensao_motivo: string | null;
+        suspenso_em: string | null;
+      }> = {},
+    ) {
+      return db
+        .from("prognostics")
+        .update({
+          status: "suspended",
+          suspenso_por: OPERADOR,
+          suspenso_por_email: OPERADOR_EMAIL,
+          suspensao_motivo: MOTIVO,
+          ...campos,
+        } as never)
+        .eq("id", id);
+    }
+
+    it("montagem: M tem documento revisado, entregue, e esta LENDO o texto errado", async () => {
+      await criarParticipante("M");
+      const erros = await gravarPelaTela("M", respostasCanonicas());
+      expect(erros.every((e) => e === null)).toBe(true);
+      await concluir("M");
+
+      await zerarCanario();
+      const g = await generatePrognostic(P.M.id, eventId);
+      expect(g.ok).toBe(true);
+
+      const { data } = await db
+        .from("prognostics")
+        .select("id, raw_ai_output, public_share_token")
+        .eq("participant_id", P.M.id)
+        .single();
+      docM = (data as any).id;
+      tokenDeM = (data as any).public_share_token;
+      const conteudoErrado = { ...(data as any).raw_ai_output, analise_geral: TEXTO_ERRADO };
+
+      // Revisao (o ato de aprovacao, 025) e entrega, pelas MESMAS escritas de
+      // producao: app/api/prognostics/[id]/route.ts e o botao Entregar.
+      const { error: eRev } = await db
+        .from("prognostics")
+        .update({
+          edited_content: conteudoErrado,
+          trail_recommendation: conteudoErrado.trilha_recomendada,
+          status: "reviewed",
+          reviewed_at: new Date().toISOString(),
+          pdf_url: null,
+        } as never)
+        .eq("id", docM);
+      expect(eRev).toBeNull();
+      const { error: eEnt } = await db
+        .from("prognostics")
+        .update({
+          final_content: conteudoErrado,
+          status: "delivered",
+          delivered_at: new Date().toISOString(),
+          pdf_url: "https://127.0.0.1/pdf-do-texto-errado.pdf",
+        } as never)
+        .eq("id", docM);
+      expect(eEnt).toBeNull();
+
+      const vista = await paginaDoParticipante(tokenDeM);
+      anota("elo7_montagem_M_esta_lendo", {
+        nome: vista?.participants?.full_name,
+        texto: String(vista?.final_content?.analise_geral ?? "").slice(0, 60),
+        pdf: vista?.pdf_url,
+      });
+      expect(String(vista?.final_content?.analise_geral)).toBe(TEXTO_ERRADO);
+      // UMA linha de historico: o que ele leu, e so isso.
+      expect(
+        Number(
+          sql(`select count(*) from public.prognostic_delivery_history
+                where prognostic_id = '${docM}'`),
+        ),
+      ).toBe(1);
+    });
+
+    it("SUSPENSAO sem AUTOR, sem MOTIVO e com motivo CURTO: recusada pelo banco, as tres", async () => {
+      // Ato de operador sem justificativa nao e ato registrado (precedente da
+      // 022). Aqui nao e desencorajado: e impossivel, como o selo da 025. Os tres
+      // casos sao medidos porque a rota pode ser contornada -- quem escreve em
+      // `prognostics` com service_role nao passa por ela.
+      const semAutor = await suspender(docM, { suspenso_por: null });
+      const semMotivo = await suspender(docM, { suspensao_motivo: null });
+      const motivoCurto = await suspender(docM, { suspensao_motivo: "erro" });
+      const estado = sql(`select status from public.prognostics where id = '${docM}'`);
+      anota("elo7_suspensao_sem_autor_ou_sem_motivo", {
+        sem_autor: (semAutor.error as any)?.code ?? semAutor.error?.message ?? "ACEITO",
+        sem_motivo: (semMotivo.error as any)?.code ?? semMotivo.error?.message ?? "ACEITO",
+        motivo_curto: (motivoCurto.error as any)?.code ?? motivoCurto.error?.message ?? "ACEITO",
+        estado_do_documento_depois: estado,
+      });
+      expect(semAutor.error).not.toBeNull();
+      expect(semMotivo.error).not.toBeNull();
+      expect(motivoCurto.error).not.toBeNull();
+      // E nada aconteceu: o documento continua no ar.
+      expect(estado).toBe("delivered");
+    });
+
+    it("SUSPENSAO de documento NAO entregue: recusada (e o controle positivo vem no teste seguinte)", async () => {
+      // So um documento ENTREGUE pode sair do ar: e o unico que alguem esta
+      // lendo. Entao o caso precisa de um documento que EXISTE e nao foi
+      // entregue -- Q, gerado agora e parado em `generated`.
+      //
+      // (A primeira versao deste teste usou C, do elo 2, acreditando que ele
+      // tinha documento em `generated`. NAO tinha: o valor fora do dominio fez o
+      // motor recusar ANTES de gerar, e C nao tem linha em `prognostics`. O
+      // teste nao media "suspensao recusada", media um id vazio -- e e por isso
+      // que o documento desta negativa e criado aqui, onde se ve que ele existe.)
+      await criarParticipante("Q");
+      const errosQ = await gravarPelaTela("Q", respostasCanonicas());
+      expect(errosQ.every((e) => e === null)).toBe(true);
+      await concluir("Q");
+      await zerarCanario();
+      const gQ = await generatePrognostic(P.Q.id, eventId);
+      expect(gQ.ok).toBe(true);
+
+      const docQ = sql(
+        `select id from public.prognostics where participant_id = '${P.Q.id}'`,
+      );
+      const estadoDeQ = sql(`select status from public.prognostics where id = '${docQ}'`);
+      const { error } = await suspender(docQ);
+      anota("elo7_suspensao_de_documento_nao_entregue", {
+        estado_de_Q: estadoDeQ,
+        codigo: (error as any)?.code ?? null,
+        mensagem: error?.message ?? "ACEITO",
+        estado_depois: sql(`select status from public.prognostics where id = '${docQ}'`),
+      });
+      expect(estadoDeQ).toBe("generated");
+      expect(error).not.toBeNull();
+      expect((error as any)?.code).toBe("23514");
+      expect(sql(`select status from public.prognostics where id = '${docQ}'`)).toBe(estadoDeQ);
+    });
+
+    it("SUSPENSAO legitima: um ato so, com quem/quando/por que, e o PDF sai do ar junto", async () => {
+      const antes = sql(
+        `select left(conteudo_aprovado_hash, 16) || '|' || (final_content->>'analise_geral')
+           from public.prognostics where id = '${docM}'`,
+      );
+
+      // `suspenso_em` e enviado com uma data ABSURDA de proposito: o gatilho da
+      // 027 carimba `now()` do banco e descarta o que a aplicacao puser ali. O
+      // relogio de quem chamou nao entra no livro-razao (mesma regra da 026).
+      const { error } = await suspender(docM, { suspenso_em: "1999-01-01T00:00:00.000Z" });
+      expect(error).toBeNull();
+
+      const linha = sql(
+        `select status || ' :: autor=' || suspenso_por || ' :: email=' || suspenso_por_email
+                || ' :: quando_do_banco=' || (suspenso_em > now() - interval '5 minutes')::text
+                || ' :: ignorou_o_relogio_do_chamador=' || (suspenso_em > '2020-01-01')::text
+                || ' :: motivo=' || left(suspensao_motivo, 48)
+                || ' :: pdf_saiu_do_ar=' || (pdf_url is null)::text
+                || ' :: conteudo_continua_guardado=' || (final_content->>'analise_geral')
+                || ' :: selo_intacto=' || (left(conteudo_aprovado_hash, 16) || '|' || (final_content->>'analise_geral') = '${antes}')::text
+           from public.prognostics where id = '${docM}'`,
+      );
+      anota("elo7_suspensao_legitima", linha);
+      expect(linha).toContain("suspended ::");
+      expect(linha).toContain(`autor=${OPERADOR}`);
+      expect(linha).toContain("quando_do_banco=true");
+      expect(linha).toContain("ignorou_o_relogio_do_chamador=true");
+      expect(linha).toContain("pdf_saiu_do_ar=true");
+      // SUSPENDER TIRA DO AR, NAO REESCREVE O PASSADO: o conteudo suspenso
+      // continua na linha, e o selo da aprovacao que o cobria continua intacto.
+      expect(linha).toContain(`conteudo_continua_guardado=${TEXTO_ERRADO}`);
+      expect(linha).toContain("selo_intacto=true");
+
+      const livro = sql(
+        `select acao || ' | ' || operador || ' | ' || operador_email || ' | ' || motivo
+                || ' | impressao=' || left(conteudo_hash, 16)
+                || ' | em=' || (em is not null)::text
+           from public.prognostic_suspension_events
+          where prognostic_id = '${docM}' order by sequencia`,
+      );
+      anota("elo7_livro_razao_da_suspensao", livro.split("\n"));
+      expect(livro.split("\n")).toHaveLength(1);
+      expect(livro).toContain("suspenso | ");
+      expect(livro).toContain(MOTIVO);
+      // A impressao registrada e a do texto que SAIU DO AR -- a mesma do
+      // historico da 026 e a mesma que o selo da 025 cobria.
+      expect(livro).toContain(
+        sql(
+          `select left(conteudo_hash, 16) from public.prognostic_delivery_history
+            where prognostic_id = '${docM}' order by sequencia limit 1`,
+        ),
+      );
+    });
+
+    it("O QUE O JOVEM VE ao abrir o link depois da suspensao: um aviso escrito para ele, nao um erro", async () => {
+      // A metade "nao deixar o jovem exposto ao conteudo incorreto" -- medida nos
+      // TRES canais por onde o documento dele podia sair.
+      //
+      // Canal 1: a consulta da pagina. ANTES da 027 ela filtrava so `delivered`,
+      // entao um documento fora do ar nao era achado e a pagina caia em
+      // `notFound()`: ele clicava num link que FUNCIONAVA e recebia erro cru.
+      const comoEraAntes = await paginaAntesDa027(tokenDeM);
+      const vista = await paginaDoParticipante(tokenDeM);
+      anota("elo7_consulta_antiga_da_pagina", comoEraAntes ? "MOSTROU" : "404 (erro cru, sem uma palavra)");
+      anota("elo7_consulta_de_hoje_acha_o_documento_fora_do_ar", !!vista);
+      expect(comoEraAntes).toBeNull();
+      expect(vista).not.toBeNull();
+      expect(vista?.status).toBe("suspended");
+
+      // O RAMO da pagina: status suspenso -> DocumentoSuspensoView, SEM conteudo.
+      // O texto abaixo e o do modulo de PRODUCAO, importado -- nao uma copia.
+      const ehOAviso = vista?.status === "suspended";
+      expect(ehOAviso).toBe(true);
+      const primeiroNome = String(vista?.participants?.full_name ?? "").trim().split(" ")[0];
+      anota("elo7_O_QUE_O_JOVEM_LE", `${primeiroNome}, ${TITULO_DOCUMENTO_SUSPENSO.charAt(0).toLowerCase() + TITULO_DOCUMENTO_SUSPENSO.slice(1)}\n\n${PARAGRAFOS_DOCUMENTO_SUSPENSO.join("\n\n")}\n\n${RODAPE_DOCUMENTO_SUSPENSO}`);
+      // Ele sera avisado, e o link que ele tem na mao e o mesmo: as duas frases
+      // que a decisao de produto exige que estejam la.
+      expect(textoIntegralDoAviso().toLowerCase()).toContain("avisar você");
+      expect(textoIntegralDoAviso().toLowerCase()).toContain("este mesmo link");
+      // E o motivo INTERNO do operador nao esta no que ele le.
+      expect(textoIntegralDoAviso()).not.toContain(MOTIVO);
+      expect(textoIntegralDoAviso()).not.toContain(TEXTO_ERRADO);
+
+      // Canal 2: a RLS, com a sessao DELE. A policy da 002 exige `delivered`,
+      // entao o conteudo suspenso nao volta nem por aqui.
+      const comoM = clienteDaTela(P.M.token);
+      const { data: porRls } = await comoM
+        .from("prognostics")
+        .select("id, status")
+        .eq("id", docM);
+      anota("elo7_M_lendo_pela_RLS_com_a_sessao_dele", (porRls as any[])?.length ?? 0);
+      expect((porRls as any[]) ?? []).toHaveLength(0);
+
+      // Canal 3: o PDF. O gatilho zerou `pdf_url`, entao a rota de status nao
+      // oferece mais o arquivo do texto suspenso.
+      const status = sql(
+        `select coalesce(pdf_url, '(nulo)') || ' | ' || status
+           from public.prognostics where public_share_token = '${tokenDeM}'`,
+      );
+      anota("elo7_rota_de_status_depois_da_suspensao", status);
+      expect(status).toBe("(nulo) | suspended");
+    });
+
+    it("O HISTORICO NAO SUMIU: continua dizendo o que ele leu e quando", async () => {
+      // A outra metade do principio -- "a correcao nao pode apagar o erro da
+      // historia". A suspensao nao escreve no historico da 026 e nao apaga nada:
+      // a linha do texto que M leu continua la, com a impressao digital e a data.
+      const historico = sql(
+        `select sequencia || ' :: ' || (conteudo->>'analise_geral')
+                || ' :: impressao=' || left(conteudo_hash, 16)
+                || ' :: leu_a_partir_de=' || (leu_a_partir_de is not null)::text
+                || ' :: aprovado_em=' || (aprovado_em is not null)::text
+           from public.v_historico_do_conteudo_entregue
+          where prognostic_id = '${docM}' order by sequencia`,
+      );
+      anota("elo7_historico_depois_da_suspensao", historico.split("\n"));
+      expect(historico.split("\n")).toHaveLength(1);
+      expect(historico).toContain(TEXTO_ERRADO);
+      expect(historico).toContain("leu_a_partir_de=true");
+      expect(historico).toContain("aprovado_em=true");
+
+      // E o conteudo suspenso TAMBEM continua na propria linha do documento:
+      // tirar do ar nao e apagar.
+      expect(
+        sql(`select final_content->>'analise_geral' from public.prognostics where id = '${docM}'`),
+      ).toBe(TEXTO_ERRADO);
+    });
+
+    it("de SUSPENSO nao se volta: reentregar sem nova revisao, e voltar para tras, sao recusados", async () => {
+      // Reentregar como esta devolveria ao ar o MESMO texto errado -- o conteudo
+      // nao mudou, entao o selo da 025 BATERIA e so a cerca da 027 recusa.
+      const reentregaSeca = await db
+        .from("prognostics")
+        .update({ status: "delivered", delivered_at: new Date().toISOString() } as never)
+        .eq("id", docM);
+      const paraTras = await db
+        .from("prognostics")
+        .update({ status: "generated" } as never)
+        .eq("id", docM);
+      anota("elo7_de_suspenso_nao_se_volta", {
+        reentregar_sem_nova_revisao: (reentregaSeca.error as any)?.code ?? reentregaSeca.error?.message ?? "ACEITO",
+        voltar_para_generated: (paraTras.error as any)?.code ?? paraTras.error?.message ?? "ACEITO",
+        estado_depois: sql(`select status from public.prognostics where id = '${docM}'`),
+      });
+      expect(reentregaSeca.error).not.toBeNull();
+      expect((reentregaSeca.error as any)?.code).toBe("23514");
+      expect(paraTras.error).not.toBeNull();
+      expect(sql(`select status from public.prognostics where id = '${docM}'`)).toBe("suspended");
+    });
+
+    it("RETIFICACAO: nova revisao, nova aprovacao, nova entrega -- e o selo continua sendo o portao", async () => {
+      // A revisao de um documento FORA DO AR e a MESMA escrita de producao
+      // (app/api/prognostics/[id]/route.ts), agora que `suspended` entrou em
+      // ESTADOS_REVISAVEIS. Nao e regressao disfarcada: de `suspended` o banco so
+      // aceita `in_review` ou `reviewed`, e so por aqui o documento volta ao ar.
+      const { data: antes } = await db
+        .from("prognostics")
+        .select("raw_ai_output, conteudo_aprovado_hash")
+        .eq("id", docM)
+        .single();
+      const seloDoTextoErrado = (antes as any).conteudo_aprovado_hash as string;
+      const corrigido = { ...(antes as any).raw_ai_output, analise_geral: TEXTO_CORRIGIDO };
+
+      const { error: eRev } = await db
+        .from("prognostics")
+        .update({
+          edited_content: corrigido,
+          yuri_note: null,
+          trail_recommendation: corrigido.trilha_recomendada,
+          status: "reviewed",
+          reviewed_at: new Date().toISOString(),
+          pdf_url: null,
+        } as never)
+        .eq("id", docM);
+      anota("elo7_retificacao_salvar_a_revisao", eRev?.message ?? "SALVA");
+      expect(eRev).toBeNull();
+
+      const depoisDaRevisao = sql(
+        `select status
+                || ' :: marca_de_suspensao_saiu_da_linha=' || (suspenso_em is null and suspenso_por is null and suspensao_motivo is null)::text
+                || ' :: selo_novo=' || left(conteudo_aprovado_hash, 16)
+                || ' :: selo_e_do_texto_corrigido=' || (conteudo_aprovado_hash = encode(sha256(convert_to(edited_content::text, 'UTF8')), 'hex'))::text
+                || ' :: selo_mudou=' || (conteudo_aprovado_hash <> '${seloDoTextoErrado}')::text
+           from public.prognostics where id = '${docM}'`,
+      );
+      anota("elo7_retificacao_estado_apos_a_nova_aprovacao", depoisDaRevisao);
+      expect(depoisDaRevisao).toContain("reviewed ::");
+      expect(depoisDaRevisao).toContain("marca_de_suspensao_saiu_da_linha=true");
+      expect(depoisDaRevisao).toContain("selo_e_do_texto_corrigido=true");
+      expect(depoisDaRevisao).toContain("selo_mudou=true");
+
+      // O SELO CONTINUA SENDO O PORTAO, DEPOIS DA MUDANCA DESTA UNIDADE:
+      // entregar texto que ninguem aprovou segue impossivel.
+      const naoAprovado = await db
+        .from("prognostics")
+        .update({
+          final_content: { ...corrigido, analise_geral: TEXTO_NAO_APROVADO },
+          status: "delivered",
+          delivered_at: new Date().toISOString(),
+        } as never)
+        .eq("id", docM);
+      anota("elo7_entregar_texto_nao_aprovado_depois_da_027", {
+        codigo: (naoAprovado.error as any)?.code ?? null,
+        mensagem: naoAprovado.error?.message ?? "ACEITO",
+        estado_depois: sql(`select status from public.prognostics where id = '${docM}'`),
+      });
+      expect(naoAprovado.error).not.toBeNull();
+      expect((naoAprovado.error as any)?.code).toBe("23514");
+      expect(sql(`select status from public.prognostics where id = '${docM}'`)).toBe("reviewed");
+
+      // A REENTREGA do texto APROVADO, pelo caminho normal.
+      const { error: eEnt } = await db
+        .from("prognostics")
+        .update({
+          final_content: corrigido,
+          status: "delivered",
+          delivered_at: new Date().toISOString(),
+        } as never)
+        .eq("id", docM);
+      anota("elo7_reentrega_do_texto_aprovado", eEnt?.message ?? "REENTREGUE");
+      expect(eEnt).toBeNull();
+    });
+
+    it("depois da retificacao: o historico tem as DUAS versoes, e o jovem passa a ler a correta", async () => {
+      const historico = sql(
+        `select sequencia || ' :: ' || (conteudo->>'analise_geral')
+                || ' :: impressao=' || left(conteudo_hash, 16)
+                || ' :: leu_ate=' || coalesce(leu_ate::text, '(vigente)')
+                || ' :: vigente=' || vigente::text
+           from public.v_historico_do_conteudo_entregue
+          where prognostic_id = '${docM}' order by sequencia`,
+      );
+      anota("elo7_historico_com_as_DUAS_versoes", historico.split("\n"));
+      const linhas = historico.split("\n");
+      expect(linhas).toHaveLength(2);
+      // A que ele LEU continua la, com a data em que deixou de valer...
+      expect(linhas[0]).toContain(TEXTO_ERRADO);
+      expect(linhas[0]).toContain("vigente=false");
+      expect(linhas[0]).not.toContain("leu_ate=(vigente)");
+      // ...e a que ele PASSA A LER e a vigente.
+      expect(linhas[1]).toContain(TEXTO_CORRIGIDO);
+      expect(linhas[1]).toContain("leu_ate=(vigente)");
+      expect(linhas[1]).toContain("vigente=true");
+      // Duas impressoes diferentes, e a vigente e a que o selo da 025 cobre.
+      expect(
+        sql(
+          `select (p.conteudo_aprovado_hash = h.conteudo_hash)::text
+             from public.prognostics p
+             join public.prognostic_delivery_history h on h.prognostic_id = p.id
+            where p.id = '${docM}' order by h.sequencia desc limit 1`,
+        ),
+      ).toBe("true");
+
+      // O LIVRO-RAZAO fechado: suspenso -> reentregue, com as duas impressoes.
+      const livro = sql(
+        `select sequencia || ' :: ' || acao
+                || ' :: motivo=' || coalesce(left(motivo, 40), '(nenhum)')
+                || ' :: impressao=' || left(conteudo_hash, 16)
+           from public.prognostic_suspension_events
+          where prognostic_id = '${docM}' order by sequencia`,
+      );
+      anota("elo7_livro_razao_fechado", livro.split("\n"));
+      expect(livro.split("\n")).toHaveLength(2);
+      expect(livro.split("\n")[0]).toContain("suspenso");
+      expect(livro.split("\n")[1]).toContain("reentregue");
+
+      // E O QUE O JOVEM VE AGORA, pelo MESMO link que ele tinha na mao: o texto
+      // corrigido. Nenhum link novo foi emitido -- o `public_share_token` nao e
+      // tocado pela suspensao, que e a decisao de produto declarada na 027.
+      const vista = await paginaDoParticipante(tokenDeM);
+      anota("elo7_o_que_o_jovem_le_depois_da_retificacao", {
+        mesmo_link: tokenDeM === (vista as any)?.public_share_token,
+        status: vista?.status,
+        texto: String(vista?.final_content?.analise_geral ?? "").slice(0, 70),
+      });
+      expect(vista?.status).toBe("delivered");
+      expect((vista as any)?.public_share_token).toBe(tokenDeM);
+      expect(String(vista?.final_content?.analise_geral)).toBe(TEXTO_CORRIGIDO);
+      expect(String(vista?.final_content?.analise_geral)).not.toBe(TEXTO_ERRADO);
+    });
+
+    it("CONTROLE POSITIVO: documento NUNCA suspenso continua sendo entregue como sempre", async () => {
+      // Sem isto, tudo acima poderia estar medindo "a entrega quebrou para todo
+      // mundo depois da 027" em vez de "a suspensao funciona".
+      await criarParticipante("N");
+      const erros = await gravarPelaTela("N", respostasCanonicas());
+      expect(erros.every((e) => e === null)).toBe(true);
+      await concluir("N");
+
+      await zerarCanario();
+      const g = await generatePrognostic(P.N.id, eventId);
+      expect(g.ok).toBe(true);
+
+      const { data } = await db
+        .from("prognostics")
+        .select("id, raw_ai_output, public_share_token")
+        .eq("participant_id", P.N.id)
+        .single();
+      const docN = (data as any).id as string;
+      const tokenDeN = (data as any).public_share_token as string;
+      const conteudo = {
+        ...(data as any).raw_ai_output,
+        analise_geral: "TEXTO DE N, NUNCA SUSPENSO (marca da prova).",
+      };
+
+      const { error: eRev } = await db
+        .from("prognostics")
+        .update({
+          edited_content: conteudo,
+          status: "reviewed",
+          reviewed_at: new Date().toISOString(),
+          pdf_url: null,
+        } as never)
+        .eq("id", docN);
+      const { error: eEnt } = await db
+        .from("prognostics")
+        .update({
+          final_content: conteudo,
+          status: "delivered",
+          delivered_at: new Date().toISOString(),
+        } as never)
+        .eq("id", docN);
+
+      const vista = await paginaDoParticipante(tokenDeN);
+      const linha = sql(
+        `select status
+                || ' :: nunca_suspenso=' || (suspenso_em is null and suspenso_por is null)::text
+                || ' :: linhas_no_livro_razao=' || (
+                     select count(*) from public.prognostic_suspension_events
+                      where prognostic_id = '${docN}')
+                || ' :: linhas_no_historico=' || (
+                     select count(*) from public.prognostic_delivery_history
+                      where prognostic_id = '${docN}')
+           from public.prognostics where id = '${docN}'`,
+      );
+      anota("elo7_controle_positivo_documento_normal", {
+        revisao: eRev?.message ?? "SALVA",
+        entrega: eEnt?.message ?? "ENTREGUE",
+        linha,
+        o_que_N_le: String(vista?.final_content?.analise_geral ?? "").slice(0, 60),
+      });
+      expect(eRev).toBeNull();
+      expect(eEnt).toBeNull();
+      expect(linha).toContain("delivered ::");
+      expect(linha).toContain("nunca_suspenso=true");
+      // O livro-razao da suspensao NAO ganha linha por uma entrega comum: ele
+      // registra atos de suspensao, nao entregas.
+      expect(linha).toContain("linhas_no_livro_razao=0");
+      expect(linha).toContain("linhas_no_historico=1");
+      expect(String(vista?.final_content?.analise_geral)).toContain("NUNCA SUSPENSO");
+    });
+
+    it("A TRAVA DA 015 NAO FOI AFROUXADA: delivered -> reviewed DIRETO continua recusado", async () => {
+      // A pergunta que decide se esta unidade abriu a porta que a revisao mandou
+      // manter fechada. `suspended` esta FORA do vetor de ordem da 015, entao a
+      // 027 nao precisou de nenhuma transicao nova entre os seis estados dela --
+      // e a regressao que a 015 existe para recusar continua recusada, sobre um
+      // documento que NUNCA passou por suspensao.
+      const docN = sql(
+        `select id from public.prognostics where participant_id = '${P.N.id}'`,
+      );
+      const { error } = await db
+        .from("prognostics")
+        .update({
+          edited_content: { analise_geral: "correcao direta, sem tirar do ar" },
+          status: "reviewed",
+          reviewed_at: new Date().toISOString(),
+        } as never)
+        .eq("id", docN);
+      const gatilhos = sql(
+        `select string_agg(tgname, ',' order by tgname)
+           from pg_trigger
+          where tgrelid = 'public.prognostics'::regclass and not tgisinternal`,
+      );
+      const vocabulario = sql(
+        `select pg_get_constraintdef(oid) from pg_constraint
+          where conrelid = 'public.prognostics'::regclass and conname = 'prognostics_status_check'`,
+      );
+      anota("elo7_a_trava_da_015_continua", {
+        delivered_para_reviewed_direto: (error as any)?.code ?? error?.message ?? "ACEITO",
+        estado_de_N_depois: sql(`select status from public.prognostics where id = '${docN}'`),
+        gatilhos_de_prognostics: gatilhos.split(","),
+        vocabulario_de_status: vocabulario,
+      });
+      expect(error).not.toBeNull();
+      expect((error as any)?.code).toBe("23514");
+      expect(sql(`select status from public.prognostics where id = '${docN}'`)).toBe("delivered");
+      // Os quatro gatilhos convivem: nenhum foi substituido por este trabalho.
+      for (const g of [
+        "prognostics_status_sem_regressao", // 015
+        "prognostics_selo_de_aprovacao", // 025
+        "prognostics_historico_do_entregue", // 026
+        "prognostics_suspensao", // 027
+        "prognostics_livro_da_suspensao", // 027
+      ]) {
+        expect(gatilhos.split(",")).toContain(g);
+      }
+      // E o setimo valor entrou no vocabulario sem tirar nenhum dos seis.
+      for (const estado of [
+        "pending",
+        "generating",
+        "generated",
+        "in_review",
+        "reviewed",
+        "delivered",
+        "suspended",
+      ]) {
+        expect(vocabulario).toContain(`'${estado}'`);
+      }
+    });
+
+    it("O LIVRO-RAZAO E APPEND-ONLY: privilegio CONFERIDO no banco, e a tentativa real recusada", async () => {
+      // Mesma tecnica e mesma razao do teste equivalente da 026, com
+      // `service_role` NOMEADO: ele nao e alcancado pela RLS (BYPASSRLS) e e o
+      // papel com que as rotas de administracao escrevem.
+      const privilegios = sql(
+        `select r.papel || ': ler=' ||
+                has_table_privilege(r.papel, 'public.prognostic_suspension_events', 'select')::text ||
+                ' inserir=' ||
+                has_table_privilege(r.papel, 'public.prognostic_suspension_events', 'insert')::text ||
+                ' alterar=' ||
+                has_table_privilege(r.papel, 'public.prognostic_suspension_events', 'update')::text ||
+                ' apagar=' ||
+                has_table_privilege(r.papel, 'public.prognostic_suspension_events', 'delete')::text ||
+                ' truncar=' ||
+                has_table_privilege(r.papel, 'public.prognostic_suspension_events', 'truncate')::text
+           from (values ('anon'), ('authenticated'), ('service_role')) as r(papel)
+          order by r.papel`,
+      );
+      const rls = sql(
+        `select relrowsecurity::text from pg_class
+          where oid = 'public.prognostic_suspension_events'::regclass`,
+      );
+      const policies = sql(
+        `select coalesce(string_agg(polname || '[' || polcmd::text || ']', ',' order by polname), '(nenhuma)')
+           from pg_policy where polrelid = 'public.prognostic_suspension_events'::regclass`,
+      );
+      anota("elo7_livro_razao_privilegios_conferidos", privilegios.split("\n"));
+      anota("elo7_livro_razao_rls_e_policies", { rls_ligada: rls, policies });
+
+      expect(privilegios).not.toMatch(/alterar=true/);
+      expect(privilegios).not.toMatch(/apagar=true/);
+      expect(privilegios).not.toMatch(/truncar=true/);
+      expect(privilegios).not.toMatch(/inserir=true/);
+      expect(privilegios).toContain("authenticated: ler=true");
+      expect(privilegios).toContain("service_role: ler=true");
+      expect(privilegios).toContain("anon: ler=false");
+      expect(rls).toBe("true");
+      expect(policies).toBe("prognostic_suspension_events_admin_select[r]");
+
+      // A TENTATIVA REAL, pelo caminho da aplicacao (PostgREST com a chave de
+      // service_role): nao basta o privilegio estar revogado na consulta acima.
+      const linhasAntes = sql(`select count(*) from public.prognostic_suspension_events`);
+      const cabecalho = {
+        apikey: SERVICE,
+        Authorization: `Bearer ${SERVICE}`,
+        "content-type": "application/json",
+      };
+      const alterar = await fetch(
+        `${SUPA}/rest/v1/prognostic_suspension_events?prognostic_id=eq.${docM}`,
+        { method: "PATCH", headers: cabecalho, body: JSON.stringify({ motivo: "REESCRITO PELA PROVA, com folga de caracteres" }) },
+      );
+      const apagar = await fetch(
+        `${SUPA}/rest/v1/prognostic_suspension_events?prognostic_id=eq.${docM}`,
+        { method: "DELETE", headers: cabecalho },
+      );
+      const inserir = await fetch(`${SUPA}/rest/v1/prognostic_suspension_events`, {
+        method: "POST",
+        headers: cabecalho,
+        body: JSON.stringify({
+          prognostic_id: docM,
+          participant_id: P.M.id,
+          acao: "suspenso",
+          operador: OPERADOR,
+          motivo: "SUSPENSAO QUE NUNCA ACONTECEU, com folga de caracteres",
+          conteudo_hash: "0000000000000000000000000000000000000000000000000000000000000000",
+          em: new Date().toISOString(),
+        }),
+      });
+      const linhasDepois = sql(`select count(*) from public.prognostic_suspension_events`);
+      const motivosDepois = sql(
+        `select string_agg(coalesce(motivo, '(nenhum)'), ' | ' order by sequencia)
+           from public.prognostic_suspension_events where prognostic_id = '${docM}'`,
+      );
+      anota("elo7_livro_razao_tentativa_real_como_service_role", {
+        alterar: alterar.status,
+        apagar: apagar.status,
+        inserir: inserir.status,
+        linhas: { antes: linhasAntes, depois: linhasDepois },
+        motivos_depois: motivosDepois,
+      });
+      expect(alterar.ok).toBe(false);
+      expect(apagar.ok).toBe(false);
+      expect(inserir.ok).toBe(false);
+      expect(linhasDepois).toBe(linhasAntes);
+      expect(motivosDepois).toContain(MOTIVO);
+      expect(motivosDepois).not.toContain("REESCRITO");
+
+      // O TETO, DECLARADO e nao disfarcado: ser DONO da tabela (DDL, ou UPDATE
+      // direto como `postgres`) continua contornando isto -- e o mesmo teto dos
+      // gatilhos da 015, da 025 e da 026, e a condicao que este projeto aceita
+      // como "procedimento excepcional". O que o CHECK do motivo garante mesmo
+      // para o dono e que um ato de suspensao nao fica SEM motivo e SEM autor.
+      let recusouODono = "ACEITO (nao deveria)";
+      try {
+        sql(
+          `update public.prognostic_suspension_events
+              set motivo = null, operador = null
+            where prognostic_id = '${docM}' and acao = 'suspenso'`,
+        );
+      } catch (err) {
+        recusouODono = String((err as Error).message).includes(
+          "prognostic_suspension_events_motivo_check",
+        )
+          ? "RECUSADO pelo CHECK do motivo"
+          : `RECUSADO: ${String((err as Error).message).slice(0, 120)}`;
+      }
+      anota("elo7_livro_razao_dono_nao_deixa_ato_sem_autor_nem_motivo", recusouODono);
+      expect(recusouODono).toBe("RECUSADO pelo CHECK do motivo");
+    });
+  });
+
 });

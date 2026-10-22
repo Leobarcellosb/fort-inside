@@ -43,6 +43,10 @@ import {
   textoDeRespostaRecebida,
   trilhaDaPessoa,
 } from "@/components/features/admin/etapas-do-painel";
+import {
+  classificarRecusaDeLiberacao,
+  type ErroDeGravacao,
+} from "@/components/features/admin/liberar-etapa";
 
 interface Participant {
   id: string;
@@ -342,12 +346,37 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
     setReleasing(true);
     try {
       const supabase = createClient();
-      type MutResult = { data: unknown; error: { message: string } | null };
+      // `error` carrega os quatro campos do PostgREST, e não só `message`: é em
+      // `details` que vem o NOME DO FATO com que o gatilho da migration 028
+      // recusa, e era por ler só `message` que esta tela não tinha como saber
+      // qual recusa aconteceu.
+      type MutResult = { data: unknown; error: ErroDeGravacao | null };
       const { error } = await ((supabase.from("events") as unknown as {
         update(v: Record<string, unknown>): { eq(c: string, v: string): Promise<MutResult> };
       }).update({ current_stage: next, status: "live" }).eq("id", event.id));
 
-      if (error) throw error;
+      if (error) {
+        // A TRAVA ESTRUTURAL RESPONDEU. A tela parou de oferecer a operação na
+        // unidade anterior; a migration 028 fez o banco parar de aceitá-la, e
+        // aqui a recusa é NOMEADA para o host -- "não se aplica a este evento"
+        // nunca sai como "Erro ao liberar etapa".
+        const recusa = classificarRecusaDeLiberacao(error, {
+          etapaPedida: next,
+          totalEtapas: leitura.suportado ? leitura.total : null,
+          modo: event.mode,
+        });
+        // O texto cru do banco fica AQUI, no console, sob o número da ocorrência
+        // que o host cita. Ele não vai para a tela.
+        console.error("[painel] liberação de etapa recusada", {
+          ocorrencia: recusa.ocorrencia,
+          codigo: recusa.codigo,
+          evento: event.id,
+          etapa_pedida: next,
+          erro: error,
+        });
+        toast.error(recusa.mensagem, { duration: 15000 });
+        return;
+      }
 
       const releasePayload: Record<string, unknown> = { stage_id: next };
       if (isForcedRelease) {
@@ -364,8 +393,26 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
       // os ambientes da casa do Fort Inside, indexado pelo número da etapa.
       const nome = proxima.etapa.ambiente || proxima.etapa.titulo;
       toast.success(nome ? `Etapa ${next} liberada — ${nome}` : `Etapa ${next} liberada`);
-    } catch {
-      toast.error("Erro ao liberar etapa");
+    } catch (causa) {
+      // O que sobra aqui é o que o cliente lançou em vez de devolver em `error`:
+      // rede caída, sessão perdida, resposta ilegível. NÃO se afirma recusa --
+      // não se sabe se a gravação passou --, e por isso não se diz "não foi
+      // liberada". A mensagem manda recarregar para ver a etapa atual. Antes
+      // este bloco dizia "Erro ao liberar etapa" para TUDO, inclusive para as
+      // recusas verificadas, que agora têm texto próprio acima.
+      const recusa = classificarRecusaDeLiberacao(null, {
+        etapaPedida: next,
+        totalEtapas: leitura.suportado ? leitura.total : null,
+        modo: event.mode,
+      });
+      console.error("[painel] liberação de etapa não concluída", {
+        ocorrencia: recusa.ocorrencia,
+        codigo: recusa.codigo,
+        evento: event.id,
+        etapa_pedida: next,
+        causa,
+      });
+      toast.error(recusa.mensagem, { duration: 15000 });
     } finally {
       setReleasing(false);
     }
