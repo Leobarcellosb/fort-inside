@@ -14,8 +14,58 @@ import {
   type Elemento,
   type RespostasAchatadas,
 } from "../../../lib/scoring/marco-zero";
-import type { EntradaDna } from "./dna-coletivo-modelo";
-import type { ParticipanteDna } from "./dna-coletivo-agregacao";
+import {
+  gateDeVolumeDaCoberturaOficial,
+  type EntradaDna,
+  type GateDeVolume,
+} from "./dna-coletivo-modelo";
+import { agregar, type ParticipanteDna } from "./dna-coletivo-agregacao";
+import { readFileSync } from "node:fs";
+
+// ---------------------------------------------------------------------------
+// Gate de volume: o numero vem da migration, nao daqui
+// ---------------------------------------------------------------------------
+// Este arquivo e usado SO por teste. Ele le o minimo direto da migration 020,
+// em vez de reescrever o numero, para que nao exista um segundo lugar onde o
+// limiar possa divergir do banco: mudar a view muda estes testes no mesmo
+// instante.
+
+const MIGRATION_020 = new URL(
+  "../../../supabase/migrations/020_presenca_convites.sql",
+  import.meta.url,
+);
+
+/** `minimo_respostas_validas` da view `marco_zero_parametros_dna`. */
+export const MINIMO_RESPOSTAS_DO_BANCO: number = (() => {
+  const sql = readFileSync(MIGRATION_020, "utf8");
+  const m = /(\d+)\s+as\s+minimo_respostas_validas/.exec(sql);
+  if (!m) {
+    throw new Error(
+      "nao encontrei minimo_respostas_validas na migration 020: o gate de volume perdeu a fonte",
+    );
+  }
+  return Number(m[1]);
+})();
+
+/** A linha que `marco_zero_cobertura` devolveria com `status = 'ok'`. */
+export function gateVerificado(
+  respondentesValidos: number,
+  minimo: number = MINIMO_RESPOSTAS_DO_BANCO,
+): GateDeVolume {
+  return gateDeVolumeDaCoberturaOficial({
+    status: "ok",
+    motivo: null,
+    respondentes_validos: respondentesValidos,
+    gate_minimo_respostas: respondentesValidos >= minimo,
+    minimo_respostas: minimo,
+  });
+}
+
+/** Grupo com o gate derivado da propria contagem de respondentes do grupo. */
+function comGateDoBanco(e: Omit<EntradaDna, "gateDeVolume">): EntradaDna {
+  const ag = agregar(e.convidados, e.participantes);
+  return { ...e, gateDeVolume: gateVerificado(ag.respondentes) };
+}
 
 const ALTS: Alternativa[] = ["A", "B", "C", "D"];
 const alt = (q: (typeof SITUACIONAIS)[number], eixo: Eixo): Alternativa =>
@@ -168,7 +218,7 @@ const META = { nomeEvento: "Marco Zero | Geração Preparada", dataEvento: "2026
 
 /** Insuficiente: 12 presentes, 10 completos = 83,3% (o numero real medido antes). */
 export function grupoInsuficiente(): EntradaDna {
-  return {
+  return comGateDoBanco({
     meta: META,
     convidados: 15,
     checkinFechado: true,
@@ -181,12 +231,12 @@ export function grupoInsuficiente(): EntradaDna {
       // respondeu mas nao foi: nao entra na conta
       pessoa({ t: "dois", eixo: "execucao" }, false),
     ],
-  };
+  });
 }
 
 /** Suficiente: 44 presentes, 41 completos (93,2%), com celulas grandes e pequenas. */
 export function grupoSuficiente(): EntradaDna {
-  return {
+  return comGateDoBanco({
     meta: META,
     convidados: 50,
     checkinFechado: true,
@@ -199,12 +249,12 @@ export function grupoSuficiente(): EntradaDna {
       ...varias(2, { t: "parcial" }),
       pessoa({ t: "nada" }),
     ],
-  };
+  });
 }
 
 /** O caso mais provavel: 56 completos de 60 presentes e 41 (73,2%) sem destaque. */
 export function grupoMuitosIndeterminados(): EntradaDna {
-  return {
+  return comGateDoBanco({
     meta: META,
     convidados: 70,
     checkinFechado: true,
@@ -217,24 +267,30 @@ export function grupoMuitosIndeterminados(): EntradaDna {
       ...varias(3, { t: "parcial" }),
       pessoa({ t: "nada" }),
     ],
-  };
+  });
 }
 
-/** Dados incompletos: 30 presentes, 27 completos (exatos 90,0%), 3 so em parte. */
+/**
+ * Dados incompletos: 40 presentes, 36 completos (exatos 90,0%), 4 so em parte.
+ * Dimensionado ACIMA do minimo de volume do banco de proposito: este grupo
+ * existe para provar o comportamento das respostas parciais DENTRO de um
+ * documento publicado, e nao o gate de volume (esse tem cenario proprio).
+ */
 export function grupoComDadosIncompletos(): EntradaDna {
-  return {
+  return comGateDoBanco({
     meta: META,
-    convidados: 34,
+    convidados: 45,
     checkinFechado: true,
     participantes: [
-      ...varias(12, { t: "sem_destaque" }),
-      ...varias(8, { t: "dois", eixo: "visao" }),
-      ...varias(7, { t: "likert", eixo: "execucao" }),
-      // parciais: duas com elementos completos, uma so com elementos e nada de dimensoes
+      ...varias(16, { t: "sem_destaque" }),
+      ...varias(11, { t: "dois", eixo: "visao" }),
+      ...varias(9, { t: "likert", eixo: "execucao" }),
+      // parciais: tres com elementos completos, uma so com elementos e nada de dimensoes
+      pessoa({ t: "parcial" }),
       pessoa({ t: "parcial" }),
       pessoa({ t: "parcial" }),
       pessoa({ t: "so_elementos" }),
       pessoa({ t: "dois", eixo: "relacao" }, false),
     ],
-  };
+  });
 }

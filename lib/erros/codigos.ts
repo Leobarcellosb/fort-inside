@@ -77,6 +77,35 @@ export const DEFINICOES_DE_ERRO = {
   /** Variável de ambiente da fila inválida no servidor. */
   QUEUE_CONFIG_INVALID: { status: 500, error: "Configuração da fila inválida" },
 
+  // --- importação de respostas coletadas FORA do aplicativo (/api/importacao/*)
+  //
+  // A distinção que governa esta família, e que é a razão de ela ter seis códigos
+  // em vez de um: "não consegui verificar", "verifiquei e NÃO permiti" e "o
+  // recurso não está instalado" são TRÊS FATOS DIFERENTES. Colapsá-los manda o
+  // operador investigar a coisa errada -- e, no caso do manifesto, manda-o
+  // reescrever um formulário que talvez esteja certo.
+  //
+  //   não instalado      IMPORT_SCHEMA_MISSING        (a ÚNICA que cita a 022)
+  //   não respondeu      IMPORT_UNAVAILABLE
+  //   não deu p/ conferir IMPORT_MANIFEST_UNVERIFIABLE
+  //   conferi e recusei  IMPORT_MANIFEST_MISMATCH, IMPORT_SPREADSHEET_INVALID,
+  //                      IMPORT_PLAN_REFUSED, IMPORT_PREVIEW_STALE
+
+  /** As tabelas e a função `importacao_externa_aplicar` NÃO EXISTEM no banco. A ÚNICA causa que menciona a 022. */
+  IMPORT_SCHEMA_MISSING: { status: 503, error: "A importação de respostas externas não está instalada no banco" },
+  /** A importação existe e a chamada falhou (rede, banco, timeout). NÃO é ausência e NÃO é recusa. */
+  IMPORT_UNAVAILABLE: { status: 503, error: "A importação de respostas externas não respondeu" },
+  /** CONFERIDO: a impressão digital do questionário da coleta NÃO é a do sistema. Recusa ANTES de pontuar. */
+  IMPORT_MANIFEST_MISMATCH: { status: 400, error: "O questionário da coleta não é o do sistema" },
+  /** NÃO deu para conferir a impressão (não declarada, ou não é SHA-256). NÃO é "bate" nem "não bate". */
+  IMPORT_MANIFEST_UNVERIFIABLE: { status: 503, error: "Não foi possível conferir a impressão digital do questionário" },
+  /** CONFERIDO: os cabeçalhos da planilha não correspondem ao questionário (coluna sobrando, faltando, ambígua, sem e-mail). */
+  IMPORT_SPREADSHEET_INVALID: { status: 400, error: "As colunas da planilha não correspondem ao questionário" },
+  /** CONFERIDO: o plano foi recusado por falta de operador, de origem, ou por versão divergente. */
+  IMPORT_PLAN_REFUSED: { status: 400, error: "A importação não foi autorizada" },
+  /** CONFERIDO: o que seria gravado deixou de ser o que a prévia mostrou. Nada foi gravado. */
+  IMPORT_PREVIEW_STALE: { status: 400, error: "A prévia não corresponde mais ao que seria gravado" },
+
   // --- o que ninguém previu -------------------------------------------------
   INTERNAL_ERROR: { status: 500, error: "Erro interno" },
 } as const satisfies Record<string, { status: number; error: string }>;
@@ -104,6 +133,32 @@ export interface DetalhesDeErro {
   coleta_encerra_em?: string;
   /** Fuso IANA do EVENTO (lib/eventos/fuso.ts), para a tela mostrar o prazo no fuso certo. */
   fuso?: string;
+
+  // --- importação externa ---------------------------------------------------
+  // Tudo aqui é dado que o OPERADOR já tem em mãos (a impressão que ele declarou,
+  // os cabeçalhos da planilha dele) ou um número. Nunca texto interno de banco.
+
+  /** Impressão digital do questionário DECLARADA pela coleta (hex de 64 dígitos; não é segredo). */
+  impressao_declarada?: string;
+  /** Impressão digital do questionário DO SISTEMA (hex de 64 dígitos). */
+  impressao_do_sistema?: string;
+  /** Cabeçalhos de coluna ou ids de pergunta que causaram a recusa, nomeados -- não contados. */
+  itens?: string[];
+  /** Classe da divergência da planilha, para a tela decidir sem interpretar texto. */
+  divergencia?:
+    | "coluna_desconhecida"
+    | "coluna_ambigua"
+    | "coluna_faltando"
+    | "email_sem_coluna"
+    | "submissao_sem_id"
+    | "linha_curta";
+  /** Qual portão do planejador recusou (lib/importacao/planejar-importacao.ts). */
+  portao?: "operador" | "origem" | "versao";
+  /** Linha da planilha (contada de 0) quando a recusa é de uma linha específica. */
+  linha?: number;
+  /** Versão do questionário envolvida na divergência. */
+  versao_declarada?: number;
+  versao_do_evento?: number;
 }
 
 /** Corpo de toda resposta de erro das rotas de processamento. */

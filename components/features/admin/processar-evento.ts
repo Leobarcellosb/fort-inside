@@ -96,6 +96,18 @@ const CLASSE_DO_CODIGO: Record<CodigoDeErro, "recusado" | "bloqueado" | "fila_in
   QUEUE_UNAVAILABLE: "bloqueado",
   QUEUE_CONFIG_INVALID: "bloqueado",
   QUEUE_SCHEMA_MISSING: "fila_indisponivel",
+  // A família da importação externa não é desta rota (ela é de /api/importacao/*,
+  // e a tela dela classifica em `components/features/admin/importar-respostas.ts`,
+  // onde "recurso ausente" tem classe PRÓPRIA). Aqui elas existem só porque o
+  // vocabulário é fechado: se alguma aparecesse nesta rota, cairia na classe que
+  // corresponde ao fato, nunca na da fila.
+  IMPORT_SCHEMA_MISSING: "bloqueado",
+  IMPORT_UNAVAILABLE: "bloqueado",
+  IMPORT_MANIFEST_MISMATCH: "recusado",
+  IMPORT_MANIFEST_UNVERIFIABLE: "bloqueado",
+  IMPORT_SPREADSHEET_INVALID: "recusado",
+  IMPORT_PLAN_REFUSED: "recusado",
+  IMPORT_PREVIEW_STALE: "recusado",
   INTERNAL_ERROR: "inesperado",
 };
 

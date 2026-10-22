@@ -379,19 +379,53 @@ describe("critério 7 -- cada erro tem controle positivo ao lado", () => {
 
   it("cada migration é citada SÓ pela mensagem do seu próprio código", () => {
     const quem = (re: RegExp) => CODIGOS_DE_ERRO.filter((c) => re.test(mensagemParaHost(c)));
-    // O número da migration 018 (fila) só em QUEUE_SCHEMA_MISSING; o da 021 (medição) só em BUDGET_MEASUREMENT_MISSING.
+    // O número da migration 018 (fila) só em QUEUE_SCHEMA_MISSING; o da 021 (medição)
+    // só em BUDGET_MEASUREMENT_MISSING; o da 022 (importação externa) só em
+    // IMPORT_SCHEMA_MISSING. Mandar instalar a coisa errada é investigar a coisa errada.
     expect(quem(/\b018\b/)).toEqual(["QUEUE_SCHEMA_MISSING"]);
     expect(quem(/\b021\b/)).toEqual(["BUDGET_MEASUREMENT_MISSING"]);
-    // A palavra "migration" em geral: só nas duas que têm número.
-    expect(quem(/migration/i).sort()).toEqual(["BUDGET_MEASUREMENT_MISSING", "QUEUE_SCHEMA_MISSING"]);
+    expect(quem(/\b022\b/)).toEqual(["IMPORT_SCHEMA_MISSING"]);
+    // A palavra "migration" em geral: só nas que têm número.
+    expect(quem(/migration/i).sort()).toEqual([
+      "BUDGET_MEASUREMENT_MISSING",
+      "IMPORT_SCHEMA_MISSING",
+      "QUEUE_SCHEMA_MISSING",
+    ]);
   });
 
   it("só as mensagens de AUSÊNCIA mandam APLICAR; as de indisponibilidade mandam aguardar (mandar aplicar o que não falta é investigar a coisa errada)", () => {
     const mandaAplicar = CODIGOS_DE_ERRO.filter((c) => /\baplicar\b|\baplicada\b/i.test(mensagemParaHost(c))).sort();
-    expect(mandaAplicar).toEqual(["ASYNC_PROCESSING_MISSING", "BUDGET_MEASUREMENT_MISSING", "QUEUE_SCHEMA_MISSING"]);
-    for (const c of ["BUDGET_MEASUREMENT_UNAVAILABLE", "QUEUE_UNAVAILABLE", "TIME_REFERENCE_UNAVAILABLE", "SNAPSHOT_UNSTABLE", "AUTH_UNAVAILABLE"] as const) {
+    expect(mandaAplicar).toEqual([
+      "ASYNC_PROCESSING_MISSING",
+      "BUDGET_MEASUREMENT_MISSING",
+      "IMPORT_SCHEMA_MISSING",
+      "QUEUE_SCHEMA_MISSING",
+    ]);
+    for (const c of ["BUDGET_MEASUREMENT_UNAVAILABLE", "QUEUE_UNAVAILABLE", "TIME_REFERENCE_UNAVAILABLE", "SNAPSHOT_UNSTABLE", "AUTH_UNAVAILABLE", "IMPORT_UNAVAILABLE", "IMPORT_MANIFEST_UNVERIFIABLE"] as const) {
       expect(mensagemParaHost(c), c).toMatch(/aguarde|tent(e|ar) de novo/i);
     }
+  });
+
+  it("os três fatos da importação externa não compartilham texto: instalar, aguardar e corrigir são mensagens diferentes", () => {
+    const ausente = mensagemParaHost("IMPORT_SCHEMA_MISSING");
+    const indisponivel = mensagemParaHost("IMPORT_UNAVAILABLE");
+    const naoConferido = mensagemParaHost("IMPORT_MANIFEST_UNVERIFIABLE");
+    const recusado = mensagemParaHost("IMPORT_MANIFEST_MISMATCH");
+
+    // "não está instalado" é a ÚNICA que manda instalar.
+    expect(ausente).toMatch(/migration 022/);
+    for (const m of [indisponivel, naoConferido, recusado]) {
+      expect(m).not.toMatch(/migration|aplicar a atualização/i);
+    }
+    // "não respondeu" e "não deu para conferir" mandam esperar e NÃO acusam a planilha.
+    expect(indisponivel).toMatch(/aguarde/i);
+    expect(indisponivel).toMatch(/não quer dizer que a planilha/i);
+    expect(naoConferido).toMatch(/NÃO quer dizer que o questionário está errado/);
+    // "conferi e recusei" é a única que afirma que o questionário divergiu.
+    expect(recusado).toMatch(/NÃO é o que o sistema conhece/);
+    expect(recusado).not.toMatch(/aguarde/i);
+    // Nenhuma das quatro é igual a outra.
+    expect(new Set([ausente, indisponivel, naoConferido, recusado]).size).toBe(4);
   });
 
   it("nenhum texto interno de banco chega à tela, qualquer que seja o código", async () => {
@@ -428,6 +462,13 @@ describe("critério 7 -- cada erro tem controle positivo ao lado", () => {
       QUEUE_UNAVAILABLE: "bloqueado",
       QUEUE_CONFIG_INVALID: "bloqueado",
       QUEUE_SCHEMA_MISSING: "fila_indisponivel",
+      IMPORT_SCHEMA_MISSING: "bloqueado",
+      IMPORT_UNAVAILABLE: "bloqueado",
+      IMPORT_MANIFEST_MISMATCH: "recusado",
+      IMPORT_MANIFEST_UNVERIFIABLE: "bloqueado",
+      IMPORT_SPREADSHEET_INVALID: "recusado",
+      IMPORT_PLAN_REFUSED: "recusado",
+      IMPORT_PREVIEW_STALE: "recusado",
       INTERNAL_ERROR: "erro_inesperado",
     };
     for (const c of CODIGOS_DE_ERRO) {

@@ -21,6 +21,8 @@ import {
   COBERTURA_MINIMA_PERCENTUAL,
   TEXTOS_DNA,
   atingeCoberturaMinima,
+  avaliarGateDeVolume,
+  gateDeVolumeDaCoberturaOficial,
   gerarDnaColetivo,
   liberarParaConducao,
   respostasNecessarias,
@@ -30,6 +32,7 @@ import {
   textosDoModelo,
   textosDoRelatorio,
   type DnaColetivoModelo,
+  type GateDeVolume,
   type DnaColetivoRascunho,
   type EntradaDna,
   type RelatorioOperacional,
@@ -65,13 +68,21 @@ function relatorio(r: ResultadoDna): RelatorioOperacional {
 /** Grupo de teste: `completos` com leitura completa, mais as pendencias pedidas. */
 function entrada(
   completos: number,
-  opcoes: { parciais?: number; nada?: number; convidados?: number; checkinFechado?: boolean } = {},
+  opcoes: {
+    parciais?: number;
+    nada?: number;
+    convidados?: number;
+    checkinFechado?: boolean;
+    /** Veredito do gate; o padrao e o do banco sobre estes mesmos completos. */
+    gate?: GateDeVolume;
+  } = {},
 ): EntradaDna {
-  const { parciais = 0, nada = 0, convidados, checkinFechado = true } = opcoes;
+  const { parciais = 0, nada = 0, convidados, checkinFechado = true, gate } = opcoes;
   const presentes = completos + parciais + nada;
   return {
     convidados: convidados ?? presentes + 3,
     checkinFechado,
+    gateDeVolume: gate ?? F.gateVerificado(completos),
     participantes: [
       ...F.varias(Math.ceil(completos / 2), { t: "sem_destaque" }),
       ...F.varias(Math.floor(completos / 2), { t: "dois", eixo: "visao" }),
@@ -256,7 +267,8 @@ describe("cobertura", () => {
   });
 
   it("exatos 90,0% geram o rascunho (limite inclusivo)", () => {
-    const r = rascunho(gerarDnaColetivo(entrada(27, { parciais: 3 })));
+    // 36 de 40: 90,0% exatos E acima do minimo de volume, que e outra trava.
+    const r = rascunho(gerarDnaColetivo(entrada(36, { parciais: 4 })));
     expect(r.modelo.numeros.coberturaOficial).toBe("90,0%");
   });
 
@@ -283,6 +295,247 @@ describe("cobertura", () => {
       expect(["completo", "incompleto"]).toContain(situacaoDe(p));
     }
     expect(relatorio(gerarDnaColetivo(e)).motivo).toBe("cobertura_insuficiente");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2b. Gate de volume minimo: o limiar mora no banco
+// ---------------------------------------------------------------------------
+// Cada negativa vem com o controle positivo do MESMO grupo: se o grupo so nao
+// publica porque o veredito mudou, a trava e o veredito -- e nao um acidente do
+// grupo.
+
+describe("gate de volume: o limiar vem do banco, nao deste arquivo", () => {
+  it("o minimo lido da migration 020 e 30 (se o banco mudar, este teste denuncia)", () => {
+    expect(F.MINIMO_RESPOSTAS_DO_BANCO).toBe(30);
+  });
+
+  it("o gerador obedece o minimo que RECEBE: nao ha numero escrito no TypeScript", () => {
+    // mesmos 45 respondentes, mesma cobertura; muda so o limiar do banco
+    const com40 = gerarDnaColetivo(entrada(45, { gate: F.gateVerificado(45, 40) }));
+    expect(com40.tipo).toBe("rascunho_para_revisao");
+
+    const com50 = relatorio(gerarDnaColetivo(entrada(45, { gate: F.gateVerificado(45, 50) })));
+    expect(com50.motivo).toBe("volume_insuficiente");
+    expect(com50.numeros.faltamParaOVolume).toBe(5);
+    const t = textoDoRelatorioOperacional(com50);
+    expect(t).toContain("o volume mínimo para o DNA Coletivo é de 50 leituras completas: faltam 5");
+    expect(t).toContain("Volume mínimo exigido: 50 leituras completas entre os presentes");
+  });
+
+  it("o gate e obrigatorio em EntradaDna: o compilador cobra a decisao de quem chama", () => {
+    const semVeredito = { convidados: 1, checkinFechado: true, participantes: [] };
+    // @ts-expect-error falta `gateDeVolume`: nao existe entrada que signifique "aprovado por omissao"
+    const e: EntradaDna = semVeredito;
+    expect(e.convidados).toBe(1);
+  });
+});
+
+describe("gate de volume: REPROVADO (verificado e abaixo do minimo)", () => {
+  it("12 presentes com 12 respostas: 100% de cobertura e, ainda assim, nao publica", () => {
+    const r = gerarDnaColetivo(entrada(12));
+    const rel = relatorio(r);
+
+    // o motivo e o VOLUME, nao a cobertura: a cobertura esta em 100%
+    expect(rel.motivo).toBe("volume_insuficiente");
+    expect(rel.numeros.presentes).toBe(12);
+    expect(rel.numeros.respondentes).toBe(12);
+    expect(rel.numeros.faltamParaOLimiar).toBeNull();
+    expect(rel.numeros.faltamParaOVolume).toBe(18);
+    expect(atingeCoberturaMinima(12, 12)).toBe(true);
+
+    const t = textoDoRelatorioOperacional(rel);
+    expect(t).toContain("Cobertura oficial, sobre os presentes: 12 de 12 · 100,0%");
+    expect(t).toContain("o volume mínimo para o DNA Coletivo é de 30 leituras completas: faltam 18");
+    expect(t).toContain("cumpre o mínimo de 90%");
+    // o paragrafo de recusa POR COBERTURA nao aparece: nao e ela que reprovou
+    expect(t).not.toContain("abaixo do mínimo o sistema não produz esse documento");
+    expect(rel.cabecalho.titulo).not.toBe(TEXTOS_DNA.titulo);
+    expect(rel.cabecalho.titulo).toBe(TEXTOS_DNA.tituloRelatorio);
+    expect(r).not.toHaveProperty("modelo");
+    expect(validarTextosColetivos(textosDoRelatorio(rel))).toEqual([]);
+    gravar("5-volume-12-de-12.txt", t);
+  });
+
+  it("CONTROLE POSITIVO: os mesmos 12, com o limiar do banco em 10, publicam", () => {
+    const r = gerarDnaColetivo(entrada(12, { gate: F.gateVerificado(12, 10) }));
+    expect(r.tipo).toBe("rascunho_para_revisao");
+    expect(rascunho(r).modelo.numeros.coberturaOficial).toBe("100,0%");
+  });
+
+  it("30 presentes com 29 respostas: cobertura 96,6% aprovada, volume reprovado", () => {
+    const rel = relatorio(gerarDnaColetivo(entrada(29, { nada: 1 })));
+    expect(rel.motivo).toBe("volume_insuficiente");
+    expect(atingeCoberturaMinima(29, 30)).toBe(true);
+    const t = textoDoRelatorioOperacional(rel);
+    expect(t).toContain("Cobertura oficial, sobre os presentes: 29 de 30 · 96,6%");
+    expect(t).toContain("faltam 1");
+    expect(validarTextosColetivos(textosDoRelatorio(rel))).toEqual([]);
+    gravar("6-volume-29-de-30.txt", t);
+  });
+
+  it("CONTROLE POSITIVO: uma resposta a mais nos mesmos 30 presentes publica", () => {
+    const r = gerarDnaColetivo(entrada(30));
+    expect(r.tipo).toBe("rascunho_para_revisao");
+    expect(rascunho(r).modelo.numeros.respondentes).toBe(30);
+  });
+
+  it("50 presentes com 29 respostas: nao publica (aqui as DUAS travas reprovam)", () => {
+    const rel = relatorio(gerarDnaColetivo(entrada(29, { nada: 21 })));
+    expect(rel.numeros.presentes).toBe(50);
+    expect(rel.numeros.respondentes).toBe(29);
+    // 29/50 = 58%: a cobertura reprova de verdade, e e ela que o relatorio nomeia
+    expect(atingeCoberturaMinima(29, 50)).toBe(false);
+    expect(avaliarGateDeVolume(F.gateVerificado(29), 29).resultado).toBe("reprovado");
+    expect(rel.motivo).toBe("cobertura_insuficiente");
+    expect(rel.tipo).toBe("relatorio_operacional");
+  });
+
+  it("50 presentes com 45 respostas: passa os dois limiares numericos", () => {
+    const d = rascunho(gerarDnaColetivo(entrada(45, { nada: 5 })));
+    expect(d.modelo.numeros.presentes).toBe(50);
+    expect(d.modelo.numeros.respondentes).toBe(45);
+    expect(d.modelo.numeros.coberturaOficial).toBe("90,0%");
+    expect(atingeCoberturaMinima(45, 50)).toBe(true);
+    expect(avaliarGateDeVolume(F.gateVerificado(45), 45)).toEqual({
+      resultado: "aprovado",
+      minimoExigido: 30,
+    });
+    // os dois limiares NUMERICOS, e so eles: o documento sai como RASCUNHO
+    expect(d.tipo).toBe("rascunho_para_revisao");
+    expect(textoDoRascunho(d)).toContain(TEXTOS_DNA.seloRevisao);
+    gravar("7-volume-45-de-50.txt", textoDoRascunho(d));
+  });
+});
+
+describe("gate de volume: INDISPONIVEL e categoria propria (nem aprovado, nem reprovado)", () => {
+  const indisponiveis: [string, GateDeVolume][] = [
+    ["consulta ausente", gateDeVolumeDaCoberturaOficial(null)],
+    [
+      "quiz sem etapas",
+      gateDeVolumeDaCoberturaOficial({
+        status: "indisponivel",
+        motivo: "quiz_sem_etapas",
+        respondentes_validos: null,
+        gate_minimo_respostas: null,
+        minimo_respostas: 30,
+      }),
+    ],
+    [
+      "veredito nulo com status ok",
+      gateDeVolumeDaCoberturaOficial({
+        status: "ok",
+        motivo: null,
+        respondentes_validos: 45,
+        gate_minimo_respostas: null,
+        minimo_respostas: 30,
+      }),
+    ],
+    [
+      "minimo invalido",
+      gateDeVolumeDaCoberturaOficial({
+        status: "ok",
+        motivo: null,
+        respondentes_validos: 45,
+        gate_minimo_respostas: true,
+        minimo_respostas: 0,
+      }),
+    ],
+    [
+      "motivo fora da lista",
+      gateDeVolumeDaCoberturaOficial({
+        status: "indisponivel",
+        motivo: "algo_que_este_modulo_nao_conhece",
+        respondentes_validos: null,
+        gate_minimo_respostas: null,
+        minimo_respostas: 30,
+      }),
+    ],
+    [
+      "linha que contradiz as proprias contagens",
+      { estado: "verificado", aprovado: true, minimoExigido: 30, respondentesValidos: 4 },
+    ],
+    [
+      "banco e entrada discordam do limiar",
+      { estado: "verificado", aprovado: true, minimoExigido: 30, respondentesValidos: 31 },
+    ],
+  ];
+
+  for (const [nome, gate] of indisponiveis) {
+    it(`${nome}: nao publica, nomeia o motivo e nao se declara aprovado`, () => {
+      // o grupo seria publicavel: 45 de 50 presentes, 90,0%
+      const r = gerarDnaColetivo(entrada(29, { nada: 1, gate }));
+      const rel = relatorio(r);
+      expect(rel.motivo).toBe("gate_de_volume_indisponivel");
+      expect(r).not.toHaveProperty("modelo");
+      expect(rel.numeros.faltamParaOVolume).toBeNull();
+
+      const t = textoDoRelatorioOperacional(rel);
+      expect(t).toContain("O gate de volume mínimo não pôde ser avaliado:");
+      expect(t).toMatch(
+        /Não ter conseguido verificar é categoria diferente de ter verificado e aprovado/,
+      );
+      // nao ha veredito escondido num numero: nem aprovado, nem reprovado
+      expect(t).not.toContain("faltam");
+      expect(t).not.toContain("Volume mínimo exigido");
+      expect(t).not.toBe(TEXTOS_DNA.titulo);
+      expect(rel.cabecalho.titulo).toBe(TEXTOS_DNA.tituloRelatorio);
+      // nenhum codigo cru do banco vaza para o documento
+      expect(t).not.toMatch(/[a-z]+_[a-z]+/);
+      expect(validarTextosColetivos(textosDoRelatorio(rel))).toEqual([]);
+      expect(() => textoDoRascunho(r as never)).toThrow();
+      gravar(`8-volume-indisponivel-${nome.replace(/\s+/g, "-")}.txt`, t);
+    });
+  }
+
+  it("CONTROLE POSITIVO: o MESMO grupo, com o veredito do banco, publica", () => {
+    const r = gerarDnaColetivo(entrada(29, { nada: 1, gate: F.gateVerificado(29, 29) }));
+    expect(r.tipo).toBe("rascunho_para_revisao");
+    expect(rascunho(r).modelo.numeros.respondentes).toBe(29);
+  });
+
+  it("indisponibilidade nao e liberavel: nao existe rascunho para revisar", () => {
+    const r = gerarDnaColetivo(entrada(45, { nada: 5, gate: gateDeVolumeDaCoberturaOficial(null) }));
+    expect(relatorio(r).motivo).toBe("gate_de_volume_indisponivel");
+    expect(() =>
+      liberarParaConducao(r as never, {
+        parecer: "aprovado",
+        revisor: "Responsável pela metodologia",
+        revisadoEm: "2026-11-10",
+        conteudoSha256: "0".repeat(64),
+        catalogoVersao: "qualquer",
+      }),
+    ).toThrow(/nao emitido/);
+  });
+
+  it("a traducao da linha do banco e fechada: cada forma inesperada vira indisponibilidade", () => {
+    expect(gateDeVolumeDaCoberturaOficial(undefined)).toEqual({
+      estado: "indisponivel",
+      motivo: "consulta_nao_respondeu",
+    });
+    expect(
+      gateDeVolumeDaCoberturaOficial({
+        status: "indisponivel",
+        motivo: "checkin_aberto",
+        respondentes_validos: 40,
+        gate_minimo_respostas: true,
+        minimo_respostas: 30,
+      }),
+    ).toEqual({ estado: "indisponivel", motivo: "checkin_aberto" });
+    expect(
+      gateDeVolumeDaCoberturaOficial({
+        status: "ok",
+        motivo: null,
+        respondentes_validos: 31,
+        gate_minimo_respostas: true,
+        minimo_respostas: 30,
+      }),
+    ).toEqual({
+      estado: "verificado",
+      aprovado: true,
+      minimoExigido: 30,
+      respondentesValidos: 31,
+    });
   });
 });
 
@@ -412,34 +665,34 @@ describe("cenario: DADOS INCOMPLETOS (pessoas que responderam parte)", () => {
 
   it("parte do questionario nao entra na leitura de dimensoes nem na cobertura", () => {
     gravar("4-dados-incompletos.txt", texto);
-    expect(d.modelo.numeros.respondentes).toBe(27);
-    expect(d.modelo.numeros.presentes).toBe(30);
-    expect(texto).toContain("Cobertura oficial, sobre os presentes: 27 de 30 · 90,0%");
-    expect(texto).toContain("Base: 27 respondentes");
+    expect(d.modelo.numeros.respondentes).toBe(36);
+    expect(d.modelo.numeros.presentes).toBe(40);
+    expect(texto).toContain("Cobertura oficial, sobre os presentes: 36 de 40 · 90,0%");
+    expect(texto).toContain("Base: 36 respondentes");
     expect(texto).toContain(
-      "3 pessoas presentes não entram na leitura das dimensões por não terem respondido ou terem respondido só em parte. Nada neste documento é afirmado sobre as dimensões dessas pessoas.",
+      "4 pessoas presentes não entram na leitura das dimensões por não terem respondido ou terem respondido só em parte. Nada neste documento é afirmado sobre as dimensões dessas pessoas.",
     );
   });
 
   it("a secao de elementos diz que a base e outra, e usa o que essas pessoas de fato responderam", () => {
     expect(texto).toContain("A base desta seção não é a das dimensões");
-    expect(texto).toContain("(30 de 30 presentes responderam)");
+    expect(texto).toContain("(40 de 40 presentes responderam)");
   });
 
   it("nao inventa: cada pessoa parcial segue sem dimensao atribuida, em qualquer secao", () => {
     const ag = agregar(e.convidados, e.participantes);
-    // 27 completos, e as soma de com/sem fecha em 27 (os 3 parciais nao estao em nenhuma)
-    expect(ag.autodescricao.comDestaque + ag.autodescricao.semDestaque).toBe(27);
-    expect(ag.situacional.comDestaque + ag.situacional.semDestaque).toBe(27);
-    expect(ag.presentesIncompletos).toBe(3);
-    expect(ag.pendentes.incompletos).toHaveLength(3);
+    // 36 completos, e as soma de com/sem fecha em 36 (os 4 parciais nao estao em nenhuma)
+    expect(ag.autodescricao.comDestaque + ag.autodescricao.semDestaque).toBe(36);
+    expect(ag.situacional.comDestaque + ag.situacional.semDestaque).toBe(36);
+    expect(ag.presentesIncompletos).toBe(4);
+    expect(ag.pendentes.incompletos).toHaveLength(4);
   });
 
   it("quem respondeu, mas nao esteve presente, fica fora de tudo", () => {
     const ag = agregar(e.convidados, e.participantes);
     expect(ag.ausentes).toBe(1);
     expect(ag.respostasDeAusentes).toBe(1);
-    expect(ag.presentes).toBe(30);
+    expect(ag.presentes).toBe(40);
   });
 });
 
@@ -459,6 +712,7 @@ describe("caminhos que nunca geram o DNA Coletivo", () => {
       gerarDnaColetivo({
         convidados: 10,
         checkinFechado: true,
+        gateDeVolume: F.gateVerificado(0),
         participantes: F.varias(3, { t: "sem_destaque" }, false),
       }),
     );
@@ -496,6 +750,7 @@ describe("cruzamento entre secoes", () => {
     const e: EntradaDna = {
       convidados: 50,
       checkinFechado: true,
+      gateDeVolume: F.gateVerificado(40),
       participantes: [
         ...F.varias(21, { t: "dois", eixo: "visao" }),
         ...F.varias(3, { t: "likert", eixo: "relacao" }),
@@ -635,6 +890,8 @@ describe("fuzz do gerador", () => {
       const r = gerarDnaColetivo({
         convidados: presentes + Math.floor(rnd() * 10),
         checkinFechado: rnd() > 0.05,
+        // o banco conta os mesmos completos: `n` especies completas
+        gateDeVolume: F.gateVerificado(n),
         participantes,
       });
       expect(validarTextosColetivos(textosDe(r)), `caso ${k}`).toEqual([]);
@@ -642,6 +899,8 @@ describe("fuzz do gerador", () => {
         rascunhos++;
         const { respondentes, presentes: P } = r.modelo.numeros;
         expect(atingeCoberturaMinima(respondentes, P), `caso ${k}`).toBe(true);
+        // nenhum documento publicado abaixo do volume minimo do banco
+        expect(respondentes, `caso ${k}`).toBeGreaterThanOrEqual(F.MINIMO_RESPOSTAS_DO_BANCO);
         for (const b of r.modelo.blocos) {
           for (const parte of b.partes) {
             if (!("linhas" in parte)) continue;

@@ -344,13 +344,22 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
           <h1 className="font-display text-2xl text-foreground">{event.name}</h1>
           <EventQRDialog event={{ event_code: event.event_code }} />
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Badge variant={eventStatus === "live" ? "default" : "secondary"} className="text-xs">
             {eventStatus === "live" ? "🔴 Ao vivo" : eventStatus === "processing" ? "⚙️ Processando" : eventStatus === "completed" ? "Concluído" : eventStatus}
           </Badge>
           <span className="text-muted-foreground text-sm">
             {participants.length} participante{participants.length !== 1 ? "s" : ""}
           </span>
+          {/* A entrada da tela de importacao externa. Sem este link a pagina
+              existiria e ninguem a alcancaria. */}
+          <button
+            type="button"
+            onClick={() => router.push(`/admin/events/${event.id}/importacao`)}
+            className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+          >
+            Importar respostas coletadas fora do app
+          </button>
         </div>
       </div>
 

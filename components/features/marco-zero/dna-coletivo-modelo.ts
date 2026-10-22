@@ -2,17 +2,24 @@
 // antes de qualquer pixel. Funcao pura (sem I/O, sem data/hora); o unico efeito
 // e o registro, em memoria, de quais documentos este modulo emitiu.
 //
-// TRES TRAVAS INDEPENDENTES, TODAS NECESSARIAS PARA LER O DOCUMENTO NA SALA:
+// QUATRO TRAVAS INDEPENDENTES, TODAS NECESSARIAS PARA LER O DOCUMENTO NA SALA:
 //   1. COBERTURA: >= 90% dos PRESENTES (check-in fechado) com a leitura de
 //      dimensoes completa. Abaixo, `gerarDnaColetivo` devolve apenas o RELATORIO
 //      OPERACIONAL privado; nao existe caminho que produza o titulo
 //      "DNA Coletivo" sem a cobertura.
-//   2. REVISAO: o responsavel pela metodologia revisa o conteudo exato (hash) e
+//   2. VOLUME MINIMO: a contagem ABSOLUTA de questionarios completos e validos
+//      entre os presentes tem de alcancar o minimo que o banco publica (hoje 30,
+//      na view `marco_zero_parametros_dna` da migration 020). Cobertura alta nao
+//      compra volume: 12 presentes com 12 respostas e 100% de cobertura e, ao
+//      mesmo tempo, base pequena demais para estatistica coletiva -- esse evento
+//      NAO tem DNA Coletivo quantitativo. Ver "Gate de volume minimo" abaixo,
+//      inclusive por que o numero 30 nao esta escrito neste arquivo.
+//   3. REVISAO: o responsavel pela metodologia revisa o conteudo exato (hash) e
 //      registra o parecer. Sem ela, o que existe e um RASCUNHO com selo visivel.
-//   3. RATIFICACAO dos rotulos: `assertPublicavel()` do catalogo, como no
+//   4. RATIFICACAO dos rotulos: `assertPublicavel()` do catalogo, como no
 //      one-pager individual.
-// A cobertura e condicao necessaria, nao suficiente: um criterio estatistico,
-// sozinho, nao garante que a interpretacao esteja certa.
+// Cobertura e volume sao condicao necessaria, nao suficiente: um criterio
+// estatistico, sozinho, nao garante que a interpretacao esteja certa.
 //
 // REGRA DE OURO DA AGREGACAO: so se afirma algo sobre os RESPONDENTES, em
 // contagens e percentuais, com a cobertura junto. Nunca sobre "o grupo". Todo
@@ -198,6 +205,17 @@ export interface EntradaDna {
   /** O check-in foi encerrado? Sem isso nao ha universo oficial. */
   checkinFechado: boolean;
   participantes: readonly ParticipanteDna[];
+  /**
+   * Veredito do gate de volume minimo, vindo da funcao
+   * `public.marco_zero_cobertura` (migration 020) e traduzido por
+   * `gateDeVolumeDaCoberturaOficial()`.
+   *
+   * OBRIGATORIO de proposito: o compilador cobra a decisao de cada chamador, e
+   * nao existe valor-padrao que signifique "aprovado". Sem veredito utilizavel
+   * o resultado e o relatorio operacional com motivo
+   * `gate_de_volume_indisponivel` -- nunca publicacao por omissao.
+   */
+  gateDeVolume: GateDeVolume;
 }
 
 export type MotivoRelatorio =
@@ -205,6 +223,13 @@ export type MotivoRelatorio =
   | "sem_presentes"
   | "cobertura_insuficiente"
   | "base_pequena_demais"
+  /** Gate de volume AVALIADO e reprovado: ha menos respostas que o minimo. */
+  | "volume_insuficiente"
+  /**
+   * Gate de volume NAO avaliavel. Categoria propria, distinta de aprovado e de
+   * reprovado: nao se publica, e o motivo e nomeado.
+   */
+  | "gate_de_volume_indisponivel"
   | "dados_inconsistentes";
 
 export interface RelatorioOperacional {
@@ -220,7 +245,10 @@ export interface RelatorioOperacional {
     convidados: number;
     presentes: number;
     respondentes: number;
+    /** Respostas que faltam para o limiar de COBERTURA (90%). */
     faltamParaOLimiar: number | null;
+    /** Respostas que faltam para o limiar de VOLUME (o minimo do banco). */
+    faltamParaOVolume: number | null;
   };
 }
 
@@ -265,6 +293,165 @@ export function atingeCoberturaMinima(respondentes: number, presentes: number): 
 export function respostasNecessarias(presentes: number): number {
   return Math.ceil((COBERTURA_MINIMA_PERCENTUAL * presentes) / 100);
 }
+
+// ---------------------------------------------------------------------------
+// Gate de volume minimo
+// ---------------------------------------------------------------------------
+// DECISAO DE PROJETO -- opcao (a): o numero do minimo NAO esta escrito neste
+// arquivo. A regra mora em UM lugar so, o banco: a view
+// `public.marco_zero_parametros_dna` publica `minimo_respostas_validas` e a
+// funcao `public.marco_zero_cobertura` devolve `gate_minimo_respostas` ja
+// decidido em aritmetica inteira (migration 020). Aqui chega o VEREDITO.
+//
+// Por que nao duplicar o numero em TypeScript -- opcao (b): dois lugares com o
+// mesmo numero divergem no dia em que um deles muda, e o teste que compara os
+// dois so pega a divergencia enquanto alguem se lembrar de mante-lo. Regra
+// duplicada ja custou caro neste projeto (o classificador de auth duplicado).
+//
+// Por que o veredito e INJETADO em vez de consultado daqui de dentro: este
+// modulo e funcao pura, sem I/O e sem data/hora (ver o cabecalho do arquivo), e
+// o hash do conteudo revisado depende dessa pureza. Quem tem o cliente do banco
+// faz a consulta e traduz a linha por `gateDeVolumeDaCoberturaOficial()`. O
+// banco continua a unica fonte do numero; o gerador continua testavel sem banco
+// e o mesmo veredito produz sempre o mesmo documento.
+//
+// INDISPONIBILIDADE: "nao consegui verificar" e categoria PROPRIA. Veredito que
+// nao chega, chega incompleto, se contradiz ou discorda da contagem dos dados
+// recebidos NAO vira aprovacao nem reprovacao: vira o relatorio operacional com
+// motivo `gate_de_volume_indisponivel`, que nomeia a causa.
+
+/** Causas previstas de indisponibilidade do gate. Conjunto FECHADO: cada uma
+ *  tem texto proprio em `PROSA_INDISPONIBILIDADE`, e nenhum codigo cru do banco
+ *  vaza para o documento. */
+export type MotivoGateIndisponivel =
+  | "consulta_nao_respondeu"
+  | "quiz_sem_etapas"
+  | "checkin_aberto"
+  | "sem_presentes"
+  | "veredito_ausente"
+  | "parametro_invalido"
+  | "contagem_divergente"
+  | "veredito_contraditorio"
+  | "motivo_nao_previsto";
+
+export type GateDeVolume =
+  | {
+      estado: "verificado";
+      /** `gate_minimo_respostas` da funcao do banco. */
+      aprovado: boolean;
+      /** `minimo_respostas` da funcao do banco. Unica fonte do numero. */
+      minimoExigido: number;
+      /** `respondentes_validos` contados pelo banco. */
+      respondentesValidos: number;
+    }
+  | { estado: "indisponivel"; motivo: MotivoGateIndisponivel };
+
+/** Subconjunto, com os nomes do SQL, da linha de `marco_zero_cobertura`. */
+export interface LinhaCoberturaOficial {
+  status: string | null;
+  motivo: string | null;
+  respondentes_validos: number | null;
+  gate_minimo_respostas: boolean | null;
+  minimo_respostas: number | null;
+}
+
+/** Motivos de `status = 'indisponivel'` que a funcao do banco documenta. */
+const MOTIVOS_DO_BANCO: readonly MotivoGateIndisponivel[] = [
+  "quiz_sem_etapas",
+  "checkin_aberto",
+  "sem_presentes",
+];
+
+/**
+ * Traduz a linha de `public.marco_zero_cobertura` para o veredito do gate.
+ * Quem chama passa `null` quando a consulta nao respondeu -- funcao ausente,
+ * sem permissao, falha de conexao. Qualquer forma inesperada da linha fecha a
+ * porta: vira indisponibilidade, nunca aprovacao.
+ */
+export function gateDeVolumeDaCoberturaOficial(
+  linha: LinhaCoberturaOficial | null | undefined,
+): GateDeVolume {
+  if (linha === null || linha === undefined || typeof linha !== "object") {
+    return { estado: "indisponivel", motivo: "consulta_nao_respondeu" };
+  }
+  if (linha.status !== "ok") {
+    const previsto = MOTIVOS_DO_BANCO.find((m) => m === linha.motivo);
+    return { estado: "indisponivel", motivo: previsto ?? "motivo_nao_previsto" };
+  }
+  if (
+    typeof linha.gate_minimo_respostas !== "boolean" ||
+    !Number.isInteger(linha.respondentes_validos) ||
+    (linha.respondentes_validos as number) < 0
+  ) {
+    return { estado: "indisponivel", motivo: "veredito_ausente" };
+  }
+  if (!Number.isInteger(linha.minimo_respostas) || (linha.minimo_respostas as number) < 1) {
+    return { estado: "indisponivel", motivo: "parametro_invalido" };
+  }
+  return {
+    estado: "verificado",
+    aprovado: linha.gate_minimo_respostas,
+    minimoExigido: linha.minimo_respostas as number,
+    respondentesValidos: linha.respondentes_validos as number,
+  };
+}
+
+export type VeredictoDeVolume =
+  | { resultado: "aprovado"; minimoExigido: number }
+  | { resultado: "reprovado"; minimoExigido: number; faltam: number }
+  | { resultado: "indisponivel"; motivo: MotivoGateIndisponivel };
+
+/**
+ * Cruza o veredito do banco com a contagem dos dados que ESTE modulo recebeu.
+ * Os dois tem de concordar sobre o limiar: o documento descreve a populacao da
+ * entrada, e aprovar com base numa contagem diferente seria decidir sobre outra
+ * populacao. A tolerancia e sobre o veredito, nao sobre o numero -- contagens
+ * que discordam do limiar dao INDISPONIBILIDADE, nao reprovacao, porque o que
+ * falta e a certeza de ter verificado a mesma coisa.
+ */
+export function avaliarGateDeVolume(
+  gate: GateDeVolume,
+  respondentesNaEntrada: number,
+): VeredictoDeVolume {
+  if (gate.estado === "indisponivel") {
+    return { resultado: "indisponivel", motivo: gate.motivo };
+  }
+  const minimo = gate.minimoExigido;
+  // A propria linha do banco tem de ser coerente: veredito que nao bate com as
+  // contagens que ele mesmo devolveu nao e veredito.
+  if (gate.aprovado !== gate.respondentesValidos >= minimo) {
+    return { resultado: "indisponivel", motivo: "veredito_contraditorio" };
+  }
+  if (gate.aprovado !== respondentesNaEntrada >= minimo) {
+    return { resultado: "indisponivel", motivo: "contagem_divergente" };
+  }
+  return gate.aprovado
+    ? { resultado: "aprovado", minimoExigido: minimo }
+    : {
+        resultado: "reprovado",
+        minimoExigido: minimo,
+        faltam: minimo - respondentesNaEntrada,
+      };
+}
+
+/** Texto de cada causa. Sem codigo cru: nada com sublinhado sai no documento. */
+const PROSA_INDISPONIBILIDADE: Record<MotivoGateIndisponivel, string> = {
+  consulta_nao_respondeu:
+    "a consulta oficial de cobertura do banco não respondeu nesta geração, por ausência da função, falta de permissão ou falha de conexão",
+  quiz_sem_etapas:
+    "a versão de questionário deste evento não tem etapa cadastrada, e sem isso não existe definição de questionário completo para contar",
+  checkin_aberto:
+    "o banco ainda não considera o check-in fechado, e o veredito seria provisório",
+  sem_presentes: "o banco não encontrou presença registrada para este evento",
+  veredito_ausente: "o banco devolveu a linha de cobertura sem o veredito do volume",
+  parametro_invalido:
+    "o mínimo de respostas publicado pelo banco não veio como uma contagem utilizável",
+  contagem_divergente:
+    "a contagem de questionários completos do banco e a dos dados recebidos discordam sobre o limiar, e a decisão seria tomada sobre populações diferentes",
+  veredito_contraditorio: "a linha de cobertura do banco contradiz as próprias contagens",
+  motivo_nao_previsto:
+    "o banco recusou o cálculo com um motivo fora da lista prevista por este módulo",
+};
 
 // ---------------------------------------------------------------------------
 // Blocos
@@ -686,6 +873,7 @@ function montarRelatorio(
   ag: Agregado | null,
   entrada: EntradaDna,
   descricaoInconsistencia?: string,
+  volume?: VeredictoDeVolume,
 ): RelatorioOperacional {
   const convidados = ag?.convidados ?? entrada.convidados;
   const presentes = ag?.presentes ?? 0;
@@ -694,6 +882,7 @@ function montarRelatorio(
   const acoes: string[] = [];
   const linhas: LinhaDna[] = [];
   let faltam: number | null = null;
+  let faltamVolume: number | null = null;
 
   if (ag) {
     linhas.push(
@@ -729,6 +918,12 @@ function montarRelatorio(
       linhas.push({
         rotulo: "Mínimo exigido",
         valor: `${COBERTURA_MINIMA_PERCENTUAL}% dos presentes`,
+      });
+    }
+    if (volume !== undefined && volume.resultado !== "indisponivel") {
+      linhas.push({
+        rotulo: "Volume mínimo exigido",
+        valor: `${volume.minimoExigido} leituras completas entre os presentes`,
       });
     }
   }
@@ -773,6 +968,42 @@ function montarRelatorio(
       );
       break;
     }
+    case "volume_insuficiente": {
+      // Chegar aqui com outro veredito seria publicar um motivo sem a conta que
+      // o sustenta. Lancar e preferivel a imprimir um numero inventado.
+      if (volume === undefined || volume.resultado !== "reprovado") {
+        throw new Error(
+          "Relatorio de volume insuficiente exige o veredito reprovado do gate de volume.",
+        );
+      }
+      faltamVolume = volume.faltam;
+      paragrafos.push(
+        `Há ${pessoas(n)} com a leitura completa entre os presentes, e o volume mínimo para o DNA Coletivo é de ${volume.minimoExigido} leituras completas: faltam ${volume.faltam}. Por isso o DNA Coletivo não foi gerado.`,
+        `A cobertura oficial deste evento é ${pctPiso(n, presentes)} (${n} de ${presentes} presentes) e cumpre o mínimo de ${COBERTURA_MINIMA_PERCENTUAL}%, o que não substitui o volume: com poucas leituras, cobertura alta ainda deixa uma base pequena demais para sustentar contagem e percentual sobre o conjunto. A ausência do DNA Coletivo aqui é um resultado previsto pela regra de volume, e não uma falha do sistema.`,
+        "Este relatório não traz retrato algum das dimensões.",
+      );
+      acoes.push(
+        `O volume é contagem absoluta, e não proporção: enquanto houver menos de ${volume.minimoExigido} leituras completas entre os presentes, este evento não tem DNA Coletivo quantitativo, e não há revisão nem ratificação que dispense o limiar.`,
+        "Para a condução, use os one-pagers individuais; eles não dependem da cobertura nem do volume do conjunto.",
+      );
+      break;
+    }
+    case "gate_de_volume_indisponivel": {
+      const causa =
+        volume !== undefined && volume.resultado === "indisponivel"
+          ? volume.motivo
+          : "consulta_nao_respondeu";
+      paragrafos.push(
+        `O gate de volume mínimo não pôde ser avaliado: ${PROSA_INDISPONIBILIDADE[causa]}.`,
+        "Não ter conseguido verificar é categoria diferente de ter verificado e aprovado, e também de ter verificado e reprovado. Sem o veredito, o DNA Coletivo não é gerado, e este relatório não afirma que o volume estaria aprovado nem que estaria reprovado.",
+        "Este relatório não traz retrato algum das dimensões.",
+      );
+      acoes.push(
+        "Restabeleça a consulta oficial de cobertura do banco e gere o documento de novo: o veredito é recalculado a cada geração.",
+        "Para a condução, use os one-pagers individuais; eles não dependem da cobertura nem do volume do conjunto.",
+      );
+      break;
+    }
   }
 
   return {
@@ -790,7 +1021,13 @@ function montarRelatorio(
     pendentes: ag
       ? { semResposta: ag.pendentes.semResposta, incompletos: ag.pendentes.incompletos }
       : { semResposta: [], incompletos: [] },
-    numeros: { convidados, presentes, respondentes: n, faltamParaOLimiar: faltam },
+    numeros: {
+      convidados,
+      presentes,
+      respondentes: n,
+      faltamParaOLimiar: faltam,
+      faltamParaOVolume: faltamVolume,
+    },
   };
 }
 
@@ -869,6 +1106,21 @@ export function gerarDnaColetivo(entrada: EntradaDna): ResultadoDna {
   }
   if (ag.respondentes < PISO_DE_EXIBICAO) {
     return finalizarRelatorio(montarRelatorio("base_pequena_demais", ag, entrada));
+  }
+  // Quarta porta: VOLUME ABSOLUTO. O limiar vem do banco (ver "Gate de volume
+  // minimo"). Vem depois da cobertura e do piso de privacidade porque esses dois
+  // tem recusa mais especifica para o mesmo grupo; vem ANTES de montar qualquer
+  // retrato porque indisponibilidade nao e aprovacao.
+  const volume = avaliarGateDeVolume(entrada.gateDeVolume, ag.respondentes);
+  if (volume.resultado === "indisponivel") {
+    return finalizarRelatorio(
+      montarRelatorio("gate_de_volume_indisponivel", ag, entrada, undefined, volume),
+    );
+  }
+  if (volume.resultado === "reprovado") {
+    return finalizarRelatorio(
+      montarRelatorio("volume_insuficiente", ag, entrada, undefined, volume),
+    );
   }
 
   const modelo = montarModelo(ag, entrada.meta);
