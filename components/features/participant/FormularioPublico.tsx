@@ -398,9 +398,9 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
         <div className="space-y-4 text-[15px] leading-relaxed text-muted-foreground text-left">
           <p>
             Já existe um questionário respondido com este e-mail neste evento. Guardamos inteiro
-            o que você respondeu agora —{" "}
-            <span className="text-foreground font-medium">nada do que você escreveu se perdeu</span>{" "}
-            — e não colocamos nada por cima do que já estava aqui.
+            o que você respondeu agora.{" "}
+            <span className="text-foreground font-medium">Nada do que você escreveu se perdeu</span>,{" "}
+            e não colocamos nada por cima do que já estava aqui.
           </p>
           <p>
             <span className="text-foreground font-medium">Por que não substituímos:</span> pode ser
@@ -441,7 +441,7 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
           </p>
           <p>
             <span className="text-foreground font-medium">O que acontece agora:</span> a equipe
-            lê o que você escreveu antes do encontro — é isso que faz o {eventName} falar da sua
+            lê o que você escreveu antes do encontro. É isso que faz o {eventName} falar da sua
             vida e não de um roteiro genérico.
           </p>
           <p>
@@ -453,7 +453,7 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
               <>A gente se vê no dia do encontro.</>
             )}{" "}
             Depois do encontro, você recebe um documento feito a partir das suas próprias
-            respostas — seu, individual, não um relatório de turma.
+            respostas. Ele é seu, individual, e não um relatório de turma.
           </p>
           {/* A promessa ANTIGA desta tela era "o novo envio substitui o
               anterior". Ela saiu porque deixou de ser verdade, e por um bom
@@ -576,7 +576,7 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
               <ul className="space-y-1.5 text-sm text-muted-foreground list-disc pl-5">
                 {faltando.map((f) => (
                   <li key={f.id}>
-                    <span className="text-foreground">Pergunta {f.numero}</span> — {f.texto}{" "}
+                    <span className="text-foreground">Pergunta {f.numero}:</span> {f.texto}{" "}
                     <span className="block text-xs">{textoDaFalta(f)}</span>
                   </li>
                 ))}
@@ -861,7 +861,7 @@ function Pergunta({
               <p className="text-xs text-primary/70" aria-live="polite">
                 {lista.length} de {question.max_choices} escolhidos
                 {lista.length >= question.max_choices
-                  ? " — toque em um escolhido para trocar."
+                  ? ". Toque em um escolhido para trocar."
                   : ""}
               </p>
             )}

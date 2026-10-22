@@ -1,11 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CinematicHero } from "@/components/features/participant/CinematicHero";
-import {
-  FormularioPublico,
-  type EtapaDoFormulario,
-} from "@/components/features/participant/FormularioPublico";
+import { FormularioImersivo } from "@/components/features/participant/FormularioImersivo";
+import type { EtapaImersiva } from "@/components/features/participant/formulario-imersivo/roteiro";
 import { imagemDoAmbiente, marcaDoEvento, rotuloDaMarca } from "@/lib/cinematic-map";
 import type { Event, QuizStage } from "@/types/database";
 
@@ -15,6 +13,10 @@ import type { Event, QuizStage } from "@/types/database";
  * SEM AUTENTICACAO NENHUMA. A pessoa abre o link que recebeu no WhatsApp,
  * preenche e envia. Nao ha login, nao ha codigo por e-mail, nao ha sessao, e
  * nada nesta pagina cria credencial.
+ *
+ * A EXPERIENCIA E A IMERSIVA (FormularioImersivo): uma pergunta por tela, no
+ * estilo Typeform. A versao em lista (FormularioPublico) continua no repositorio
+ * e envia pela mesma rota; o rascunho que ela deixou no aparelho e retomado aqui.
  *
  * ELA NAO SUBSTITUI /join/[eventCode], E NAO MEXE NELE. O fluxo com codigo
  * continua existindo, intacto, para quem precisa VOLTAR e ler o proprio
@@ -43,6 +45,10 @@ type LinhaDeEtapa = Pick<
   "id" | "stage_number" | "title" | "ambient_name" | "description" | "questions"
 >;
 
+export const viewport: Viewport = {
+  themeColor: "#F7F7F6",
+};
+
 const COLUNAS_DO_EVENTO =
   "id, name, event_date, status, quiz_version, location_name, host_name";
 
@@ -64,11 +70,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { evento } = await lerEvento(eventCode);
   if (!evento) return { title: "Formulário não encontrado" };
   return {
-    title: `${evento.name} — Questionário de preparação`,
+    title: `${evento.name} | Questionário de preparação`,
     description:
       "Algumas perguntas para o encontro ser sobre a sua vida, e não sobre um roteiro genérico. Leva alguns minutos e dá para parar e voltar depois.",
     openGraph: {
-      title: `${evento.name} — Questionário de preparação`,
+      title: `${evento.name} | Questionário de preparação`,
       description:
         "Algumas perguntas antes do encontro. Leva alguns minutos e dá para parar e voltar depois.",
     },
@@ -173,35 +179,23 @@ export default async function FormularioPage({ params }: Props) {
     );
   }
 
-  const paraOFormulario: EtapaDoFormulario[] = ordenadas.map((e) => ({
+  const paraOFormulario: EtapaImersiva[] = ordenadas.map((e) => ({
     id: e.id,
     numero: e.stage_number as number,
     titulo: e.title,
-    ambiente: e.ambient_name,
-    descricao: e.description,
+    // Sem travessao no que o participante le (pedido do dono: travessao tem
+    // "cara de IA"). O texto guardado no banco nao muda; so a exibicao troca
+    // "1 — Discordo" por "1: Discordo".
+    descricao: e.description ? e.description.replace(/\s*[—–]\s*/g, ": ") : e.description,
     questions: e.questions,
   }));
 
-  const data = formatarData(evento.event_date);
-
   return (
     <main className="min-h-screen bg-background" {...marcaDoEvento(evento.quiz_version)}>
-      <CinematicHero
-        variant="compact"
-        imageSrc={imagemDoAmbiente("join", evento.quiz_version)}
-        imageAlt="Preparação para a imersão"
-        eyebrow={rotuloDaMarca(evento.quiz_version)}
-        title="Antes do encontro"
-        subtitle={
-          data
-            ? `${evento.name} · ${data}${evento.location_name ? ` · ${evento.location_name}` : ""}`
-            : evento.name
-        }
-      />
-      <FormularioPublico
+      <FormularioImersivo
         eventCode={eventCode.toUpperCase()}
         eventName={evento.name}
-        dataDoEvento={data}
+        dataDoEvento={formatarData(evento.event_date)}
         etapas={paraOFormulario}
       />
     </main>
