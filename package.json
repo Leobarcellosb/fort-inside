@@ -6,7 +6,17 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:local:up": "bash scripts/db-local-up.sh",
+    "db:local:reset": "bash scripts/db-local-reset.sh",
+    "db:local:verify": "bash scripts/db-local-verify.sh",
+    "db:security": "bash scripts/test-db-security.sh",
+    "db:security:isolado": "bash scripts/db-security-isolado.sh",
+    "db:security:isolamento:test": "bash scripts/test-db-security-isolamento.sh",
+    "test:seguranca-http": "bash scripts/test-seguranca-http.sh",
+    "test:seguranca-http:sensibilidade": "bash scripts/test-seguranca-http-sensibilidade.sh",
+    "db:drift": "bash scripts/guard-drift.sh",
+    "db:drift:test": "bash scripts/test-guard-drift.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",

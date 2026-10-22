@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { generatePrognosticSchema } from "@/lib/schemas";
 import { generatePrognostic } from "@/lib/ai/generate-prognostic";
 import { renderAndStorePdf } from "@/lib/pdf/render-prognostic-pdf";
@@ -8,7 +7,9 @@ import { renderAndStorePdf } from "@/lib/pdf/render-prognostic-pdf";
 export const maxDuration = 120;
 
 // Rate limit is per-instance and best-effort. It is a courtesy guard against
-// double-clicks, NOT the cost control — authorization below is.
+// double-clicks, NOT the cost control. O controle de custo real e: so admin
+// chega aqui, e o estado do prognostico (lib/ai/generate-prognostic.ts) recusa
+// regerar um documento que ja entrou em revisao, antes de chamar o modelo.
 const RATE_LIMIT_MAP = new Map<string, number>();
 const RATE_LIMIT_MS = 60_000;
 
@@ -27,19 +28,15 @@ function checkRateLimit(participantId: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const parsed = generatePrognosticSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Dados inválidos", details: parsed.error.flatten() },
-      { status: 400 }
-    );
-  }
-
-  const { participant_id, event_id } = parsed.data;
-
-  // This endpoint spends Anthropic credits, so it cannot stay open. Callers are
-  // either the admin, or the participant generating their own prognostic.
+  // Autorizacao ANTES de qualquer outra coisa, inclusive de ler o corpo: esta
+  // rota gasta credito de modelo (Opus), entao nenhuma requisicao nao
+  // autorizada pode chegar perto do codigo que chama a Anthropic.
+  //
+  // Quem pode gerar: SOMENTE a operacao (admin). O participante NAO gera nem
+  // regera o proprio prognostico: o documento e produzido sob controle da
+  // operacao e passa por revisao humana. O processamento em lote nao passa por
+  // esta rota; ele chama generatePrognostic() em processo, com service_role, atras
+  // do proprio guarda de admin em /api/batch-process.
   const supabase = await createClient();
   const {
     data: { user },
@@ -49,18 +46,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
+  // Mesma regra de getAdminUser()/is_admin(): app_metadata.role === "admin".
   if (user.app_metadata?.role !== "admin") {
-    const admin = createAdminClient();
-    const { data: owner } = (await admin
-      .from("participants")
-      .select("user_id")
-      .eq("id", participant_id)
-      .single()) as { data: { user_id: string | null } | null; error: unknown };
-
-    if (!owner || owner.user_id !== user.id) {
-      return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
-    }
+    return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
   }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Dados inválidos" }, { status: 400 });
+  }
+  const parsed = generatePrognosticSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Dados inválidos", details: parsed.error.flatten() },
+      { status: 400 }
+    );
+  }
+
+  const { participant_id, event_id } = parsed.data;
 
   if (!checkRateLimit(participant_id)) {
     return NextResponse.json({ error: "Aguarde antes de tentar novamente." }, { status: 429 });

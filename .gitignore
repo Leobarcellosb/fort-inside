@@ -51,3 +51,5 @@ coverage/
 # Cache
 .cache/
 .parcel-cache/
+graphify-out/
+.tmp-prova/

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getAdminUser } from "@/lib/auth/require-admin";
-import { batchProcessSchema } from "@/lib/schemas";
-import { generatePrognostic, TOTAL_STAGES } from "@/lib/ai/generate-prognostic";
+import { verificarAdmin } from "@/lib/auth/require-admin";
+import { generatePrognostic } from "@/lib/ai/generate-prognostic";
+import { prepararProcessamento, type ClienteDeProcessamento } from "@/lib/erros/preparar-processamento";
+import { erroHttp, respostaDeRecusa } from "@/lib/erros/resposta";
 import { renderAndStorePdf } from "@/lib/pdf/render-prognostic-pdf";
-import type { Event, Participant } from "@/types/database";
 
 export const maxDuration = 300;
 
@@ -29,49 +29,38 @@ async function inWaves<T, R>(
   return out;
 }
 
+// Erros: status HTTP e codigo vem de lib/erros/codigos.ts, e as condicoes comuns
+// (pedido, etapas, participantes) passam por prepararProcessamento -- o MESMO
+// caminho de /api/jobs/enfileirar, entao as duas rotas respondem igual diante da
+// mesma condicao. O corpo nunca carrega texto interno de banco.
 export async function POST(req: NextRequest) {
+  try {
+    return await processar(req);
+  } catch (err) {
+    return erroHttp("INTERNAL_ERROR", { causa: err });
+  }
+}
+
+async function processar(req: NextRequest) {
   // Admin only: this fans out one Anthropic call per participant.
-  if (!(await getAdminUser())) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
+  // verificarAdmin() devolve tres desfechos (AUTH_REQUIRED 401, ADMIN_FORBIDDEN 403,
+  // AUTH_UNAVAILABLE 503): "sem permissao" so quando o servico de login respondeu.
+  const admin = await verificarAdmin();
+  if (!admin.autorizado) {
+    return respostaDeRecusa(admin);
   }
 
-  const body = await req.json();
-  const parsed = batchProcessSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Dados inválidos" }, { status: 400 });
-  }
-
-  const { event_id } = parsed.data;
   const supabase = createAdminClient();
 
-  const { data: event } = (await supabase
-    .from("events")
-    .select("id, current_stage")
-    .eq("id", event_id)
-    .single()) as { data: Pick<Event, "id" | "current_stage"> | null; error: unknown };
-
-  if (!event || event.current_stage < TOTAL_STAGES) {
-    return NextResponse.json(
-      { error: `Evento não completou as ${TOTAL_STAGES} etapas` },
-      { status: 400 }
-    );
-  }
-
-  const { data: participants } = (await supabase
-    .from("participants")
-    .select("id, completed_at")
-    .eq("event_id", event_id)
-    .not("completed_at", "is", null)) as {
-    data: Pick<Participant, "id" | "completed_at">[] | null;
-    error: unknown;
-  };
-
-  if (!participants || participants.length === 0) {
-    return NextResponse.json(
-      { error: "Nenhum participante completou o quiz" },
-      { status: 400 }
-    );
-  }
+  // Pedido, etapas (a contagem vem do banco, nunca de um numero fixo) e
+  // participantes que concluiram. Mesmo helper de /api/jobs/enfileirar.
+  // No assíncrono o banco confere e fotografa (sem enfileirar) e o lote gera SOBRE
+  // esse conjunto: o mesmo critério e a mesma proteção da corrida do fechamento.
+  const preparo = await prepararProcessamento(req, supabase as unknown as ClienteDeProcessamento, {
+    assincrono: "verificar",
+  });
+  if (!preparo.ok) return preparo.resposta;
+  const { eventId: event_id, participantes: participants } = preparo;
 
   await (
     supabase.from("events") as unknown as {
@@ -90,6 +79,7 @@ export async function POST(req: NextRequest) {
   );
 
   let succeeded = 0;
+  let skipped = 0;
   const generatedIds: string[] = [];
 
   results.forEach((r, idx) => {
@@ -99,6 +89,20 @@ export async function POST(req: NextRequest) {
       console.error("[batch-process] generation threw", {
         participant_id: participantId,
         reason: r.reason instanceof Error ? r.reason.message : String(r.reason),
+      });
+      return;
+    }
+
+    // 409 = o prognostico ja esta em in_review, reviewed ou delivered (ou
+    // avancou enquanto o modelo rodava) e a regeracao foi recusada DE PROPOSITO,
+    // para nao apagar trabalho de revisao nem gastar modelo (migration 015 e
+    // generatePrognostic). Nao e falha: contar aqui inflaria `failed` em todo
+    // reprocessamento e esconderia as falhas reais. O documento fica como esta.
+    if (!r.value.ok && r.value.status === 409) {
+      skipped++;
+      console.info("[batch-process] prognostico pulado (estado ja avancado)", {
+        participant_id: participantId,
+        reason: r.value.error,
       });
       return;
     }
@@ -117,7 +121,7 @@ export async function POST(req: NextRequest) {
     generatedIds.push(r.value.prognosticId);
   });
 
-  const failed = results.length - succeeded;
+  const failed = results.length - succeeded - skipped;
 
   // Render PDFs up front so the participant's share page doesn't sit polling.
   await inWaves(generatedIds, (id) => renderAndStorePdf(id));
@@ -137,13 +141,14 @@ export async function POST(req: NextRequest) {
   ).insert({
     event_id,
     action: "batch_process_completed",
-    payload: { total: participants.length, succeeded, failed },
+    payload: { total: participants.length, succeeded, skipped, failed },
   });
 
   return NextResponse.json({
     success: true,
     total: participants.length,
     succeeded,
+    skipped,
     failed,
   });
 }

@@ -4,46 +4,99 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { joinEventSchema } from "@/lib/schemas";
 import { z } from "zod";
 
+/*
+ * ============================================================================
+ * POR QUE ESTA ROTA NÃO AUTENTICA MAIS NINGUÉM -- LEIA ANTES DE "CONSERTAR"
+ * ============================================================================
+ *
+ * A versão anterior desta rota fazia o que parecia conveniente: o participante
+ * digitava só o e-mail, a rota gerava uma senha, redefinia a senha da conta (se
+ * já existisse) e DEVOLVIA a senha no corpo da resposta para o navegador fazer
+ * signInWithPassword.
+ *
+ * Isso é uma tomada de conta. O QR do evento é público e carrega event_id e
+ * event_code. Logo: QR público + e-mail de qualquer participante = a rota
+ * redefine a senha daquela conta, entrega a senha nova e a pessoa errada entra
+ * na conta, lendo respostas do quiz e o prognóstico. A única trava era recusar
+ * role=admin, o que ainda vazava (403 só para admin) quais e-mails são de
+ * administrador.
+ *
+ * A conveniência de "entrar apenas com e-mail" foi QUEBRADA DE PROPÓSITO, por
+ * decisão do responsável técnico. Digitar um e-mail NÃO prova que a pessoa é
+ * dona dele, e esta rota não tem como provar. A prova será um código de uso
+ * único enviado ao e-mail (OTP do Supabase Auth), que cobre a entrada no
+ * pré-evento e o retorno em outro dispositivo. Enquanto o envio de e-mail não
+ * estiver configurado, a entrada FALHA DE FORMA SEGURA (503).
+ *
+ * Regras que esta rota NÃO pode voltar a violar, mesmo que alguém reclame que
+ * "ficou ruim de entrar":
+ *   1. Nunca redefinir senha de conta existente (updateUserById com password).
+ *   2. Nunca devolver senha, token de sessão ou link de acesso no corpo, nem
+ *      criar cookie de sessão. Nada nesta resposta serve de credencial.
+ *   3. Nunca autenticar uma identidade, nova ou existente, só porque alguém
+ *      informou um e-mail. Autenticar um e-mail inédito sem prová-lo também é
+ *      falha: quem digita o e-mail de outra pessoa antes dela ficaria com uma
+ *      sessão aberta na conta que ela mesma usará depois (conta pré-sequestrada).
+ *   4. Nunca responder de forma diferente para admin, participante comum ou
+ *      e-mail inédito (mesmo status, mesmo texto): senão o formulário público
+ *      vira oráculo de "este e-mail existe / é administrador".
+ *
+ * Para reativar a entrada: implemente a verificação por código (signInWithOtp +
+ * verifyOtp) em outra rota/fluxo e troque a resposta de INDISPONIVEL por um
+ * "enviamos um código para o seu e-mail". NÃO devolva a senha de volta.
+ * ============================================================================
+ */
+
 const bodySchema = joinEventSchema.extend({
   event_id: z.string().uuid(),
   event_code: z.string(),
 });
 
-type AuthUser = { id: string; email?: string; app_metadata?: { role?: string } };
+// Resposta ÚNICA para qualquer e-mail que passe pela validação (novo, comum ou
+// administrador). Mesmo status, mesmo corpo: ver regra 4 acima. Não pode citar
+// "conta existente" nem "conta nova", e não pode culpar a pessoa.
+const ENTRADA_INDISPONIVEL = {
+  error:
+    "Ainda não conseguimos liberar a sua entrada. Agora o acesso é confirmado por um código de uso único enviado ao seu e-mail, e esse envio ainda não está disponível. Não é problema com os seus dados. Avise a equipe do evento e, assim que o envio estiver ativo, entre de novo com o mesmo e-mail.",
+  codigo: "entrada_por_codigo_indisponivel",
+} as const;
 
-// listUsers() defaults to 50 per page. Past that, a returning participant's
-// account simply wasn't found and the join failed with "Erro ao identificar
-// usuário". Walk every page until we find the e-mail or run out.
-async function findUserByEmail(
-  supabase: ReturnType<typeof createAdminClient>,
-  email: string
-): Promise<AuthUser | null> {
-  const perPage = 1000;
-  const target = email.toLowerCase();
+function entradaIndisponivel() {
+  return NextResponse.json(ENTRADA_INDISPONIVEL, {
+    status: 503,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
 
-  for (let page = 1; page <= 50; page++) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
-    if (error || !data) return null;
-
-    const match = data.users.find((u) => u.email?.toLowerCase() === target);
-    if (match) return match as AuthUser;
-
-    if (data.users.length < perPage) return null;
-  }
-  return null;
+function erroInterno() {
+  return NextResponse.json(
+    { error: "Não foi possível concluir agora. Tente novamente em instantes." },
+    { status: 500, headers: { "Cache-Control": "no-store" } }
+  );
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
+  // Corpo malformado (JSON quebrado, vazio, tipo errado) é erro do cliente: 400,
+  // nunca 500. A mensagem não ecoa nada do que foi enviado.
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Dados inválidos" }, { status: 400 });
+  }
+
   const parsed = bodySchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Dados inválidos" }, { status: 400 });
   }
 
-  const { email, full_name, phone, course_or_moment, event_id } = parsed.data;
+  const { full_name, phone, course_or_moment, event_id } = parsed.data;
+  // O GoTrue guarda e-mail em minúsculas; usar a mesma forma aqui mantém
+  // participants.email consistente com auth.users.email.
+  const email = parsed.data.email.trim().toLowerCase();
   const supabase = createAdminClient();
 
-  // Verify event exists and has capacity
+  // Validação barata antes do trabalho caro (criar usuário envolve hash de senha).
   const { data: event } = await supabase
     .from("events")
     .select("id, max_participants, status")
@@ -54,98 +107,69 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Evento não encontrado" }, { status: 404 });
   }
 
-  // Random, single-use credential. The previous `${email}::${event_code}`
-  // scheme was guessable: the event code is printed on a public QR, so knowing
-  // a participant's e-mail was enough to sign in as them.
-  const password = randomBytes(24).toString("base64url");
+  // Senha aleatória, descartada: existe só porque a conta precisa de um segredo
+  // que ninguém conhece. Nunca é devolvida, logada nem usada para login.
+  const senhaDescartavel = randomBytes(24).toString("base64url");
 
-  // Try to create auth user — email_confirm: true skips confirmation email
-  let userId: string;
   const { data: created, error: createError } = await supabase.auth.admin.createUser({
     email,
-    password,
+    password: senhaDescartavel,
     email_confirm: true,
     user_metadata: { full_name },
   });
 
+  // --------------------------------------------------------------------------
+  // CAMINHO 1: e-mail JÁ EXISTE no Auth (participante, admin, qualquer conta).
+  // Não toca em nada: nem senha, nem participante, nem metadados. Não consulta
+  // a conta (não lê app_metadata), então admin e comum percorrem exatamente o
+  // mesmo código e recebem exatamente a mesma resposta. O retorno é pelo código
+  // de uso único (ver comentário no topo).
+  // --------------------------------------------------------------------------
   if (createError) {
-    if (createError.message.includes("already been registered")) {
-      // User exists — reset the password to the freshly generated one so
-      // signInWithPassword on the client succeeds. Returning participants from
-      // a previous event would otherwise hit "invalid credentials".
-      const existing = await findUserByEmail(supabase, email);
-      if (!existing) {
-        return NextResponse.json({ error: "Erro ao identificar usuário" }, { status: 500 });
-      }
+    const jaExiste =
+      createError.code === "email_exists" ||
+      createError.code === "user_already_exists" ||
+      /already been registered/i.test(createError.message);
 
-      // NEVER reset the credentials of a privileged account. Without this,
-      // anyone holding a public event QR could type the admin's e-mail into
-      // the join form, have the admin password overwritten, and read the new
-      // one straight out of this endpoint's response.
-      if (existing.app_metadata?.role === "admin") {
-        return NextResponse.json(
-          { error: "Este e-mail não pode ser usado para entrar na imersão." },
-          { status: 403 }
-        );
-      }
+    if (jaExiste) return entradaIndisponivel();
 
-      userId = existing.id;
-      const { error: updateErr } = await supabase.auth.admin.updateUserById(userId, {
-        password,
-        email_confirm: true,
-      });
-      if (updateErr) {
-        return NextResponse.json(
-          { error: "Erro ao atualizar credenciais" },
-          { status: 500 }
-        );
-      }
-    } else {
-      return NextResponse.json({ error: createError.message }, { status: 500 });
-    }
-  } else {
-    userId = created.user.id;
+    // Qualquer outra falha do GoTrue: loga só o código (a mensagem do GoTrue
+    // pode conter o e-mail) e NÃO devolve a mensagem ao cliente.
+    console.error("[join-event] falha ao criar usuário", {
+      code: createError.code,
+      status: createError.status,
+    });
+    return erroInterno();
   }
 
-  type ParticipantRow = { id: string };
-  type MutResult<T> = { data: T | null; error: { message: string } | null };
+  // --------------------------------------------------------------------------
+  // CAMINHO 2: e-mail NOVO. Cria a conta (com a senha descartável) e a linha de
+  // participante vinculada, para que o retorno por código encontre tudo pronto.
+  // NÃO abre sessão: ver regra 3 no topo. Resposta idêntica à do caminho 1.
+  // --------------------------------------------------------------------------
+  const userId = created.user.id;
 
-  // Check if participant already registered for this event
-  const { data: existingParticipant } = await supabase
-    .from("participants")
-    .select("id")
-    .eq("event_id", event_id)
-    .eq("email", email)
-    .single() as { data: ParticipantRow | null; error: unknown };
+  const { error: pErr } = await (supabase.from("participants") as unknown as {
+    insert(v: Record<string, unknown>): Promise<{ error: { code?: string } | null }>;
+  }).insert({
+    event_id,
+    user_id: userId,
+    full_name,
+    email,
+    phone: phone ?? null,
+    course_or_moment: course_or_moment ?? null,
+  });
 
-  let participantId: string;
-
-  if (existingParticipant) {
-    participantId = existingParticipant.id;
-    await (supabase.from("participants") as unknown as {
-      update(v: Record<string, unknown>): { eq(c: string, v: string): Promise<unknown> };
-    }).update({ user_id: userId }).eq("id", existingParticipant.id);
-  } else {
-    const { data: participant, error: pErr } = await (supabase.from("participants") as unknown as {
-      insert(v: Record<string, unknown>): {
-        select(cols: string): {
-          single(): Promise<MutResult<ParticipantRow>>;
-        };
-      };
-    }).insert({
-      event_id,
-      user_id: userId,
-      full_name,
-      email,
-      phone: phone ?? null,
-      course_or_moment: course_or_moment ?? null,
-    }).select("id").single();
-
-    if (pErr || !participant) {
-      return NextResponse.json({ error: "Erro ao registrar participante" }, { status: 500 });
-    }
-    participantId = participant.id;
+  if (pErr) {
+    // Sem a linha de participante a conta recém-criada ficaria órfã. Desfaz.
+    // (23505 = já havia participante com este e-mail neste evento sem conta no
+    // Auth, ex.: conta apagada. NÃO re-vincula: isso entregaria os dados antigos
+    // a quem só digitou o e-mail.)
+    await supabase.auth.admin.deleteUser(userId).catch(() => undefined);
+    console.error("[join-event] falha ao registrar participante", { code: pErr.code });
+    if (pErr.code === "23505") return entradaIndisponivel();
+    return erroInterno();
   }
 
-  return NextResponse.json({ participant_id: participantId, password });
+  return entradaIndisponivel();
 }

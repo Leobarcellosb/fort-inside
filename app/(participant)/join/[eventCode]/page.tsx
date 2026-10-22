@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import { JoinForm } from "@/components/features/participant/JoinForm";
 import { CinematicHero } from "@/components/features/participant/CinematicHero";
-import { AMBIENT_IMAGES } from "@/lib/cinematic-map";
+import { imagemDoAmbiente, marcaDoEvento, rotuloDaMarca } from "@/lib/cinematic-map";
 import type { Event } from "@/types/database";
 
 interface Props {
@@ -15,19 +15,19 @@ export default async function JoinPage({ params }: Props) {
 
   const { data: event } = await supabase
     .from("events")
-    .select("id, name, event_date, host_name, location_name, status, max_participants")
+    .select("id, name, event_date, host_name, location_name, status, max_participants, quiz_version")
     .eq("event_code", eventCode.toUpperCase())
-    .single() as { data: Pick<Event, "id" | "name" | "event_date" | "host_name" | "location_name" | "status" | "max_participants"> | null; error: unknown };
+    .single() as { data: Pick<Event, "id" | "name" | "event_date" | "host_name" | "location_name" | "status" | "max_participants" | "quiz_version"> | null; error: unknown };
 
   if (!event) notFound();
 
   if (event.status === "completed") {
     return (
-      <main className="min-h-screen bg-background">
+      <main className="min-h-screen bg-background" {...marcaDoEvento(event.quiz_version)}>
         <CinematicHero
-          imageSrc={AMBIENT_IMAGES.join}
+          imageSrc={imagemDoAmbiente("join", event.quiz_version)}
           imageAlt="Imersão encerrada"
-          eyebrow="Imersão Fort Inside"
+          eyebrow={rotuloDaMarca(event.quiz_version)}
           title="Imersão encerrada"
           subtitle="Esta imersão já foi concluída."
         />
@@ -43,11 +43,11 @@ export default async function JoinPage({ params }: Props) {
   const isFull = (count ?? 0) >= event.max_participants;
 
   return (
-    <main className="min-h-screen bg-background">
+    <main className="min-h-screen bg-background" {...marcaDoEvento(event.quiz_version)}>
       <CinematicHero
-        imageSrc={AMBIENT_IMAGES.join}
+        imageSrc={imagemDoAmbiente("join", event.quiz_version)}
         imageAlt="Entrada da imersão"
-        eyebrow="Imersão Fort Inside"
+        eyebrow={rotuloDaMarca(event.quiz_version)}
         title="Entre"
         subtitle={`${event.name}${event.location_name ? ` · ${event.location_name}` : ""}`}
       />

@@ -1,0 +1,204 @@
+name: CI
+
+# Este pipeline existe porque, até ele nascer, o repositório não tinha CI nenhum:
+# as cinco falhas de segurança corrigidas haviam sido verificadas à mão, o que
+# prova que estavam fechadas naquele momento e não impede ninguém de reabri-las
+# no pull request seguinte.
+#
+# Princípio que governa tudo aqui: um job que não conseguiu verificar NUNCA pode
+# terminar verde. Falta de credencial, banco fora do ar ou inspeção incompleta
+# resultam em falha explícita, não em "passou porque não rodou".
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    # Segunda, 06:00 UTC. Só a verificação de sensibilidade usa este gatilho:
+    # é ela que precisa rodar periodicamente, não a cada pull request.
+    - cron: "0 6 * * 1"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Nenhum job do CI pode gastar token de modelo. A suíte HTTP sobe um canário
+  # local no lugar da API e aborta se o ambiente real do processo não bater.
+  ANTHROPIC_API_KEY: sk-ant-FALSA-ci-nunca-chama-o-modelo
+
+jobs:
+  unidade:
+    name: Testes de unidade (scoring)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: vitest
+        run: npm test
+      - name: typecheck
+        run: npx tsc --noEmit
+
+  banco:
+    name: Segurança no banco (RLS, grants, privilégio de função)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # Sobe só o que o schema precisa. Storage e Realtime continuam desligados
+      # no config.toml: ligá-los aqui inflaria a cobertura sem validar nada que
+      # esta suíte cobre, e foi explicitamente vetado.
+      - name: Subir Postgres local e aplicar migrations
+        run: supabase start --exclude storage-api,realtime,studio,imgproxy,edge-runtime,logflare,vector,supavisor
+
+      # Manifesto antes de qualquer suíte: o aceite não pode depender de alguém
+      # contar migrations certo. Já houve uma afirmação errada aqui ("as 18
+      # migrations", quando são 17 arquivos -- o último número do nome não é o
+      # total, porque a 013 foi dobrada na 011 e apagada). A máquina conta, com
+      # nome e checksum, e a lacuna de numeração aparece declarada.
+      - name: Manifesto das migrations aplicadas (nome + checksum)
+        run: bash scripts/manifesto-migrations.sh --target "$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')"
+
+      # ISOLAMENTO DECLARADO E VERIFICADO, não acidental.
+      # O CI já dá um Postgres por job, mas isso é propriedade do runner: a suíte não sabia
+      # disso e não conferia nada. Já houve um vermelho fantasma (cenário 4 contando linhas
+      # de `quiz_responses` enquanto outra unidade escrevia no MESMO banco local), e vermelho
+      # que some sozinho ensina a ignorar vermelho.
+      # Com DB_SECURITY_ALVO=descartavel este job DECLARA "esta instância é só minha e é
+      # descartável" e a suíte CONFERE a declaração: trava exclusiva confirmada em pg_locks,
+      # TODA tabela de negócio vazia antes de começar e sentinela remedindo a massa entre os
+      # cenários. Declaração mentirosa (um banco compartilhado, com massa de outra gente) não
+      # passa: a suíte termina em BLOCKED (exit 2), que não é PASS nem FAIL.
+      - name: Suíte de regressão de segurança do banco (alvo declarado descartável)
+        env:
+          DB_SECURITY_ALVO: descartavel
+        run: npm run db:security
+
+      # Cliente 17 para o autoteste abaixo: ele clona o schema do banco do job com pg_dump, e
+      # pg_dump se recusa a ler servidor mais novo que ele (o runner traz cliente 16).
+      - name: Cliente Postgres 17 (pg_dump do clone)
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          pg_dump --version
+
+      # Mecanismo de isolamento que nunca foi visto falhando não está provado. Este autoteste
+      # constrói um alvo descartável e exige que a guarda RECUSE (BLOCKED): massa de terceiro,
+      # escritor concorrente durante a execução, alvo já travado, declaração falsa de
+      # descartável e alvo sem dados de referência -- e que ACEITE o alvo isolado com as
+      # verificações todas no lugar.
+      # Ele tem três desfechos e NENHUM deles passa em silêncio: 0 PASS, 1 FAIL e 2 BLOCKED
+      # ("não consegui exercitar tal caso"). Exit 2 derruba o job de propósito: caso que não
+      # foi exercitado não conta como aprovado -- a mesma regra que a guarda aplica ao banco.
+      - name: Autoteste do isolamento (prova que a suíte recusa alvo compartilhado)
+        run: npm run db:security:isolamento:test
+
+      # Drift LOCAL: prova que o banco construído das migrations bate com ele
+      # mesmo. Não substitui o guard contra produção -- ver o job drift-producao.
+      - name: Guard de drift (referência x banco local)
+        run: npm run db:drift -- --target "$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')"
+
+      - name: Autoteste do guard (prova que ele detecta PASS, FAIL e BLOCKED)
+        run: npm run db:drift:test
+
+  http:
+    name: Segurança nas rotas HTTP
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Subir Postgres local e aplicar migrations
+        run: supabase start --exclude storage-api,realtime,studio,imgproxy,edge-runtime,logflare,vector,supavisor
+
+      # A suíte clona o working tree sem .env*, constrói o app e o sobe apontando
+      # para o Supabase local e para um canário no lugar da Anthropic. Uma sonda
+      # dentro do processo confere o ambiente real e aborta se não bater.
+      - name: Suíte de regressão HTTP
+        run: npm run test:seguranca-http
+
+  sensibilidade:
+    name: Sensibilidade das suítes (os testes detectam regressão?)
+    # Deliberadamente FORA do pull request. Esta verificação remove uma guarda
+    # por vez e reconstrói o app para provar que a suíte falha -- é cara e não
+    # precisa repetir todas as mutações a cada PR, enquanto a suíte normal roda
+    # continuamente. Roda sob demanda e no agendamento semanal.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Subir Postgres local e aplicar migrations
+        run: supabase start --exclude storage-api,realtime,studio,imgproxy,edge-runtime,logflare,vector,supavisor
+      - name: Mutações no HTTP
+        run: npm run test:seguranca-http:sensibilidade
+
+  drift-producao:
+    name: Drift contra produção
+    # Só sob demanda, e só se houver credencial. Este é o único job que olha
+    # para produção, e ele é SOMENTE LEITURA: o guard roda em transação read
+    # only, com introspecção de pg_catalog e rollback no fim.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: producao
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # Sem credencial este job FALHA, nunca passa em silêncio. "Não consegui
+      # verificar" não é "está tudo certo" -- é exatamente a confusão que o
+      # resultado BLOCKED do guard existe para impedir.
+      - name: Exigir credencial
+        run: |
+          if [ -z "${{ secrets.PRODUCAO_DB_URL }}" ]; then
+            echo "::error::PRODUCAO_DB_URL ausente. Este job nao pode atestar integridade sem credencial."
+            exit 1
+          fi
+
+      # A referência é construída das migrations num Postgres descartável, pelo
+      # próprio guard, quando --reference é omitido.
+      - name: Guard de drift (migrations x produção)
+        env:
+          PGPASSWORD: ${{ secrets.PRODUCAO_DB_PASSWORD }}
+        run: npm run db:drift -- --target "${{ secrets.PRODUCAO_DB_URL }}"

@@ -119,6 +119,67 @@
   --sidebar-ring: #232323;
 }
 
+/* ============================================================
+   PELE DO MARCO ZERO
+   ============================================================
+   Ligada por `data-marca="marco-zero"`, que as telas do participante põem
+   quando a VERSÃO DO QUIZ do evento é a do Marco Zero -- a mesma fonte que
+   decide a contagem de etapas e a ausência de foto (lib/cinematic-map.ts).
+   Nenhuma tela do Fort Inside é tocada: fora deste bloco, o :root acima
+   continua valendo inteiro.
+
+   Valores medidos no material do próprio evento, não escolhidos por mim:
+   o off-white é #F7F7F6 e a tinta é #141414, lidos do site do Marco Zero.
+
+   O VERDE MILITAR é a única cor que eu NÃO tirei de lá -- o site não tem
+   verde nenhum. Veio da descrição do dono ("um tom de verde militar") e é
+   um palpite informado até ele confirmar o valor. Está num token só, de
+   propósito: trocar a marca inteira é trocar esta linha.
+
+   Não há identidade visual fechada da GP, e isso é deliberado: a marca é
+   criada depois do evento. Então a pele é sóbria por decisão, não por falta
+   de capricho -- ela não pode antecipar uma identidade que ainda não existe. */
+[data-marca="marco-zero"] {
+  --marco-zero-verde: #4B5320;
+
+  --background: #F7F7F6;
+  --foreground: #141414;
+  --card: #FFFFFF;
+  --card-foreground: #141414;
+  --popover: #FFFFFF;
+  --popover-foreground: #141414;
+
+  /* O verde é ação: botão, foco, acento. Nunca é fundo de página -- numa sala
+     de 50 pessoas lendo no celular, texto longo sobre verde escuro cansa. */
+  --primary: var(--marco-zero-verde);
+  --primary-foreground: #F7F7F6;
+  --accent: var(--marco-zero-verde);
+  --accent-foreground: #F7F7F6;
+  --ring: var(--marco-zero-verde);
+
+  /* `secondary` é o fundo do hero sem foto. Off-white um passo mais fechado
+     que a página, para o topo se separar do formulário sem virar faixa. */
+  --secondary: #EFEFED;
+  --secondary-foreground: #141414;
+  --muted: #EFEFED;
+  --muted-foreground: #5B5B58;
+
+  --border: #E3E3E0;
+  --input: #E3E3E0;
+  --hairline: #E3E3E0;
+  --sand: #EFEFED;
+  --charcoal: #141414;
+  --gold: var(--marco-zero-verde);
+  --gold-muted: #5B5B58;
+
+  /* Avenir Next primeiro (iPhone e Mac), Poppins atrás (Android e Windows),
+     que é a fonte do material do evento. Ver o comentário em app/layout.tsx. */
+  --font-display: "Avenir Next", "Avenir", var(--font-marco-zero), system-ui, sans-serif;
+  --font-body: "Avenir Next", "Avenir", var(--font-marco-zero), system-ui, sans-serif;
+  --font-sans: var(--font-body);
+  --font-heading: var(--font-display);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

@@ -31,6 +31,9 @@ export default async function EventControlPage({ params }: Props) {
   const { data: stages } = await supabase
     .from("quiz_stages")
     .select("id, title, ambient_name, questions")
+    // So as etapas do quiz DESTE evento: sem o filtro, com a v2 cadastrada um
+    // evento do Fort Inside passaria a listar tambem as etapas do Marco Zero.
+    .eq("quiz_version", event.quiz_version)
     .order("id") as { data: Pick<QuizStage, "id" | "title" | "ambient_name" | "questions">[] | null; error: unknown };
 
   const { data: participants } = await supabase

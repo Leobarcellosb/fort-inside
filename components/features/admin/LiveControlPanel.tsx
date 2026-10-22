@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
@@ -20,6 +20,14 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { EventQRDialog } from "@/components/features/admin/EventQRDialog";
+import { SituacaoPrognosticos } from "@/components/features/admin/SituacaoPrognosticos";
+import type { EstadoDaFila } from "@/components/features/admin/SituacaoPrognosticos";
+import {
+  MENSAGEM_FILA_INDISPONIVEL,
+  solicitarProcessamento,
+  textoDoEnfileiramento,
+} from "@/components/features/admin/processar-evento";
+import type { BatchSummary } from "@/components/features/admin/classificar-lote";
 
 interface Participant {
   id: string;
@@ -50,6 +58,22 @@ interface Props {
 
 const STAGE_LABELS = ["—", "Portão", "Entrada", "Sala Principal", "Cozinha", "Varanda", "Suíte"];
 
+// ---------------------------------------------------------------------------
+// Processar = enfileirar
+// ---------------------------------------------------------------------------
+// O botão "Processar prognósticos" cria jobs duráveis em /api/jobs/enfileirar
+// (ver processar-evento.ts). O processamento antigo em lote (/api/batch-process) foi
+// descontinuado como mecanismo oficial: ele só devolvia contagens, vivia dentro de
+// UMA requisição e não deixava registro por pessoa. Aqui NÃO há caminho de volta
+// para ele: sem a fila, o botão fica bloqueado e explica o que fazer.
+//
+// `BatchSummary` continua importado só para ler registros HISTÓRICOS da timeline
+// (action "batch_process_completed", gravados antes da troca).
+
+function isCount(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v);
+}
+
 export function LiveControlPanel({ event, stages, participants: initialParticipants, initialResponses, initialLogs }: Props) {
   const router = useRouter();
   const [currentStage, setCurrentStage] = useState(event.current_stage);
@@ -62,6 +86,14 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
   const participantsRef = useRef<Participant[]>(initialParticipants);
   const [releasing, setReleasing] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [sinalDeLeitura, setSinalDeLeitura] = useState(0);
+  // A fila está utilizável? Só habilita o botão "Processar" quando a leitura da
+  // fila respondeu OK. Nunca cai de volta no lote.
+  const [fila, setFila] = useState<EstadoDaFila>("verificando");
+  const [avisoDeEnfileiramento, setAvisoDeEnfileiramento] = useState<string | null>(null);
+  // O diálogo de confirmação é controlado: AlertDialogAction não fecha sozinho, e agora a tela
+  // FICA aberta depois do lote (para mostrar o resultado), então o diálogo não pode sobrar por cima.
+  const [confirmProcessOpen, setConfirmProcessOpen] = useState(false);
 
   const getParticipantResponses = useCallback(
     (participantId: string) =>
@@ -267,23 +299,38 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
   }
 
   async function processPrognostics() {
+    // Trava contra clique duplo na própria tela. A garantia real é do banco
+    // (`on conflict do nothing`); isto só evita pedir duas vezes à toa.
+    if (processing || fila !== "ok") return;
     setProcessing(true);
+    setAvisoDeEnfileiramento(null);
     try {
-      const res = await fetch("/api/batch-process", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ event_id: event.id }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      toast.success(`${data.succeeded} de ${data.total} prognósticos gerados`);
-      router.push(`/admin/events/${event.id}/review`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao processar");
+      const r = await solicitarProcessamento(event.id);
+      const texto = textoDoEnfileiramento(r);
+      if (r.tipo === "enfileirado") {
+        toast.success("Processamento enfileirado");
+        setAvisoDeEnfileiramento(texto);
+      } else if (r.tipo === "parcial") {
+        toast.warning(texto);
+        setAvisoDeEnfileiramento(texto);
+      } else {
+        if (r.tipo === "fila_indisponivel") setFila("indisponivel");
+        toast.error(r.tipo === "fila_indisponivel" ? "A fila de processamento não está disponível" : texto);
+        setAvisoDeEnfileiramento(texto);
+      }
+      // Quem acompanha o andamento é a seção "Prognósticos", lendo a fila.
+      setSinalDeLeitura((n) => n + 1);
     } finally {
       setProcessing(false);
     }
   }
+
+  const pessoasDoPrognostico = useMemo(
+    () => participants.map((p) => ({ id: p.id, nome: p.full_name, quizConcluido: p.completed_at !== null })),
+    [participants]
+  );
+  const participantesConcluidos = participants.filter((p) => p.completed_at !== null).length;
+  const mostrarPrognosticos = currentStage === 6 || participants.some((p) => p.completed_at !== null);
 
   const nextStageInfo = stages.find((s) => s.id === currentStage + 1);
   const pendingNames = pendingParticipants.map((p) => p.full_name).join(", ");
@@ -299,13 +346,26 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
         </div>
         <div className="flex items-center gap-3">
           <Badge variant={eventStatus === "live" ? "default" : "secondary"} className="text-xs">
-            {eventStatus === "live" ? "🔴 Ao vivo" : eventStatus === "processing" ? "⚙️ Processando" : eventStatus}
+            {eventStatus === "live" ? "🔴 Ao vivo" : eventStatus === "processing" ? "⚙️ Processando" : eventStatus === "completed" ? "Concluído" : eventStatus}
           </Badge>
           <span className="text-muted-foreground text-sm">
             {participants.length} participante{participants.length !== 1 ? "s" : ""}
           </span>
         </div>
       </div>
+
+      {mostrarPrognosticos && (
+        <div className="mb-8">
+          <SituacaoPrognosticos
+            eventId={event.id}
+            eventStatus={eventStatus}
+            pessoas={pessoasDoPrognostico}
+            sinalDeLeitura={sinalDeLeitura}
+            aoMudarFila={setFila}
+            aoIrParaRevisao={() => router.push(`/admin/events/${event.id}/review`)}
+          />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Column 1 — Stage Control */}
@@ -393,49 +453,86 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
             </AlertDialog>
           )}
 
-          {/* Process prognostics */}
+          {/* Processar = enfileirar. Sem a fila, o botão fica bloqueado e diz o que fazer. */}
           {currentStage === 6 && eventStatus !== "processing" && eventStatus !== "completed" && (
-            <AlertDialog>
-              <AlertDialogTrigger
-                render={
-                  <Button
-                    className="w-full h-12 bg-primary text-primary-foreground hover:bg-primary/90 uppercase tracking-[0.08em] text-sm"
-                    disabled={processing}
-                  />
-                }
-              >
-                {processing ? "Processando prognósticos..." : "Processar prognósticos"}
-              </AlertDialogTrigger>
-              <AlertDialogContent className="bg-card border-border">
-                <AlertDialogHeader>
-                  <AlertDialogTitle className="font-display text-foreground">
-                    Gerar prognósticos agora?
-                  </AlertDialogTitle>
-                  <AlertDialogDescription className="text-muted-foreground">
-                    Isso irá gerar o Mapa da Próxima Construção para todos os {participants.length} participantes.
-                    Cerca de 1 minuto por prognóstico, gerados em paralelo. Para uma turma cheia, conte com 2 a 3 minutos no total.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel className="border-border">Cancelar</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={processPrognostics}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90"
-                  >
-                    Processar
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            <div className="space-y-2">
+              <AlertDialog open={confirmProcessOpen} onOpenChange={setConfirmProcessOpen}>
+                <AlertDialogTrigger
+                  render={
+                    <Button
+                      className="w-full h-12 bg-primary text-primary-foreground hover:bg-primary/90 uppercase tracking-[0.08em] text-sm"
+                      disabled={processing || fila !== "ok"}
+                    />
+                  }
+                >
+                  {processing
+                    ? "Enviando para a fila..."
+                    : fila === "ok"
+                      ? "Processar prognósticos"
+                      : fila === "verificando"
+                        ? "Verificando a fila..."
+                        : "Processamento indisponível"}
+                </AlertDialogTrigger>
+                <AlertDialogContent className="bg-card border-border">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="font-display text-foreground">
+                      Colocar os prognósticos na fila?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription className="text-muted-foreground">
+                      Vamos colocar na fila o prognóstico de cada pessoa que concluiu o quiz ({participantesConcluidos}).
+                      Cada um leva cerca de 1 minuto e a fila trabalha poucos de cada vez, então uma turma cheia
+                      leva vários minutos. O andamento de cada pessoa fica salvo e qualquer administrador vê o
+                      mesmo resultado. Mantenha uma página aberta até terminar, para a fila continuar andando.
+                      Clicar duas vezes não duplica nada. Quem já está em revisão, revisado ou entregue é
+                      pulado, sem alterar o documento.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="border-border">Cancelar</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => {
+                        setConfirmProcessOpen(false);
+                        void processPrognostics();
+                      }}
+                      className="bg-primary text-primary-foreground hover:bg-primary/90"
+                    >
+                      Colocar na fila
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+
+              {fila !== "ok" && (
+                <div
+                  role="status"
+                  data-testid="fila-indisponivel"
+                  className="space-y-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-foreground/80"
+                >
+                  <p>
+                    {fila === "verificando"
+                      ? "Verificando se a fila de processamento está disponível..."
+                      : fila === "indisponivel"
+                        ? MENSAGEM_FILA_INDISPONIVEL
+                        : "Não foi possível verificar a fila agora (conexão ou sessão). O botão libera quando a verificação funcionar."}
+                  </p>
+                  {fila !== "verificando" && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setSinalDeLeitura((n) => n + 1)}
+                      className="h-9 border-border text-xs uppercase tracking-[0.08em]"
+                    >
+                      Verificar de novo
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
-          {processing && (
-            <div className="space-y-2 px-4 py-3 rounded-md border border-primary/30 bg-primary/5">
-              <p className="text-xs text-primary animate-pulse">Gerando prognósticos...</p>
-              <div className="h-0.5 bg-border rounded-full overflow-hidden">
-                <div className="h-full bg-primary rounded-full animate-pulse w-2/3" />
-              </div>
-            </div>
+          {avisoDeEnfileiramento && !processing && (
+            <p role="status" data-testid="aviso-enfileiramento" className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-foreground/80">
+              {avisoDeEnfileiramento}
+            </p>
           )}
         </div>
 
@@ -517,8 +614,18 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
                   label = `${participant.full_name} concluiu o quiz`;
                 } else if (log.action === "participant_joined" && participant) {
                   label = `${participant.full_name} entrou na imersão`;
+                } else if (log.action === "jobs_enfileirados") {
+                  const c = log.payload as { criados?: unknown; reaproveitados?: unknown } | null;
+                  label =
+                    c && isCount(c.criados) && isCount(c.reaproveitados)
+                      ? `Processamento enfileirado: ${c.criados} ${c.criados === 1 ? "entrou" : "entraram"} na fila, ${c.reaproveitados} já ${c.reaproveitados === 1 ? "estava" : "estavam"} nela`
+                      : "Processamento enfileirado";
                 } else if (log.action === "batch_process_completed") {
-                  label = `Processamento concluído`;
+                  const c = log.payload as Partial<BatchSummary> | null;
+                  label =
+                    c && isCount(c.succeeded) && isCount(c.skipped) && isCount(c.failed)
+                      ? `Processamento concluído: ${c.succeeded} ${c.succeeded === 1 ? "gerado" : "gerados"}, ${c.skipped} ${c.skipped === 1 ? "pulado" : "pulados"}, ${c.failed} ${c.failed === 1 ? "falhou" : "falharam"}`
+                      : `Processamento concluído`;
                 }
 
                 return (

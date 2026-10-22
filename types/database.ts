@@ -1,6 +1,13 @@
 export type EventStatus = "draft" | "live" | "processing" | "completed";
 export type EventMode = "live" | "async";
-export type PrognosticStatus = "pending" | "generated" | "reviewed" | "delivered";
+// Ordem da maquina de estados (migration 015); o banco recusa regressao.
+export type PrognosticStatus =
+  | "pending"
+  | "generating"
+  | "generated"
+  | "in_review"
+  | "reviewed"
+  | "delivered";
 export type TrailRecommendation =
   | "Exploração"
   | "Direção"
