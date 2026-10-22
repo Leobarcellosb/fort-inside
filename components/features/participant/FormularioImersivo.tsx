@@ -748,7 +748,7 @@ export function FormularioImersivo({ eventCode, eventName, dataDoEvento, etapas:
             ? "Enviar de novo"
             : "Confirmar e enviar"
       : corrigindo && tela.tipo !== "abertura"
-        ? "Salvar e voltar ao resumo"
+        ? "Voltar ao resumo"
         : tela.tipo === "abertura"
           ? "Começar"
           : tela.tipo === "dado" && tela.campo === "telefone" && !identificacao.telefone.trim()
