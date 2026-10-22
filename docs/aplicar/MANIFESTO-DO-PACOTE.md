@@ -55,6 +55,11 @@ preflight real e da autorização do proprietário.
    uma amostra do pedido.
 5. **O editor de revisão quebra com documento de conteúdo vazio** (só em dado de teste
    antigo). Fica para depois de segunda.
+6. **A 024 deixa TRUNCATE com `service_role`** na tabela de recusas da importação, que
+   devia ser só de acréscimo: ela tira UPDATE e DELETE, mas não TRUNCATE (conferido no
+   banco local). Como a 024 ainda não foi aplicada em produção, a correção é uma linha
+   antes de domingo, `revoke truncate on public.external_import_rejections from
+   service_role;`, mas é decisão a autorizar: o pacote está congelado.
 
 ## Testes
 
