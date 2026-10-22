@@ -70,3 +70,15 @@ export function textoDaConferencia(nomeCompleto: string): string {
   const nome = nomeCompleto.trim() || "a pessoa indicada";
   return `Conferi no contato oficial que esta conversa é de ${nome}.`;
 }
+
+/**
+ * Para onde o QR leva. Evento assincrono (o Marco Zero) coleta pelo formulario
+ * publico, sem login: o QR antigo levava a /join, a entrada com codigo por
+ * e-mail, que nao entrega o codigo -- quem escaneasse no sabado cairia num login
+ * travado. Evento ao vivo (o produto antigo) continua em /join, sem mudanca.
+ */
+export function linkDoQrDoEvento(origemDoPainel: string, event: { event_code: string; mode?: string | null }): string {
+  return event.mode === "async"
+    ? `${origemDoLink(origemDoPainel)}/formulario/${event.event_code}`
+    : `${origemDoPainel}/join/${event.event_code}`;
+}

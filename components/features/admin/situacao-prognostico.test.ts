@@ -3,6 +3,7 @@ import {
   contarPorGrupo,
   montarSituacao,
   resumoDaTurma,
+  rotuloDoEventoConcluido,
   textoConfirmacao,
   type LinhaDocumento,
   type LinhaJob,
@@ -308,5 +309,14 @@ describe("revisão corrente: o máximo histórico não vale", () => {
     const c = contarPorGrupo(r);
     expect(Object.values(c).reduce((x, y) => x + y, 0)).toBe(2);
     expect(resumoDaTurma(r)).toContain("1 com mais de uma versão");
+  });
+});
+
+describe("rotulo do evento concluido (Rodada 69)", () => {
+  it("falha total nao e conclusao", () => {
+    expect(rotuloDoEventoConcluido({ comDocumento: 0, falharam: 50 })).toBe("Falha no processamento");
+    expect(rotuloDoEventoConcluido({ comDocumento: 30, falharam: 20 })).toBe("Processamento parcial");
+    expect(rotuloDoEventoConcluido({ comDocumento: 50, falharam: 0 })).toBe("Concluído");
+    expect(rotuloDoEventoConcluido(null)).toBe("Processamento encerrado");
   });
 });

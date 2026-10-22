@@ -14,10 +14,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { linkDoQrDoEvento } from "./envio-do-documento";
 
 interface Props {
-  event: { event_code: string };
+  event: { event_code: string; mode?: string | null };
 }
+
+
 
 export function EventQRDialog({ event }: Props) {
   const [open, setOpen] = useState(false);
@@ -29,7 +32,7 @@ export function EventQRDialog({ event }: Props) {
     if (!qrDataUrl) {
       setGenerating(true);
       try {
-        const url = `${window.location.origin}/join/${event.event_code}`;
+        const url = linkDoQrDoEvento(window.location.origin, event);
         const qr = await QRCode.toDataURL(url, {
           width: 400,
           margin: 2,

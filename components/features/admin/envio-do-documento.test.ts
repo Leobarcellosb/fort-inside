@@ -45,3 +45,15 @@ describe("envio do documento", () => {
     expect(textoDaConferencia("  ")).toContain("a pessoa indicada");
   });
 });
+
+describe("QR do evento", () => {
+  it("assincrono leva ao formulario publico no dominio do Marco Zero; ao vivo continua em /join", async () => {
+    const { linkDoQrDoEvento } = await import("./envio-do-documento");
+    expect(linkDoQrDoEvento("https://fort-inside.vercel.app", { event_code: "MARCOZERO", mode: "async" })).toBe(
+      "https://marcozero-gp.vercel.app/formulario/MARCOZERO",
+    );
+    expect(linkDoQrDoEvento("https://fort-inside.vercel.app", { event_code: "FORT1", mode: "live" })).toBe(
+      "https://fort-inside.vercel.app/join/FORT1",
+    );
+  });
+});

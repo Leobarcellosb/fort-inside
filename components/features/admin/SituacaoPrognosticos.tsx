@@ -283,6 +283,12 @@ interface Props {
   /** Diz ao painel se a fila está utilizável: o botão "Processar" depende disso. */
   aoMudarFila: (estado: EstadoDaFila) => void;
   aoIrParaRevisao: () => void;
+  /**
+   * Quantos ja tem documento e quantos falharam sem documento. O painel usa isto
+   * para nao chamar de "Concluido" um processamento em que tudo falhou: o banco
+   * fecha o evento quando nao sobra job pendente, falho ou nao (Rodada 69).
+   */
+  aoResumir?: (r: { comDocumento: number; falharam: number }) => void;
 }
 
 export function SituacaoPrognosticos({
@@ -292,6 +298,7 @@ export function SituacaoPrognosticos({
   sinalDeLeitura,
   aoMudarFila,
   aoIrParaRevisao,
+  aoResumir,
 }: Props) {
   const [documentos, setDocumentos] = useState<LinhaDocumento[] | null>(null);
   const [jobs, setJobs] = useState<LinhaJob[] | null>(null);
@@ -301,6 +308,8 @@ export function SituacaoPrognosticos({
   const [tentouLer, setTentouLer] = useState(false);
   const [confirmando, setConfirmando] = useState<SituacaoPessoa | null>(null);
   const [ocupados, setOcupados] = useState<Set<string>>(new Set());
+  const [confirmandoLote, setConfirmandoLote] = useState(false);
+  const [reprocessandoLote, setReprocessandoLote] = useState(false);
 
   const idsChave = pessoas.map((p) => p.id).join(",");
   const idsRef = useRef<string[]>([]);
@@ -338,6 +347,15 @@ export function SituacaoPrognosticos({
           }),
     [pessoas, documentos, jobs]
   );
+
+  // Falhas que a fila sabe reprocessar: as mesmas do botao individual.
+  const falhasDoLote = situacoes
+    ? situacoes.filter((s) => s.grupo === "atencao" && s.retentativa?.tipo === "fila")
+    : [];
+  const comDocumento = situacoes ? situacoes.filter((s) => s.documento !== null).length : 0;
+  useEffect(() => {
+    if (situacoes) aoResumir?.({ comDocumento, falharam: falhasDoLote.length });
+  }, [situacoes, comDocumento, falhasDoLote.length, aoResumir]);
 
   const emAndamento = situacoes ? situacoes.some((s) => s.grupo === "andamento") : false;
   const ativoRef = useRef(false);
@@ -421,6 +439,41 @@ export function SituacaoPrognosticos({
     }
   }
 
+  async function reprocessarFalhas() {
+    setReprocessandoLote(true);
+    try {
+      const res = await fetch("/api/jobs/reprocessar-falhas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event_id: eventId }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        reenfileirados?: number;
+        nao_voltaram?: { motivo: string }[];
+        error?: string;
+      };
+      if (!res.ok || !data.ok) {
+        toast.error(data.error ?? "Não foi possível reprocessar as falhas agora. Nada foi alterado.");
+        return;
+      }
+      const n = data.reenfileirados ?? 0;
+      const fora = data.nao_voltaram?.length ?? 0;
+      toast.success(
+        fora > 0
+          ? `${n} voltaram para a fila. ${fora} não voltaram: veja o motivo em cada pessoa.`
+          : `${n} voltaram para a fila.`,
+      );
+      void fetch("/api/jobs/tick", { method: "POST" }).catch(() => undefined);
+    } catch {
+      toast.error("Sem conexão com o servidor. Nada foi alterado; tente de novo em instantes.");
+    } finally {
+      setReprocessandoLote(false);
+      setConfirmandoLote(false);
+      void atualizar();
+    }
+  }
+
   if (situacoes === null) {
     // Nenhuma das duas leituras voltou com dados.
     return (
@@ -474,6 +527,54 @@ export function SituacaoPrognosticos({
             : "Não foi possível ler o histórico de processamento (tentativas e motivos) agora. Mostramos só o estado dos documentos."}
         </p>
       )}
+
+      {/* REPROCESSAR EM LOTE (Rodada 69). So aparece com 2 ou mais falhas: com
+          uma, o botao da propria pessoa resolve. O resumo e a confirmacao
+          dizem quem volta e o que NAO muda. */}
+      {falhasDoLote.length >= 2 && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 space-y-2">
+          <p className="text-sm text-foreground">
+            {falhasDoLote.length} documentos falharam. Se a causa já foi resolvida (por exemplo, a chave da
+            IA), dá para colocar todos de volta na fila de uma vez.
+          </p>
+          <Button
+            variant="outline"
+            disabled={reprocessandoLote}
+            onClick={() => setConfirmandoLote(true)}
+            className="h-10 border-border text-xs uppercase tracking-[0.08em]"
+          >
+            {reprocessandoLote ? "Reprocessando..." : `Reprocessar as ${falhasDoLote.length} falhas`}
+          </Button>
+        </div>
+      )}
+
+      <AlertDialog open={confirmandoLote} onOpenChange={(aberto) => !aberto && !reprocessandoLote && setConfirmandoLote(false)}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-foreground">
+              Reprocessar {falhasDoLote.length} documentos que falharam?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
+              Voltam para a fila: {falhasDoLote.map((s) => s.nome).join(", ")}. Documentos já gerados não são
+              refeitos, e o limite de tentativas por pessoa e por evento continua valendo. Confirme antes que a
+              causa da falha foi resolvida: se não foi, eles vão falhar de novo.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-border" disabled={reprocessandoLote}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void reprocessarFalhas();
+              }}
+              disabled={reprocessandoLote}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              Reprocessar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="space-y-3">
         {ORDEM_GRUPOS.filter((g) => contagem[g] > 0).map((g) => {

@@ -682,3 +682,27 @@ export function textoConfirmacao(s: SituacaoPessoa): { titulo: string; corpo: st
     botao: "Gerar agora",
   };
 }
+
+
+// ---------------------------------------------------------------------------
+// O rotulo do evento "concluido" (Rodada 69)
+// ---------------------------------------------------------------------------
+
+export interface ResumoDosDocumentos {
+  comDocumento: number;
+  falharam: number;
+}
+
+/**
+ * O banco fecha o evento ('completed') quando nao sobra job pendente -- falho ou
+ * nao (migration 018). Com 50 falhas por credencial, o painel dizia "Concluido".
+ * Nas palavras do CTO: falha total nao e conclusao, e processamento que exige
+ * intervencao. O status do banco nao muda aqui; muda o que a tela afirma.
+ * Sem leitura dos documentos, a tela nao arrisca: diz so que o processamento
+ * terminou.
+ */
+export function rotuloDoEventoConcluido(r: ResumoDosDocumentos | null): string {
+  if (!r) return "Processamento encerrado";
+  if (r.falharam === 0) return "Concluído";
+  return r.comDocumento === 0 ? "Falha no processamento" : "Processamento parcial";
+}

@@ -31,6 +31,10 @@ import {
 } from "@/components/features/admin/processar-evento";
 import type { BatchSummary } from "@/components/features/admin/classificar-lote";
 import {
+  rotuloDoEventoConcluido,
+  type ResumoDosDocumentos,
+} from "@/components/features/admin/situacao-prognostico";
+import {
   ROTULO_CONTAGEM_DESCONHECIDA,
   ROTULO_SITUACAO_DESCONHECIDA,
   coletaDeEtapasConcluida,
@@ -145,6 +149,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
   // O diálogo de confirmação é controlado: AlertDialogAction não fecha sozinho, e agora a tela
   // FICA aberta depois do lote (para mostrar o resultado), então o diálogo não pode sobrar por cima.
   const [confirmProcessOpen, setConfirmProcessOpen] = useState(false);
+  const [resumoDosDocumentos, setResumoDosDocumentos] = useState<ResumoDosDocumentos | null>(null);
 
   const getParticipantResponses = useCallback(
     (participantId: string) =>
@@ -466,11 +471,17 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
         <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Painel ao vivo</p>
         <div className="flex items-center justify-between gap-4">
           <h1 className="font-display text-2xl text-foreground">{event.name}</h1>
-          <EventQRDialog event={{ event_code: event.event_code }} />
+          <EventQRDialog event={{ event_code: event.event_code, mode: event.mode }} />
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Badge variant={eventStatus === "live" ? "default" : "secondary"} className="text-xs">
-            {eventStatus === "live" ? "🔴 Ao vivo" : eventStatus === "processing" ? "⚙️ Processando" : eventStatus === "completed" ? "Concluído" : eventStatus}
+            {eventStatus === "live"
+              ? "🔴 Ao vivo"
+              : eventStatus === "processing"
+                ? "⚙️ Processando"
+                : eventStatus === "completed"
+                  ? rotuloDoEventoConcluido(resumoDosDocumentos)
+                  : eventStatus}
           </Badge>
           <span className="text-muted-foreground text-sm">
             {participants.length} participante{participants.length !== 1 ? "s" : ""}
@@ -514,6 +525,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
             sinalDeLeitura={sinalDeLeitura}
             aoMudarFila={setFila}
             aoIrParaRevisao={() => router.push(`/admin/events/${event.id}/review`)}
+            aoResumir={setResumoDosDocumentos}
           />
         </div>
       )}
