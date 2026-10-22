@@ -676,7 +676,13 @@ export function FormularioImersivo({ eventCode, eventName, dataDoEvento, etapas:
   );
 
   if (desfecho === "segunda") {
-    return casca(<TelaDeSegundaResposta nome={identificacao.nome} eventName={eventName} />, { cheia: true });
+    // Segundo envio com o mesmo e-mail: a resposta fica guardada ao lado e a
+    // equipe decide no painel. Para quem respondeu, e o mesmo obrigado (pedido
+    // do dono: a explicacao toda era desnecessaria para o participante).
+    return casca(
+      <TelaFinal nome={identificacao.nome} eventName={eventName} dataDoEvento={dataDoEvento} />,
+      { cheia: true },
+    );
   }
   if (desfecho === "ok") {
     return casca(
@@ -1585,30 +1591,7 @@ function TelaFinal({ nome, dataDoEvento }: { nome: string; eventName: string; da
       </blockquote>
 
       <p className="text-[13.5px] leading-relaxed text-white/50">
-        Depois do encontro você recebe um documento feito a partir das suas respostas, só seu. Se
-        precisar corrigir algo, é só responder de novo neste link: o envio anterior não se perde.
-      </p>
-    </MolduraDoAgradecimento>
-  );
-}
-
-function TelaDeSegundaResposta({ nome, eventName }: { nome: string; eventName: string }) {
-  const n = primeiroNome(nome);
-  return (
-    <MolduraDoAgradecimento>
-      <div className="space-y-4">
-        <SeloRecebido texto="Envio guardado" />
-        <h1 tabIndex={-1} className="text-[40px] sm:text-[52px] leading-[1.04] font-semibold tracking-[-0.02em] outline-none">
-          {n ? `Recebemos, ${n}.` : "Recebemos."}
-        </h1>
-        <p className="text-[17px] leading-relaxed text-white/80">
-          Este e-mail já tinha um questionário respondido. Guardamos o que você enviou agora{" "}
-          <span className="text-white font-medium">ao lado</span>, sem apagar nada.
-        </p>
-      </div>
-      <p className="text-[15px] leading-relaxed text-white/65">
-        Antes do encontro, a equipe confere os dois envios e confirma qual é o seu. Você não precisa
-        responder de novo. Se o e-mail tiver algum erro de digitação, avise a equipe do {eventName}.
+        Depois do encontro você recebe um documento feito a partir das suas respostas, só seu.
       </p>
     </MolduraDoAgradecimento>
   );
