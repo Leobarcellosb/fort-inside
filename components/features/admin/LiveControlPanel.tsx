@@ -23,6 +23,7 @@ import { EventQRDialog } from "@/components/features/admin/EventQRDialog";
 import { SituacaoPrognosticos } from "@/components/features/admin/SituacaoPrognosticos";
 import { GuiaDoFacilitadorCard } from "@/components/features/marco-zero/GuiaDoFacilitadorCard";
 import { CadernoDeConducaoCard } from "@/components/features/marco-zero/CadernoDeConducaoCard";
+import { TesteDaIACard } from "@/components/features/admin/TesteDaIACard";
 import type { EstadoDaFila } from "@/components/features/admin/SituacaoPrognosticos";
 import {
   MENSAGEM_FILA_INDISPONIVEL,
@@ -515,6 +516,14 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
       <div className="mb-8">
         <CadernoDeConducaoCard />
       </div>
+
+      {/* TESTE DA IA, logo antes da secao que processa: e o passo que o CTO
+          exigiu antes de colocar os documentos na fila (Rodada 71). */}
+      {mostrarPrognosticos && (
+        <div className="mb-8">
+          <TesteDaIACard />
+        </div>
+      )}
 
       {mostrarPrognosticos && (
         <div className="mb-8">
