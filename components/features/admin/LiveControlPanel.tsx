@@ -30,6 +30,19 @@ import {
   textoDoEnfileiramento,
 } from "@/components/features/admin/processar-evento";
 import type { BatchSummary } from "@/components/features/admin/classificar-lote";
+import {
+  ROTULO_CONTAGEM_DESCONHECIDA,
+  ROTULO_SITUACAO_DESCONHECIDA,
+  coletaDeEtapasConcluida,
+  contagemNaEtapaAtual,
+  leituraDoPainel,
+  pendentesDaEtapaAtual,
+  proximaEtapa,
+  situacaoDaPessoa,
+  textoDeEtapaLiberada,
+  textoDeRespostaRecebida,
+  trilhaDaPessoa,
+} from "@/components/features/admin/etapas-do-painel";
 
 interface Participant {
   id: string;
@@ -58,7 +71,39 @@ interface Props {
   initialLogs: LogRecord[];
 }
 
-const STAGE_LABELS = ["—", "Portão", "Entrada", "Sala Principal", "Cozinha", "Varanda", "Suíte"];
+// ---------------------------------------------------------------------------
+// ISOLAMENTO ESTRUTURAL DO PAINEL AO VIVO
+// ---------------------------------------------------------------------------
+// Este painel nasceu para o Fort Inside (questionario v1), onde o ID da linha de
+// `quiz_stages` e o ORDINAL da etapa sao o mesmo numero (1..6). Ele comparava as
+// duas grandezas sem perceber que sao diferentes, e tinha etapas escritas a mao:
+// `[1,2,3,4,5,6].map(...)`, `currentStage + 1`, e um vetor fixo com os nomes dos
+// ambientes da casa ("Portao, Entrada, Sala Principal, Cozinha, Varanda,
+// Suite") -- nomes que o dono pediu NOMINALMENTE que saissem da versao do Marco
+// Zero e que esta tela continuava exibindo em qualquer evento.
+//
+// Num evento do Marco Zero (v2: ids 101..105, ordinais 1..5) o resultado era uma
+// tela que mentia: oferecia "LIBERAR ETAPA 6" num evento de cinco etapas e
+// mostrava "0/4 na etapa 5" num evento onde todo mundo tinha respondido tudo --
+// porque `r.stage_id === currentStage` nunca batia.
+//
+// DECISAO DA REVISAO, literal: "Painel ao vivo: nao sera utilizado no Marco
+// Zero. Porem, deve ser ISOLADO ESTRUTURALMENTE para impedir acoes incompativeis
+// e numeros falsos."
+//
+// Entao o painel NAO foi reescrito para funcionar na v2 (nao e esta unidade). Ele
+// passou a PERGUNTAR, antes de desenhar, se sabe ler as etapas deste evento --
+// `leituraDoPainel`, em etapas-do-painel.ts. Quando nao sabe:
+//   - nao oferece liberar etapa (operacao que talvez nao exista);
+//   - nao exibe contagem por etapa, trilha de etapas nem "Respondendo";
+//   - DIZ, em texto visivel, que esta tela nao le este evento -- porque numero
+//     que a tela nao sabe calcular NAO E ZERO. Zero afirmaria que ninguem
+//     respondeu; o fato verdadeiro e sobre a tela, nao sobre as pessoas.
+// O que continua sendo exibido e so o que nao depende de etapa: nome do evento,
+// participantes, `completed_at`, a secao Prognosticos e a timeline.
+//
+// Os nomes dos ambientes agora vem de `quiz_stages.ambient_name`, do banco. Nao
+// ha mais copia de nome de casa nenhuma neste arquivo.
 
 // ---------------------------------------------------------------------------
 // Processar = enfileirar
@@ -103,21 +148,32 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
     [responses]
   );
 
-  const completedCurrentStage = participants.filter((p) =>
-    responses.some((r) => r.participant_id === p.id && r.stage_id === currentStage)
-  ).length;
+  // A pergunta que vem antes de qualquer numero por etapa: esta tela sabe ler as
+  // etapas DESTE evento? Deriva das etapas recebidas, nao de `quiz_version`.
+  const leitura = useMemo(() => leituraDoPainel(stages), [stages]);
+  // Os handlers de realtime são registrados uma vez; um ref os mantém lendo a
+  // leitura atual em vez de fechar sobre a do primeiro render.
+  const leituraRef = useRef(leitura);
+  useEffect(() => {
+    leituraRef.current = leitura;
+  }, [leitura]);
 
-  const pendingParticipants =
-    currentStage > 0
-      ? participants.filter(
-          (p) => !responses.some((r) => r.participant_id === p.id && r.stage_id === currentStage)
-        )
-      : [];
+  const contagem = contagemNaEtapaAtual({
+    leitura,
+    etapaAtual: currentStage,
+    participantes: participants,
+    respostas: responses,
+  });
 
-  const isForcedRelease = currentStage > 0 && pendingParticipants.length > 0;
+  const pendingParticipants = pendentesDaEtapaAtual({
+    leitura,
+    etapaAtual: currentStage,
+    participantes: participants,
+    respostas: responses,
+  });
 
-  const allParticipantsDone =
-    participants.length > 0 && participants.every((p) => p.completed_at !== null);
+  const proxima = proximaEtapa(leitura, currentStage);
+  const isForcedRelease = pendingParticipants.length > 0;
 
   // Keep the ref in sync so realtime handlers registered once can still resolve
   // participants that joined after mount.
@@ -152,7 +208,10 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
         },
         ...prev,
       ]);
-      if (p) toast.success(`${p.full_name} completou etapa ${r.stage_id}`);
+      // `r.stage_id` é um ID de linha, não um número de etapa: num evento da v2
+      // isto dizia "completou etapa 103", número que nenhum participante vê em
+      // tela nenhuma. Sem leitura das etapas, o aviso não cita número.
+      if (p) toast.success(textoDeRespostaRecebida(leituraRef.current, p.full_name, r.stage_id));
     };
 
     const channel = supabase
@@ -270,10 +329,19 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
 
   async function releaseNextStage() {
     if (releasing) return;
+    // SEGUNDA TRAVA, de propósito. O botão já não é renderizado quando não há
+    // próxima etapa, mas a próxima etapa não pode ser `currentStage + 1`
+    // calculado aqui: era isso que escrevia `current_stage: 6` num evento de
+    // cinco etapas. Se esta função for alcançada por qualquer outro caminho, ela
+    // recusa em vez de gravar uma etapa inexistente no banco.
+    if (!proxima.oferecer) {
+      toast.error(proxima.texto);
+      return;
+    }
+    const next = proxima.numero;
     setReleasing(true);
     try {
       const supabase = createClient();
-      const next = currentStage + 1;
       type MutResult = { data: unknown; error: { message: string } | null };
       const { error } = await ((supabase.from("events") as unknown as {
         update(v: Record<string, unknown>): { eq(c: string, v: string): Promise<MutResult> };
@@ -292,7 +360,10 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
       }).insert({ event_id: event.id, action: "stage_released", payload: releasePayload }));
 
       setCurrentStage(next);
-      toast.success(`Etapa ${next} liberada — ${STAGE_LABELS[next]}`);
+      // O nome vem da LINHA da etapa, no banco. Antes vinha de um vetor fixo com
+      // os ambientes da casa do Fort Inside, indexado pelo número da etapa.
+      const nome = proxima.etapa.ambiente || proxima.etapa.titulo;
+      toast.success(nome ? `Etapa ${next} liberada — ${nome}` : `Etapa ${next} liberada`);
     } catch {
       toast.error("Erro ao liberar etapa");
     } finally {
@@ -332,9 +403,13 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
     [participants]
   );
   const participantesConcluidos = participants.filter((p) => p.completed_at !== null).length;
-  const mostrarPrognosticos = currentStage === 6 || participants.some((p) => p.completed_at !== null);
+  // `currentStage === 6` era a etapa final escrita a mão. Agora vem da contagem
+  // de etapas da versão do evento; num evento que esta tela não lê, a seção
+  // aparece pelo outro critério (alguém concluiu o quiz), que não usa etapa.
+  const mostrarPrognosticos =
+    coletaDeEtapasConcluida(leitura, currentStage) ||
+    participants.some((p) => p.completed_at !== null);
 
-  const nextStageInfo = stages.find((s) => s.id === currentStage + 1);
   const pendingNames = pendingParticipants.map((p) => p.full_name).join(", ");
 
   return (
@@ -401,32 +476,64 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
         <div className="space-y-4">
           <h2 className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Controle de etapas</h2>
 
-          {/* Stage progress */}
-          <div className="space-y-2">
-            {[1, 2, 3, 4, 5, 6].map((n) => (
-              <div
-                key={n}
-                className={`flex items-center gap-3 px-4 py-3 rounded-md border transition-colors
-                  ${n === currentStage
-                    ? "border-primary bg-primary/10"
-                    : n < currentStage
-                    ? "border-border bg-card opacity-60"
-                    : "border-border/50 opacity-30"
-                  }`}
-              >
-                <span className={`text-xs font-mono w-4 ${n <= currentStage ? "text-primary" : "text-muted-foreground"}`}>
-                  {n <= currentStage ? "✓" : n}
-                </span>
-                <div>
-                  <p className="text-sm text-foreground leading-none">{stages.find((s) => s.id === n)?.title}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{STAGE_LABELS[n]}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+          {/* SEM LEITURA: a tela diz que não sabe, em vez de desenhar seis
+              etapas que não são as do evento. O texto é conteúdo da página --
+              não depende de hover, de toque longo nem de gesto nenhum. */}
+          {!leitura.suportado && (
+            <div
+              role="status"
+              data-testid="painel-sem-leitura-de-etapas"
+              className="space-y-2 rounded-md border border-border bg-muted/30 px-4 py-3 text-xs leading-relaxed text-foreground/80"
+            >
+              <p className="text-sm font-medium text-foreground">
+                Esta tela não sabe ler as etapas deste evento
+              </p>
+              <p>{leitura.texto}</p>
+              <p className="text-muted-foreground">
+                Identificadores de etapa recebidos:{" "}
+                {leitura.idsEncontrados.length > 0 ? leitura.idsEncontrados.join(", ") : "nenhum"}.
+              </p>
+            </div>
+          )}
 
-          {/* Release button */}
-          {currentStage < 6 && (
+          {/* Stage progress — as etapas e os nomes vêm do banco. */}
+          {leitura.suportado && (
+            <div className="space-y-2">
+              {leitura.etapas.map((etapa) => (
+                <div
+                  key={etapa.numero}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-md border transition-colors
+                  ${etapa.numero === currentStage
+                      ? "border-primary bg-primary/10"
+                      : etapa.numero < currentStage
+                      ? "border-border bg-card opacity-60"
+                      : "border-border/50 opacity-30"
+                    }`}
+                >
+                  <span className={`text-xs font-mono w-4 ${etapa.numero <= currentStage ? "text-primary" : "text-muted-foreground"}`}>
+                    {etapa.numero <= currentStage ? "✓" : etapa.numero}
+                  </span>
+                  <div>
+                    <p className="text-sm text-foreground leading-none">{etapa.titulo}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{etapa.ambiente}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Release button. NÃO aparece quando não há uma próxima etapa real:
+              "Liberar etapa 6" num evento de cinco etapas oferecia uma operação
+              que não existe. No lugar, a tela diz por que não se aplica. */}
+          {!proxima.oferecer && !leitura.suportado && (
+            <p
+              data-testid="liberar-nao-se-aplica"
+              className="rounded-md border border-border bg-muted/30 px-4 py-3 text-xs leading-relaxed text-foreground/80"
+            >
+              {proxima.texto}
+            </p>
+          )}
+          {proxima.oferecer && (
             <AlertDialog>
               <AlertDialogTrigger
                 render={
@@ -440,12 +547,12 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
                   />
                 }
               >
-                {releasing ? "Liberando..." : `Liberar etapa ${currentStage + 1}`}
+                {releasing ? "Liberando..." : `Liberar etapa ${proxima.numero}`}
               </AlertDialogTrigger>
               <AlertDialogContent className="bg-card border-border">
                 <AlertDialogHeader>
                   <AlertDialogTitle className="font-display text-foreground">
-                    Liberar etapa {currentStage + 1}?
+                    Liberar etapa {proxima.numero}?
                   </AlertDialogTitle>
                   <AlertDialogDescription className="text-muted-foreground">
                     {isForcedRelease && (
@@ -459,14 +566,12 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
                         <br />
                       </>
                     )}
-                    {nextStageInfo ? (
-                      <>
-                        <strong className="text-foreground">{nextStageInfo.title}</strong>
-                        {" — "}{nextStageInfo.ambient_name}
-                        <br />
-                        Os participantes serão redirecionados automaticamente.
-                      </>
-                    ) : "Isso não pode ser desfeito."}
+                    {/* Título e ambiente da PRÓXIMA etapa, lidos da linha dela
+                        no banco (`proxima.etapa`), não de um vetor fixo. */}
+                    <strong className="text-foreground">{proxima.etapa.titulo}</strong>
+                    {proxima.etapa.ambiente ? ` — ${proxima.etapa.ambiente}` : ""}
+                    <br />
+                    Os participantes serão redirecionados automaticamente.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -483,7 +588,13 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
           )}
 
           {/* Processar = enfileirar. Sem a fila, o botão fica bloqueado e diz o que fazer. */}
-          {currentStage === 6 && eventStatus !== "processing" && eventStatus !== "completed" && (
+          {/* `currentStage === 6` era a etapa final escrita a mão. O critério
+              agora é a contagem de etapas da versão do evento; num evento que
+              esta tela não lê, ela não oferece o processamento -- não porque o
+              evento não possa ser processado, mas porque esta tela não sabe
+              dizer que ele terminou. O caminho que funciona é a seção
+              Prognósticos acima, que não depende de etapa. */}
+          {coletaDeEtapasConcluida(leitura, currentStage) && eventStatus !== "processing" && eventStatus !== "completed" && (
             <div className="space-y-2">
               <AlertDialog open={confirmProcessOpen} onOpenChange={setConfirmProcessOpen}>
                 <AlertDialogTrigger
@@ -569,18 +680,42 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Participantes</h2>
-            {currentStage > 0 && (
+            {/* "0/4 na etapa 5" era um número FALSO: o painel comparava o
+                ordinal da etapa com o id da linha, a comparação nunca batia, e
+                a tela afirmava que ninguém respondeu num evento onde todos
+                responderam. Número que esta tela não sabe calcular não é zero --
+                ela não exibe contagem nenhuma e diz que não sabe. */}
+            {contagem.estado === "conhecida" && (
               <span className="text-xs text-muted-foreground">
-                {completedCurrentStage}/{participants.length} na etapa {currentStage}
+                {contagem.feitos}/{contagem.total} na etapa {contagem.etapa}
+              </span>
+            )}
+            {contagem.estado === "nao_sei" && (
+              <span data-testid="contagem-desconhecida" className="text-xs text-muted-foreground">
+                {ROTULO_CONTAGEM_DESCONHECIDA}
               </span>
             )}
           </div>
 
+          {contagem.estado === "nao_sei" && (
+            <p
+              data-testid="contagem-desconhecida-explicacao"
+              className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs leading-relaxed text-foreground/80"
+            >
+              {contagem.texto}
+            </p>
+          )}
+
           <div className="space-y-2">
             {participants.map((p) => {
               const stagesAnswered = getParticipantResponses(p.id);
-              const completedCurrent = stagesAnswered.includes(currentStage);
-              const allDone = p.completed_at !== null;
+              const trilha = trilhaDaPessoa({ leitura, respondidas: stagesAnswered });
+              const situacao = situacaoDaPessoa({
+                leitura,
+                etapaAtual: currentStage,
+                concluiuQuiz: p.completed_at !== null,
+                respondidas: stagesAnswered,
+              });
 
               return (
                 <div
@@ -592,24 +727,35 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-foreground truncate">{p.full_name}</p>
-                    <div className="flex gap-1 mt-1">
-                      {[1, 2, 3, 4, 5, 6].map((n) => (
-                        <div
-                          key={n}
-                          className={`w-4 h-1 rounded-full ${
-                            stagesAnswered.includes(n) ? "bg-primary" : "bg-border"
-                          }`}
-                        />
-                      ))}
-                    </div>
+                    {/* As barrinhas eram `[1..6]` comparadas com `stage_id`:
+                        num evento da v2 ficavam TODAS apagadas, desenhando
+                        "não respondeu nada" para quem respondeu tudo. Sem
+                        leitura das etapas, não se desenha trilha. */}
+                    {trilha.estado === "conhecida" && (
+                      <div className="flex gap-1 mt-1">
+                        {trilha.marcas.map((m) => (
+                          <div
+                            key={m.numero}
+                            className={`w-4 h-1 rounded-full ${m.respondida ? "bg-primary" : "bg-border"}`}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="shrink-0">
-                    {allDone ? (
+                    {/* "Completo" vem de `participants.completed_at`: é fato do
+                        banco e não depende de etapa, então continua. O resto
+                        dependia da comparação quebrada -- "Respondendo"
+                        (pulsando) aparecia para TODOS num evento da v2,
+                        inclusive para quem já tinha enviado tudo. */}
+                    {situacao.tipo === "completo" ? (
                       <span className="text-xs text-success">✓ Completo</span>
-                    ) : currentStage > 0 && completedCurrent ? (
-                      <span className="text-xs text-primary">✓ Etapa {currentStage}</span>
-                    ) : currentStage > 0 ? (
+                    ) : situacao.tipo === "na_etapa_atual" ? (
+                      <span className="text-xs text-primary">✓ Etapa {situacao.etapa}</span>
+                    ) : situacao.tipo === "respondendo" ? (
                       <span className="text-xs text-muted-foreground animate-pulse">Respondendo</span>
+                    ) : situacao.tipo === "nao_sei" ? (
+                      <span className="text-xs text-muted-foreground italic">{ROTULO_SITUACAO_DESCONHECIDA}</span>
                     ) : null}
                   </div>
                 </div>
@@ -632,9 +778,15 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
 
                 let label = log.action;
                 if (log.action === "response_submitted" && participant) {
-                  label = `${participant.full_name} completou etapa ${(log.payload as { stage_id?: number })?.stage_id ?? ""}`;
+                  // O `stage_id` do registro é um ID de linha; num evento da v2
+                  // isto escrevia "completou etapa 103" na timeline.
+                  const sid = (log.payload as { stage_id?: number })?.stage_id;
+                  label =
+                    sid === undefined
+                      ? `${participant.full_name} enviou uma resposta`
+                      : textoDeRespostaRecebida(leitura, participant.full_name, sid);
                 } else if (log.action === "stage_released") {
-                  label = `Etapa ${(log.payload as { stage_id?: number })?.stage_id ?? ""} liberada`;
+                  label = textoDeEtapaLiberada(leitura, (log.payload as { stage_id?: number })?.stage_id);
                 } else if (log.action === "prognostic_generated" && participant) {
                   label = `Prognóstico gerado — ${participant.full_name}`;
                 } else if (log.action === "pdf_generated" && participant) {

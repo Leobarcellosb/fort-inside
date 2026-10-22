@@ -7,6 +7,7 @@ import type { Prognostic, PrognosticContent } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EditPrognosticDialog } from "./EditPrognosticDialog";
+import { idDaRazao, situacaoDaEntrega } from "./entrega-do-documento";
 
 interface Participant {
   id: string;
@@ -169,6 +170,11 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
           | undefined;
         const trail = content?.trilha_recomendada;
         const previewText = content?.analise_geral?.split(/\n\n+/)[0] ?? "";
+        // A razão de "Entregar" estar desligado é calculada POR DOCUMENTO: o
+        // texto nasce no cartão de quem está bloqueado e desaparece sozinho
+        // quando aquele documento ganha revisão salva. Um aviso só no topo da
+        // tela seria igual em todos os cartões e não diria QUAL documento.
+        const entrega = prog ? situacaoDaEntrega(prog) : null;
 
         return (
           <div
@@ -239,6 +245,22 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
               <p className="text-xs text-muted-foreground italic">Aguardando participante</p>
             )}
 
+            {/* A RAZÃO FICA NO CONTEÚDO DA TELA, não no `title` do botão.
+                `title` só aparece no hover do mouse: em tela de toque não
+                existe hover, e para leitor de tela um botão desabilitado nem
+                entra na ordem de foco, então a descrição nunca é anunciada.
+                Aqui o texto é lido por quem olha, por quem toca e por quem
+                ouve a página, sem gesto nenhum. */}
+            {prog && prog.status !== "delivered" && entrega && !entrega.liberada && (
+              <p
+                id={idDaRazao(prog.id)}
+                data-testid={idDaRazao(prog.id)}
+                className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs leading-relaxed text-foreground/80"
+              >
+                {entrega.texto}
+              </p>
+            )}
+
             <div className="flex gap-2 pt-1">
               {prog && prog.status !== "delivered" && (
                 <Button
@@ -251,7 +273,7 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
                   Editar
                 </Button>
               )}
-              {prog && prog.status !== "delivered" && (
+              {prog && prog.status !== "delivered" && entrega && (
                 // O botão fica DESLIGADO enquanto não há aprovação registrada
                 // (migration 025): o banco recusaria a entrega de qualquer
                 // maneira, e um botão que só pode falhar é pior do que um botão
@@ -259,15 +281,16 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
                 // aqui é só não oferecer o caminho sem saída. O selo em si é
                 // escrito pelo gatilho quando a revisão é salva -- esta tela
                 // não o calcula e não o escreve.
+                //
+                // `aria-describedby` amarra o botão ao parágrafo acima para quem
+                // navega com leitor de tela e chega ao botão por outro caminho
+                // (modo de leitura, lista de elementos). Não SUBSTITUI o texto
+                // visível: ele é o que resolve para o operador de celular.
                 <Button
                   size="sm"
                   onClick={() => deliver(prog.id)}
-                  disabled={saving || !prog.conteudo_aprovado_hash}
-                  title={
-                    prog.conteudo_aprovado_hash
-                      ? undefined
-                      : "Este documento ainda não tem revisão salva. Abra em Editar, revise o texto e salve: a entrega é liberada em seguida."
-                  }
+                  disabled={saving || !entrega.liberada}
+                  aria-describedby={entrega.liberada ? undefined : idDaRazao(prog.id)}
                   className="flex-1 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
                 >
                   Entregar
