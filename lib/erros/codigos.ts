@@ -106,6 +106,54 @@ export const DEFINICOES_DE_ERRO = {
   /** CONFERIDO: o que seria gravado deixou de ser o que a prévia mostrou. Nada foi gravado. */
   IMPORT_PREVIEW_STALE: { status: 400, error: "A prévia não corresponde mais ao que seria gravado" },
 
+  // --- a DECISÃO DO OPERADOR sobre identidade (/api/importacao/reconciliar e
+  //     /api/importacao/revogar)
+  //
+  // Reconciliar à mão é afirmar "esta submissão é desta pessoa" SEM que o sistema
+  // tenha verificado. É poder sobre dado de outra pessoa, então a família tem
+  // códigos próprios: colapsá-los em IMPORT_PLAN_REFUSED diria "não autorizado"
+  // para cinco fatos diferentes, e quatro deles têm correção diferente.
+
+  /** CONFERIDO: a submissão não existe neste evento (id trocado, ou evento errado). */
+  IMPORT_SUBMISSION_NOT_FOUND: { status: 404, error: "Submissão externa não encontrada neste evento" },
+  /** CONFERIDO e NÃO PERMITIDO: a decisão não cabe no estado atual (já reconciliada, nada a revogar, participante de outro evento). */
+  IMPORT_DECISION_REFUSED: { status: 400, error: "A decisão sobre esta submissão não foi autorizada" },
+  /** CONFERIDO: a ficha que o operador viu não é a de agora. Nada foi decidido e nada foi gravado. */
+  IMPORT_DECISION_STALE: { status: 400, error: "A ficha da decisão não corresponde mais ao estado atual" },
+  /** CONFERIDO e NÃO PERMITIDO: o participante escolhido já tem resposta própria -- gravar por cima não teria volta. */
+  IMPORT_TARGET_OCCUPIED: { status: 400, error: "O participante escolhido já tem resposta registrada" },
+  /** O ato FOI registrado no histórico e NÃO foi efetivado: nenhuma resposta gravada. Nem recusa nem ausência. */
+  IMPORT_ACT_NOT_APPLIED: { status: 503, error: "A decisão foi registrada e não foi efetivada" },
+  /**
+   * O BANCO conferiu NA HORA DE GRAVAR, dentro da transação, e recusou: a resposta
+   * canônica daquelas etapas passou a ter outro dono entre a conferência e a
+   * confirmação (migration 024). É a segunda camada do portão, não a primeira:
+   * IMPORT_TARGET_OCCUPIED recusa ANTES de escrever, com o que a tela já mostrava;
+   * este código é o que sobra quando a corrida acontece no meio.
+   */
+  IMPORT_REVALIDATION_REFUSED: { status: 400, error: "A gravação foi recusada na revalidação do banco" },
+
+  // --- Guia de Preparação do Facilitador (/api/marco-zero/guia-facilitador)
+  //
+  // O guia é a contingência do evento que NÃO tem DNA Coletivo publicado. As
+  // três recusas abaixo são os três fatos que o gerador prevê, e são fatos
+  // DIFERENTES: "há um DNA publicado" é uma recusa verificada; "não deu para
+  // saber se há" é indisponibilidade; "os dados não fecham" é terceira coisa.
+  // Colapsá-los diria ao host para fazer a coisa errada -- procurar um DNA que
+  // talvez não exista, ou corrigir dados que talvez estejam certos.
+
+  /** CONFERIDO: há DNA Coletivo válido, revisado e disponibilizado para estes dados. O guia não é alternativa simultânea a ele. */
+  GUIDE_DNA_PUBLISHED: { status: 400, error: "Este evento já tem DNA Coletivo disponibilizado" },
+  /** NÃO deu para saber se há DNA Coletivo disponibilizado. NÃO é "não há": indisponibilidade bloqueia o guia. */
+  GUIDE_DNA_STATE_UNVERIFIABLE: { status: 503, error: "Não foi possível verificar o estado do DNA Coletivo" },
+  /** CONFERIDO: as contagens de participação do evento não fecham entre si. */
+  GUIDE_DATA_INCONSISTENT: { status: 400, error: "Os dados de participação do evento não fecham" },
+
+  /** A consulta oficial de cobertura do Marco Zero não respondeu. Sem ela não há denominador nem veredito de volume. */
+  COVERAGE_UNAVAILABLE: { status: 503, error: "A cobertura oficial do evento não respondeu" },
+  /** Verificado: o banco não tem fotografia de convite utilizável, então o total de convidados não é conhecido. */
+  INVITE_COUNT_UNDETERMINED: { status: 503, error: "O total de convidados do evento não está determinado" },
+
   // --- o que ninguém previu -------------------------------------------------
   INTERNAL_ERROR: { status: 500, error: "Erro interno" },
 } as const satisfies Record<string, { status: number; error: string }>;
@@ -159,6 +207,29 @@ export interface DetalhesDeErro {
   /** Versão do questionário envolvida na divergência. */
   versao_declarada?: number;
   versao_do_evento?: number;
+
+  // --- decisão do operador sobre identidade ---------------------------------
+  // Tudo aqui é o que a própria tela do operador já mostra: o estado da submissão
+  // que ele escolheu e por que o alvo está ocupado. Nunca texto interno de banco,
+  // nunca e-mail de terceiro (o e-mail aparece na FICHA, não na mensagem de erro).
+
+  /** Estado em que a submissão está AGORA, quando é ele que impede a decisão. */
+  estado_da_submissao?: "importavel" | "incompativel" | "pendente" | "conflito" | "revogada";
+  /** Por que o participante escolhido não pode receber esta submissão. */
+  ocupacao?: "respostas_canonicas" | "submissao_externa_ativa" | "ambos";
+  /** Quantas respostas o participante escolhido já tem. Número, não lista. */
+  respostas_existentes?: number;
+  /** Qual ato o operador tentou: reconciliar ou revogar. */
+  ato?: "reconciliar" | "revogar";
+  /** O código com que a revalidação do banco (migration 024) recusou a gravação. */
+  revalidacao?:
+    | "resposta_do_aplicativo"
+    | "outra_submissao_externa"
+    | "outra_submissao_ativa_do_participante"
+    | "duplicidade_no_lote"
+    | "participante_inexistente"
+    | "participante_fora_do_evento"
+    | "email_do_participante_mudou";
 }
 
 /** Corpo de toda resposta de erro das rotas de processamento. */

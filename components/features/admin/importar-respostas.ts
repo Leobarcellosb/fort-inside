@@ -91,6 +91,10 @@ export type AcaoSugerida =
   | "corrigir_planilha"
   | "corrigir_coleta"
   | "refazer_previa"
+  /** Recarregar a MESA DE DECISOES e confirmar a partir da ficha que ela mostra. */
+  | "refazer_ficha"
+  /** Escolher outro participante (ou revogar a reconciliacao que ocupa o alvo). */
+  | "escolher_outro_alvo"
   | "entrar_de_novo"
   | "aguardar"
   | "instalar_no_banco"
@@ -114,11 +118,25 @@ export const DESFECHO_DO_CODIGO: Record<CodigoDeErro, { classe: ClasseDoDesfecho
   IMPORT_SPREADSHEET_INVALID: { classe: "recusado", acao: "corrigir_planilha" },
   IMPORT_PLAN_REFUSED: { classe: "recusado", acao: "corrigir_coleta" },
   IMPORT_PREVIEW_STALE: { classe: "recusado", acao: "refazer_previa" },
+  // A decisão do operador sobre identidade: quatro recusas conferidas, cada uma
+  // com a sua correção, e uma que NÃO é recusa (o ato ficou registrado e não
+  // pegou -- esperar e confirmar outra vez é o certo).
+  IMPORT_SUBMISSION_NOT_FOUND: { classe: "recusado", acao: "refazer_ficha" },
+  IMPORT_DECISION_REFUSED: { classe: "recusado", acao: "refazer_ficha" },
+  IMPORT_DECISION_STALE: { classe: "recusado", acao: "refazer_ficha" },
+  IMPORT_TARGET_OCCUPIED: { classe: "recusado", acao: "escolher_outro_alvo" },
+  // O banco recusou na hora de gravar (024). Conferido e nao permitido -- e o
+  // caminho de correcao e a ficha nova, nao a espera.
+  IMPORT_REVALIDATION_REFUSED: { classe: "recusado", acao: "refazer_ficha" },
 
   // --- nao consegui verificar ----------------------------------------------
   // AUTH_UNAVAILABLE e o caso que nomeia esta classe: NUNCA "sem permissao".
   AUTH_UNAVAILABLE: { classe: "nao_verificado", acao: "aguardar" },
   IMPORT_UNAVAILABLE: { classe: "nao_verificado", acao: "aguardar" },
+  // O ato ficou REGISTRADO e nao foi efetivado. Nao e recusa (nao ha o que
+  // corrigir) e nao e ausencia de recurso (ele esta instalado): e "nao deu para
+  // concluir", e a tela diz exatamente isso, sem inventar causa.
+  IMPORT_ACT_NOT_APPLIED: { classe: "nao_verificado", acao: "aguardar" },
   IMPORT_MANIFEST_UNVERIFIABLE: { classe: "nao_verificado", acao: "corrigir_coleta" },
   QUIZ_STAGES_UNAVAILABLE: { classe: "nao_verificado", acao: "aguardar" },
   PARTICIPANTS_UNAVAILABLE: { classe: "nao_verificado", acao: "aguardar" },
@@ -146,12 +164,22 @@ export const DESFECHO_DO_CODIGO: Record<CodigoDeErro, { classe: ClasseDoDesfecho
   COLLECTION_OPEN: { classe: "recusado", acao: "aguardar" },
   NO_COMPLETED_PARTICIPANTS: { classe: "recusado", acao: "refazer_previa" },
 
+  // --- Guia de Preparação do Facilitador -----------------------------------
+  // Também não chegam a esta borda. Classificados pelo FATO que são: duas
+  // recusas conferidas e uma indisponibilidade -- "não deu para saber se há DNA
+  // disponibilizado" nunca é "conferi e não permiti".
+  GUIDE_DNA_PUBLISHED: { classe: "recusado", acao: "falar_com_equipe" },
+  GUIDE_DATA_INCONSISTENT: { classe: "recusado", acao: "falar_com_equipe" },
+  GUIDE_DNA_STATE_UNVERIFIABLE: { classe: "nao_verificado", acao: "aguardar" },
+  COVERAGE_UNAVAILABLE: { classe: "nao_verificado", acao: "aguardar" },
+  INVITE_COUNT_UNDETERMINED: { classe: "nao_verificado", acao: "falar_com_equipe" },
+
   INTERNAL_ERROR: { classe: "inesperado", acao: "falar_com_equipe" },
 };
 
 const ID_VALIDO = /^[A-Za-z0-9_-]{4,64}$/;
 
-function ocorrenciaDaResposta(res: Response, corpo: Record<string, unknown>): string | null {
+export function ocorrenciaDaResposta(res: Response, corpo: Record<string, unknown>): string | null {
   if (typeof corpo.ocorrencia === "string" && ID_VALIDO.test(corpo.ocorrencia)) return corpo.ocorrencia;
   for (const h of ["x-request-id", "x-vercel-id"]) {
     const v = res.headers?.get?.(h);
@@ -160,15 +188,15 @@ function ocorrenciaDaResposta(res: Response, corpo: Record<string, unknown>): st
   return null;
 }
 
-function ocorrenciaLocal(): string {
+export function ocorrenciaLocal(): string {
   return `local-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-const registrarNoConsole: Registrador = (r) => {
+export const registrarNoConsole: Registrador = (r) => {
   console.error("[importar-respostas] ocorrência", r);
 };
 
-function comOcorrencia(mensagem: string, ocorrencia: string | null): string {
+export function comOcorrencia(mensagem: string, ocorrencia: string | null): string {
   return ocorrencia ? `${mensagem} Ocorrência: ${ocorrencia}.` : mensagem;
 }
 
@@ -188,11 +216,28 @@ function detalhesDe(corpo: Record<string, unknown>): DetalhesDeErro | undefined 
     linha: num(o.linha),
     versao_declarada: num(o.versao_declarada),
     versao_do_evento: num(o.versao_do_evento),
+    // Os campos da DECISAO DO OPERADOR. Sem eles, a mensagem de
+    // IMPORT_DECISION_REFUSED cairia sempre no texto generico e o operador leria
+    // "nao autorizado" onde o servidor disse "nao ha reconciliacao a revogar".
+    estado_da_submissao: texto(o.estado_da_submissao) as DetalhesDeErro["estado_da_submissao"],
+    ocupacao: texto(o.ocupacao) as DetalhesDeErro["ocupacao"],
+    respostas_existentes: num(o.respostas_existentes),
+    ato: texto(o.ato) as DetalhesDeErro["ato"],
+    revalidacao: texto(o.revalidacao) as DetalhesDeErro["revalidacao"],
   };
 }
 
-/** Transforma a resposta de erro de qualquer uma das duas rotas num desfecho. */
-function desfechoDeErro(res: Response, corpo: Record<string, unknown>, registrar: Registrador): Desfecho {
+/**
+ * Transforma a resposta de erro de qualquer uma das rotas de importacao num
+ * desfecho.
+ *
+ * EXPORTADA de proposito: a tela da DECISAO DO OPERADOR
+ * (components/features/admin/decidir-identidade.ts) classifica os erros dela com
+ * ESTA funcao, e nao com uma copia. Duas copias da regra "qual dos tres fatos e
+ * este" divergem, e a divergencia e exatamente o defeito que este projeto ja
+ * pagou caro: "nao consegui verificar" aparecendo como "voce nao tem permissao".
+ */
+export function desfechoDeErro(res: Response, corpo: Record<string, unknown>, registrar: Registrador): Desfecho {
   const ocorrenciaServidor = ocorrenciaDaResposta(res, corpo);
 
   // Sem um codigo DO VOCABULARIO nao ha como saber o que aconteceu. Inventar uma
@@ -235,7 +280,8 @@ function desfechoDeErro(res: Response, corpo: Record<string, unknown>, registrar
   };
 }
 
-async function corpoDe(res: Response): Promise<Record<string, unknown>> {
+/** O corpo JSON da resposta, ou `{}`. Exportada para a tela da decisao. */
+export async function corpoDe(res: Response): Promise<Record<string, unknown>> {
   try {
     const lido = await res.json();
     if (lido && typeof lido === "object" && !Array.isArray(lido)) return lido as Record<string, unknown>;

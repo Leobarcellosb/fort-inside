@@ -21,6 +21,7 @@
 // mostrada como DADO INCOMPATIVEL, com o que a pessoa respondeu e o motivo, e a
 // cobertura de uma base vazia e "—", nunca 0%.
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +49,8 @@ const ROTULO_DA_ACAO: Record<string, string> = {
   corrigir_planilha: "Corrija a planilha e confira de novo.",
   corrigir_coleta: "Corrija a coleta (o formulário ou a versão) e confira de novo.",
   refazer_previa: "Gere a prévia outra vez.",
+  refazer_ficha: "Recarregue a mesa de decisões e confirme a partir da ficha que ela mostra.",
+  escolher_outro_alvo: "Escolha outro participante, ou revogue antes a reconciliação que ocupa esse participante.",
   entrar_de_novo: "Entre de novo como administrador.",
   aguardar: "Aguarde alguns instantes e tente de novo.",
   instalar_no_banco: "Avise a equipe técnica: falta instalar a atualização do banco.",
@@ -396,7 +399,7 @@ export function ImportarRespostasExternas({ eventId }: Props) {
       )}
 
       {/* ------------------------------------------------ 4. a previa */}
-      {previa && <BlocoDaPrevia previa={previa} gravado={gravado} />}
+      {previa && <BlocoDaPrevia previa={previa} gravado={gravado} eventId={eventId} />}
 
       {previa && gravado === null && (
         <section className="space-y-3 rounded-md border border-border p-4">
@@ -457,7 +460,15 @@ export function ImportarRespostasExternas({ eventId }: Props) {
 // A PREVIA, desenhada
 // ===========================================================================
 
-function BlocoDaPrevia({ previa, gravado }: { previa: Previa; gravado: ResumoGravado | null }) {
+function BlocoDaPrevia({
+  previa,
+  gravado,
+  eventId,
+}: {
+  previa: Previa;
+  gravado: ResumoGravado | null;
+  eventId: string;
+}) {
   const estados = contarEstados(previa);
   const retidas = previa.retidas_por_identidade;
 
@@ -598,6 +609,17 @@ function BlocoDaPrevia({ previa, gravado }: { previa: Previa; gravado: ResumoGra
               Nenhum participante é criado a partir de uma importação, e nenhuma destas submissões é descartada:
               as respostas ficam guardadas como foram coletadas, só não viram resposta canônica de ninguém até
               alguém decidir de quem são.
+            </p>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Essa decisão é tomada na{" "}
+              <Link
+                href={`/admin/events/${eventId}/importacao/decisoes`}
+                className="font-medium text-foreground underline underline-offset-4"
+              >
+                mesa de decisões de identidade
+              </Link>
+              , onde cada submissão mostra o que está sendo afirmado e o que não bate antes de você
+              confirmar — e onde uma decisão já tomada pode ser revogada.
             </p>
           </div>
           <ul className="space-y-2">

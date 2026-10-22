@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { EventQRDialog } from "@/components/features/admin/EventQRDialog";
 import { SituacaoPrognosticos } from "@/components/features/admin/SituacaoPrognosticos";
+import { GuiaDoFacilitadorCard } from "@/components/features/marco-zero/GuiaDoFacilitadorCard";
 import type { EstadoDaFila } from "@/components/features/admin/SituacaoPrognosticos";
 import {
   MENSAGEM_FILA_INDISPONIVEL,
@@ -361,6 +362,14 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
             Importar respostas coletadas fora do app
           </button>
         </div>
+      </div>
+
+      {/* O acesso do host ao Guia de Preparacao do Facilitador. Fica aqui, e
+          nao atras de um estado do evento, porque o guia e material de
+          PREPARACAO: quem conduz precisa dele antes do dia, e o proprio gerador
+          recusa o guia quando o evento tem DNA Coletivo disponibilizado. */}
+      <div className="mb-8">
+        <GuiaDoFacilitadorCard eventId={event.id} />
       </div>
 
       {mostrarPrognosticos && (

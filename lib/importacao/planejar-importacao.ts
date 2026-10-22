@@ -53,6 +53,7 @@ import {
 } from "./manifesto-questionario";
 import { mapearSubmissao, type ItemMapeado, type SubmissaoMapeada } from "./mapear-resposta";
 import {
+  aplicarDecisaoDoOperador,
   reconciliarLote,
   type ParticipanteDoEvento,
   type ResultadoDeIdentidade,
@@ -421,6 +422,130 @@ function montarSubmissao(args: {
     proveniencia,
     contagens,
   };
+}
+
+// ===========================================================================
+// A DECISAO DO OPERADOR, planejada pelo MESMO caminho da importacao
+// ===========================================================================
+// Por que isto esta NESTE arquivo, e nao num novo: `montarSubmissao` e o unico
+// lugar que sabe o que uma submissao reconciliada grava -- quais etapas, com
+// quais respostas, com qual aptidao e com qual bloqueio. Uma segunda copia disso
+// num arquivo de "reconciliacao manual" seria uma segunda definicao de "o que e
+// gravado", e duas definicoes divergem. Quando divergissem, a tela afirmaria uma
+// coisa e o banco gravaria outra -- exatamente o que a borda da importacao existe
+// para impedir.
+//
+// O QUE ESTA FUNCAO NAO FAZ: nao escolhe participante, nao afrouxa portao nenhum e
+// nao inventa verificacao. Ela roda os MESMOS cinco portoes (operador, origem,
+// versao, manifesto, correspondencia), pega a identidade que a reconciliacao
+// automatica produziu -- que sera `pendente` ou `conflito`, senao nao haveria o
+// que decidir -- e passa por `aplicarDecisaoDoOperador`, que exige participante,
+// operador NOMEADO e justificativa. O resultado carrega
+// `via: "decisao_do_operador"`, e e isso que a proveniencia grava: ninguem vai
+// ler depois que o e-mail foi verificado, porque nao foi.
+
+export type CodigoDeRecusaDaDecisao =
+  | CodigoDeRecusaDoPlano
+  /** A submissao nomeada nao esta no lote planejado. */
+  | "SUBMISSAO_FORA_DO_LOTE"
+  /** `aplicarDecisaoDoOperador` recusou: ja reconciliada, sem alvo, sem operador, sem justificativa. */
+  | "DECISAO_RECUSADA";
+
+export type PlanoDeDecisao =
+  | {
+      ok: true;
+      plano: Extract<PlanoDeImportacao, { ok: true }>;
+      /** A identidade ANTES da decisao: e ela que diz o que NAO batia. */
+      anterior: ResultadoDeIdentidade;
+      /** A submissao como ficou depois da decisao. */
+      decidida: SubmissaoPlanejada;
+    }
+  | { ok: false; codigo: CodigoDeRecusaDaDecisao; motivo: string };
+
+/**
+ * Planeja UMA decisao do operador sobre a identidade de UMA submissao.
+ *
+ * `entrada` e a mesma coisa que a importacao recebe (inclusive os participantes
+ * do evento, para que a identidade anterior -- e portanto "o que nao bate" --
+ * seja a de verdade, nao uma simplificacao). `decisao.submissao_id` nomeia a
+ * submissao do lote, e `decisao.participant_id` e a afirmacao do operador.
+ *
+ * Pura: nao escreve nada. Quem grava e `importacao_externa_aplicar`, a partir do
+ * plano que sai daqui -- o mesmo caminho e a mesma funcao de banco da importacao.
+ */
+export function planejarDecisaoDoOperador(
+  entrada: EntradaDaImportacao,
+  decisao: { submissao_id: string; participant_id: string; justificativa: string },
+  /**
+   * A identidade ANTERIOR, quando quem chama ja a tem.
+   *
+   * Existe porque a reconciliacao automatica e DE LOTE: "duas submissoes da mesma
+   * pessoa" so aparece olhando o lote inteiro. Quem decide uma pendencia meses
+   * depois nao tem mais o lote -- tem a linha de `external_submissions`, onde o
+   * veredito do lote FICOU GRAVADO. Recalcular a identidade sobre uma submissao
+   * isolada daria outra resposta: um CONFLITO de duas submissoes do mesmo e-mail,
+   * visto sozinho, pareceria uma reconciliacao limpa, e a decisao do operador
+   * seria recusada por "ja esta reconciliada" com quem o conflito justamente
+   * impediu de reconciliar.
+   *
+   * Entao o estado registrado manda. Sem este argumento, vale o do lote recebido.
+   */
+  anterior?: ResultadoDeIdentidade,
+): PlanoDeDecisao {
+  const base = planejarImportacao(entrada);
+  if (!base.ok) return { ok: false, codigo: base.codigo, motivo: base.motivo };
+
+  const indice = base.submissoes.findIndex((s) => s.submissao_id === decisao.submissao_id);
+  if (indice < 0) {
+    return {
+      ok: false,
+      codigo: "SUBMISSAO_FORA_DO_LOTE",
+      motivo: `a submissao ${decisao.submissao_id} nao esta no lote planejado`,
+    };
+  }
+  const submissao = entrada.submissoes.find((s) => s.submissao_id === decisao.submissao_id);
+  if (submissao === undefined) {
+    return {
+      ok: false,
+      codigo: "SUBMISSAO_FORA_DO_LOTE",
+      motivo: `a submissao ${decisao.submissao_id} nao esta no lote planejado`,
+    };
+  }
+
+  const identidadeAnterior = anterior ?? base.submissoes[indice].identidade;
+  const decidida = aplicarDecisaoDoOperador(identidadeAnterior, {
+    participant_id: decisao.participant_id,
+    operador_id: entrada.operador.id,
+    justificativa: decisao.justificativa,
+  });
+  if (!decidida.ok) {
+    return { ok: false, codigo: "DECISAO_RECUSADA", motivo: decidida.motivo };
+  }
+
+  // Refeita pelo MESMO montador da importacao. `mapearSubmissao` roda de novo
+  // sobre as mesmas respostas: e funcao pura, da o mesmo resultado, e o custo de
+  // repeti-la e menor que o de ter dois caminhos que montam a mesma linha.
+  const refeita = montarSubmissao({
+    submissao,
+    identidade: decidida.resultado,
+    mapeada: mapearSubmissao(entrada.manifesto, submissao.respostas),
+    manifesto: entrada.manifesto,
+    origem: entrada.origem,
+    operador: entrada.operador,
+  });
+
+  const submissoes = [...base.submissoes];
+  submissoes[indice] = refeita;
+  const resumo: ResumoDaImportacao = {
+    submissoes: submissoes.length,
+    importaveis: submissoes.filter((p) => p.estado === "importavel").length,
+    incompativeis: submissoes.filter((p) => p.estado === "incompativel").length,
+    pendentes: submissoes.filter((p) => p.estado === "pendente").length,
+    conflitos: submissoes.filter((p) => p.estado === "conflito").length,
+    itens_incompativeis: submissoes.reduce((a, p) => a + p.contagens.incompativeis, 0),
+  };
+
+  return { ok: true, plano: { ...base, submissoes, resumo }, anterior: identidadeAnterior, decidida: refeita };
 }
 
 /**

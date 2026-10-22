@@ -15,6 +15,7 @@
     "db:security:isolamento:test": "bash scripts/test-db-security-isolamento.sh",
     "test:seguranca-http": "bash scripts/test-seguranca-http.sh",
     "test:seguranca-http:sensibilidade": "bash scripts/test-seguranca-http-sensibilidade.sh",
+    "ensaio:cobertura": "bash scripts/ensaio-cobertura-vs-scoring.sh",
     "db:drift": "bash scripts/guard-drift.sh",
     "db:drift:test": "bash scripts/test-guard-drift.sh"
   },

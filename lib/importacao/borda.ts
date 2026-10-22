@@ -821,6 +821,24 @@ export interface ClienteDeAplicacao {
   rpc(nome: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: ErroRpcCru | null }>;
 }
 
+/**
+ * Uma submissao que o PLANO autorizava e que o BANCO recusou na revalidacao
+ * DENTRO da transacao (migration 024): entre a previa e a gravacao, a resposta
+ * canonica daquelas etapas passou a ter outro dono -- a pessoa respondeu pelo
+ * aplicativo, ou outra coleta chegou primeiro.
+ *
+ * Lida aqui, e nao descartada, porque "gravei 48 de 50" sem dizer QUAIS duas e
+ * por que e a mesma omissao silenciosa que este projeto existe para nao repetir.
+ */
+export interface RecusaNaRevalidacao {
+  submissao_id: string;
+  /** O codigo da 024: `resposta_do_aplicativo`, `outra_submissao_externa`, ... */
+  codigo: string;
+  /** Em que estado a submissao FICOU retida: `conflito` ou `pendente`. */
+  estado: string;
+  etapas_nao_gravadas: number;
+}
+
 export interface ResumoDaGravacao {
   evento_id: string;
   formulario_id: string;
@@ -829,6 +847,8 @@ export interface ResumoDaGravacao {
   linhas_de_resposta_gravadas: number;
   itens_registrados: number;
   importado_por: string;
+  /** Vazio e uma AFIRMACAO ("nada foi recusado"), nao uma omissao. */
+  recusadas_na_revalidacao: RecusaNaRevalidacao[];
 }
 
 export type Aplicacao =
@@ -897,6 +917,17 @@ export async function aplicarPlano(
       linhas_de_resposta_gravadas: Number(d.linhas_de_resposta_gravadas ?? 0),
       itens_registrados: Number(d.itens_registrados ?? 0),
       importado_por: String(d.importado_por ?? ""),
+      // A lista da 024. Ausente em banco que ainda nao a tem: ausencia da lista e
+      // lista vazia, e e assim que ela nao inventa recusa onde a funcao antiga
+      // nao recusava nada.
+      recusadas_na_revalidacao: Array.isArray(d.recusadas_na_revalidacao)
+        ? (d.recusadas_na_revalidacao as unknown as Record<string, unknown>[]).map((r) => ({
+            submissao_id: String(r.submissao_id ?? ""),
+            codigo: String(r.codigo ?? ""),
+            estado: String(r.estado ?? ""),
+            etapas_nao_gravadas: Number(r.etapas_nao_gravadas ?? 0),
+          }))
+        : [],
     },
   };
 }

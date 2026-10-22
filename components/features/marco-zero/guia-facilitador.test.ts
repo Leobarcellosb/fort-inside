@@ -25,10 +25,12 @@ import {
   montarGuia,
   numerosDoTexto,
   projetarParticipacao,
+  publicacaoDoDnaDoRegistro,
   textoDoGuia,
   textosDoBloco,
   textosDoGuia,
   type GuiaDoFacilitador,
+  type PublicacaoDoDna,
   type ResultadoGuia,
 } from "./guia-facilitador-modelo";
 
@@ -37,6 +39,20 @@ import {
 // ---------------------------------------------------------------------------
 
 const META = { nomeEvento: "Marco Zero | Geração Preparada", dataEvento: "2026-10-24" };
+
+/**
+ * O veredito de publicacao do DNA, VERIFICADO e negativo: a situacao normal
+ * destes testes (nenhum DNA foi disponibilizado). Nao e valor-padrao do modulo
+ * -- `EntradaGuia.publicacaoDoDna` e obrigatorio, e cada teste que quer outro
+ * estado o escreve na mao.
+ */
+const NAO_PUBLICADO = {
+  publicacaoDoDna: { estado: "verificado", publicado: false },
+} as const satisfies { publicacaoDoDna: PublicacaoDoDna };
+
+const PUBLICADO = {
+  publicacaoDoDna: { estado: "verificado", publicado: true },
+} as const satisfies { publicacaoDoDna: PublicacaoDoDna };
 
 /** Grupo de teste: `completos` com leitura completa, mais as pendencias pedidas. */
 function entradaDna(
@@ -111,7 +127,7 @@ describe("grupo de 12 sem DNA Coletivo", () => {
   });
 
   it("recebe o guia, com o cabecalho que o CTO escreveu e as cinco secoes", () => {
-    const g = guia(gerarGuiaDoFacilitador({ dna: grupoDeDoze() }));
+    const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: grupoDeDoze() }));
     expect(g.cabecalho.restricao).toBe("MARCO ZERO — MATERIAL RESTRITO AO FACILITADOR");
     expect(g.cabecalho.titulo).toBe("Guia de Preparação do Facilitador");
     expect(g.motivoSemDna).toBe("volume_insuficiente");
@@ -125,7 +141,7 @@ describe("grupo de 12 sem DNA Coletivo", () => {
   });
 
   it("e util: traz sugestao para cada etapa do dia e perguntas em forma de convite", () => {
-    const g = guia(gerarGuiaDoFacilitador({ dna: grupoDeDoze() }));
+    const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: grupoDeDoze() }));
     const prep = textosDoBloco(g.preparacao).join("\n");
     for (const marca of [
       "Abertura, sem celular e sem relógio",
@@ -152,8 +168,8 @@ describe("grupo de 12 sem DNA Coletivo", () => {
   });
 
   it("e congelado e tem hash estavel (funcao pura, sem relogio)", () => {
-    const r1 = gerarGuiaDoFacilitador({ dna: grupoDeDoze() });
-    const r2 = gerarGuiaDoFacilitador({ dna: grupoDeDoze() });
+    const r1 = gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: grupoDeDoze() });
+    const r2 = gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: grupoDeDoze() });
     if (r1.tipo !== "guia_do_facilitador" || r2.tipo !== "guia_do_facilitador") {
       throw new Error("esperava guia nas duas geracoes");
     }
@@ -165,7 +181,7 @@ describe("grupo de 12 sem DNA Coletivo", () => {
 
   it("EVIDENCIA: grava o guia do grupo de 12 e o relatorio do DNA ao lado", () => {
     const e = grupoDeDoze();
-    const g = guia(gerarGuiaDoFacilitador({ dna: e }));
+    const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: e }));
     const dna = gerarDnaColetivo(e);
     gravar("guia-12.txt", textoDoGuia(g));
     if (dna.tipo === "relatorio_operacional") {
@@ -192,7 +208,7 @@ describe("o mesmo varredor do DNA", () => {
   ];
 
   it.each(grupos)("%s: zero recusa do varredor coletivo", (_nome, montar) => {
-    const g = guia(gerarGuiaDoFacilitador({ dna: montar() }));
+    const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: montar() }));
     const textos = textosDoGuia(g);
     expect(validarTextosColetivos(textos)).toEqual([]);
     expect(validarTextosDeSaida(textos)).toEqual([]);
@@ -207,7 +223,7 @@ describe("o mesmo varredor do DNA", () => {
     );
     expect(validarTextoColetivo(permitido)).toEqual([]);
     // E a forma permitida e exatamente a que esta no guia.
-    const g = guia(gerarGuiaDoFacilitador({ dna: grupoDeDoze() }));
+    const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: grupoDeDoze() }));
     expect(textosDoBloco(g.preparacao).join("\n")).toContain(permitido);
   });
 
@@ -227,7 +243,7 @@ describe("o mesmo varredor do DNA", () => {
   it("CONTROLE POSITIVO: identificador de participante no texto e recusado", () => {
     const e = grupoDeDoze();
     const alvo = e.participantes[0];
-    const g = guia(gerarGuiaDoFacilitador({ dna: e }));
+    const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: e }));
     const textos = textosDoGuia(g);
     // Nome e id nao aparecem no guia...
     for (const t of textos) {
@@ -236,7 +252,7 @@ describe("o mesmo varredor do DNA", () => {
     }
     // ...e o id liberado fica FORA do texto, em campo estruturado.
     const r = guia(
-      gerarGuiaDoFacilitador({
+      gerarGuiaDoFacilitador({ ...NAO_PUBLICADO,
         dna: e,
         autorizacoes: [{ participanteId: alvo.id, autorizado: true }],
       }),
@@ -252,7 +268,7 @@ describe("o mesmo varredor do DNA", () => {
 
 describe("trava anti-contorno", () => {
   it("camada 1 (estrutural): o canal do guia so admite as oito contagens de participacao", () => {
-    const { participacao } = projetarParticipacao({ dna: grupoDeDoze() });
+    const { participacao } = projetarParticipacao({ ...NAO_PUBLICADO, dna: grupoDeDoze() });
     expect(Object.keys(participacao).sort()).toEqual([...CAMPOS_DE_PARTICIPACAO].sort());
     // Nada de conteudo de resposta no canal: os nomes proibidos nao existem.
     for (const proibido of [
@@ -291,7 +307,7 @@ describe("trava anti-contorno", () => {
       .filter((n) => n > 0 && n < PISO_DE_EXIBICAO);
     expect(suprimidas).toEqual([3, 4]); // o fato existe e e pequeno: nao pode sair
 
-    const g = guia(gerarGuiaDoFacilitador({ dna: e }));
+    const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: e }));
     const textos = textosDoGuia(g);
 
     // (a) o rotulo da dimensao nao aparece em lugar nenhum do guia;
@@ -334,7 +350,7 @@ describe("trava anti-contorno", () => {
     expect(() => exigirGuiaSemRetratoColetivo([frase])).toThrow(/rotulo_do_instrumento/);
 
     // E o guia inteiro, com a frase injetada, tambem e recusado.
-    const g = guia(gerarGuiaDoFacilitador({ dna: grupoDeDoze() }));
+    const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: grupoDeDoze() }));
     const adulterado: GuiaDoFacilitador = {
       ...g,
       limites: {
@@ -352,12 +368,12 @@ describe("trava anti-contorno", () => {
     expect(encontrarRetratoColetivo("Metade escolheu a segunda.").map((r) => r.motivo)).toContain("quantificador_solto");
     expect(encontrarRetratoColetivo("O eixo mais pontuado foi o primeiro.").map((r) => r.motivo)).toContain("dimensao_nomeada");
     // E o guia real passa limpo.
-    const g = guia(gerarGuiaDoFacilitador({ dna: grupoDeDoze() }));
+    const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: grupoDeDoze() }));
     for (const t of textosDoGuia(g)) expect(encontrarRetratoColetivo(t)).toEqual([]);
   });
 
   it("CONTROLE POSITIVO: numero nao verificado na secao de participacao e recusado", () => {
-    const g = guia(gerarGuiaDoFacilitador({ dna: grupoDeDoze() }));
+    const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: grupoDeDoze() }));
     expect(() => exigirNumerosVerificados(g)).not.toThrow();
     const adulterado: GuiaDoFacilitador = {
       ...g,
@@ -376,8 +392,8 @@ describe("trava anti-contorno", () => {
     // Mesmas populacoes, conteudo de resposta oposto.
     const a = entradaDna(12, { convidados: 12, especie: { t: "sem_destaque" } });
     const b = entradaDna(12, { convidados: 12, especie: { t: "dois", eixo: "integridade" } });
-    const ga = guia(gerarGuiaDoFacilitador({ dna: a }));
-    const gb = guia(gerarGuiaDoFacilitador({ dna: b }));
+    const ga = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: a }));
+    const gb = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: b }));
     // O conteudo das respostas e de fato oposto...
     const agA = agregar(a.convidados, a.participantes);
     const agB = agregar(b.convidados, b.participantes);
@@ -389,8 +405,8 @@ describe("trava anti-contorno", () => {
   });
 
   it("grupos com populacoes diferentes: muda a participacao, nao a preparacao", () => {
-    const g1 = guia(gerarGuiaDoFacilitador({ dna: grupoDeDoze() }));
-    const g2 = guia(gerarGuiaDoFacilitador({ dna: entradaDna(9, { parciais: 2, convidados: 20 }) }));
+    const g1 = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: grupoDeDoze() }));
+    const g2 = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: entradaDna(9, { parciais: 2, convidados: 20 }) }));
     expect(textosDoBloco(g1.participacao)).not.toEqual(textosDoBloco(g2.participacao));
     expect(textosDoBloco(g1.preparacao)).toEqual(textosDoBloco(g2.preparacao));
     expect(textosDoBloco(g1.leituras)).toEqual(textosDoBloco(g2.leituras));
@@ -418,7 +434,7 @@ describe("tres populacoes", () => {
       participantes,
       gateDeVolume: F.gateVerificado(9),
     };
-    const g = guia(gerarGuiaDoFacilitador({ dna: e }));
+    const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: e }));
     const p = g.populacoes;
     expect(p.convidados).toBe(20);
     expect(p.presentes).toBe(14); // 9 + 2 + 3 presentes
@@ -448,7 +464,7 @@ describe("tres populacoes", () => {
     const comAusente = entradaDna(9, { convidados: 20 });
     const participantes = [...comAusente.participantes, ...F.varias(4, { t: "sem_destaque" }, false)];
     const g = guia(
-      gerarGuiaDoFacilitador({
+      gerarGuiaDoFacilitador({ ...NAO_PUBLICADO,
         dna: { ...comAusente, participantes, gateDeVolume: F.gateVerificado(9) },
       }),
     );
@@ -459,7 +475,7 @@ describe("tres populacoes", () => {
 
   it("sem check-in fechado, a populacao de presentes nao e inventada", () => {
     const g = guia(
-      gerarGuiaDoFacilitador({ dna: entradaDna(12, { convidados: 20, checkinFechado: false }) }),
+      gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: entradaDna(12, { convidados: 20, checkinFechado: false }) }),
     );
     expect(g.populacoes.presentes).toBeNull();
     expect(g.populacoes.respostasCompletasDePresentes).toBeNull();
@@ -473,7 +489,7 @@ describe("tres populacoes", () => {
   it("CONTROLE POSITIVO: populacao incoerente recusa o guia em vez de arredondar", () => {
     // Mais respostas do que convidados informados.
     const e = entradaDna(12, { convidados: 5 });
-    const r = naoGerado(gerarGuiaDoFacilitador({ dna: e }));
+    const r = naoGerado(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: e }));
     expect(r.motivo).toBe("dados_inconsistentes");
     expect(r.paragrafos.join("\n")).toMatch(/não fecham|não permitiram avaliar/);
   });
@@ -484,10 +500,133 @@ describe("tres populacoes", () => {
 // ---------------------------------------------------------------------------
 
 describe("recusas do guia", () => {
-  it("evento COM DNA Coletivo nao recebe guia: o guia nao e um DNA reduzido", () => {
-    const r = naoGerado(gerarGuiaDoFacilitador({ dna: F.grupoSuficiente() }));
-    expect(r.motivo).toBe("dna_disponivel");
+  it("evento com DNA PUBLICADO nao recebe guia: o guia nao e alternativa simultanea", () => {
+    const r = naoGerado(gerarGuiaDoFacilitador({ ...PUBLICADO, dna: F.grupoSuficiente() }));
+    expect(r.motivo).toBe("dna_publicado");
+    expect(r.paragrafos.join("\n")).toContain("válido, revisado e disponibilizado");
     expect(r.acoes.join("\n")).toContain("DNA Coletivo");
+  });
+
+  it("DNA em RASCUNHO (geravel e nao disponibilizado) NAO bloqueia o guia", () => {
+    // O mesmo grupo do teste anterior: o DNA Coletivo e geravel. O que mudou e
+    // so o veredito de publicacao -- e e isso que a revisao mandou mudar.
+    const e = F.grupoSuficiente();
+    expect(gerarDnaColetivo(e).tipo).toBe("rascunho_para_revisao");
+    const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: e }));
+    expect(g.motivoSemDna).toBe("dna_nao_publicado");
+    const t = textosDoBloco(g.semDna).join("\n");
+    expect(t).toContain("gerado e ainda não disponibilizado");
+    expect(t).toContain("ainda não foi entregue a quem conduz");
+    // A prosa do motivo continua sem digito e sem vocabulario de retrato.
+    expect(numerosDoTexto(t)).toEqual([]);
+    expect(validarTextosColetivos(textosDoGuia(g))).toEqual([]);
+    for (const x of textosDoGuia(g)) expect(encontrarRetratoColetivo(x)).toEqual([]);
+    gravar("guia-dna-em-rascunho.txt", textoDoGuia(g));
+  });
+
+  it("estado do DNA INDETERMINADO recusa o guia, e NAO o libera", () => {
+    const motivos = [
+      "consulta_nao_respondeu",
+      "registro_ilegivel",
+      "invalidacao_indeterminada",
+    ] as const;
+    for (const motivo of motivos) {
+      const r = naoGerado(
+        gerarGuiaDoFacilitador({
+          publicacaoDoDna: { estado: "indeterminado", motivo },
+          dna: grupoDeDoze(),
+        }),
+      );
+      expect(r.motivo, motivo).toBe("estado_do_dna_indeterminado");
+      expect(r.paragrafos.join("\n")).toContain("Não ter conseguido verificar é categoria diferente");
+      // E nenhum codigo cru de banco vaza para o texto.
+      expect(r.paragrafos.join("\n")).not.toMatch(/_/);
+    }
+  });
+
+  it("veredito fora de forma NAO vira 'nao publicado': vira indeterminacao", () => {
+    for (const forjado of [undefined, null, {}, { estado: "verificado" }, { estado: "sim" }]) {
+      const r = naoGerado(
+        gerarGuiaDoFacilitador({
+          publicacaoDoDna: forjado as unknown as PublicacaoDoDna,
+          dna: grupoDeDoze(),
+        }),
+      );
+      expect(r.motivo, JSON.stringify(forjado)).toBe("estado_do_dna_indeterminado");
+    }
+  });
+
+  it("CONTRADICAO: veredito 'publicado' com dados que hoje nao sustentam DNA nao libera o guia", () => {
+    const r = naoGerado(gerarGuiaDoFacilitador({ ...PUBLICADO, dna: grupoDeDoze() }));
+    expect(r.motivo).toBe("estado_do_dna_indeterminado");
+    expect(r.paragrafos.join("\n")).toContain("Os dois discordam");
+  });
+
+  it("o tradutor do registro: rascunho, publicado, invalidado e ilegivel", () => {
+    const casos: [string, Parameters<typeof publicacaoDoDnaDoRegistro>[0], PublicacaoDoDna][] = [
+      [
+        "sem liberacao registrada (nem pergunta pela invalidacao)",
+        { liberado: false, aprovacaoInvalidada: null, invalidacoesPendentes: null },
+        { estado: "verificado", publicado: false },
+      ],
+      [
+        "liberado e intacto",
+        { liberado: true, aprovacaoInvalidada: false, invalidacoesPendentes: 0 },
+        { estado: "verificado", publicado: true },
+      ],
+      [
+        "liberado e com a aprovacao invalidada",
+        { liberado: true, aprovacaoInvalidada: true, invalidacoesPendentes: 0 },
+        { estado: "verificado", publicado: false },
+      ],
+      [
+        "liberado com invalidacao pendente de reconhecimento",
+        { liberado: true, aprovacaoInvalidada: false, invalidacoesPendentes: 2 },
+        { estado: "verificado", publicado: false },
+      ],
+      [
+        "consulta nao respondeu",
+        null,
+        { estado: "indeterminado", motivo: "consulta_nao_respondeu" },
+      ],
+      [
+        "registro sem o veredito",
+        { liberado: null, aprovacaoInvalidada: false, invalidacoesPendentes: 0 },
+        { estado: "indeterminado", motivo: "registro_ilegivel" },
+      ],
+      [
+        "liberado, e a invalidacao nao deu para saber",
+        { liberado: true, aprovacaoInvalidada: null, invalidacoesPendentes: 0 },
+        { estado: "indeterminado", motivo: "invalidacao_indeterminada" },
+      ],
+      [
+        "liberado, e a contagem de pendencias veio imprestavel",
+        { liberado: true, aprovacaoInvalidada: false, invalidacoesPendentes: -1 },
+        { estado: "indeterminado", motivo: "invalidacao_indeterminada" },
+      ],
+    ];
+    for (const [nome, registro, esperado] of casos) {
+      expect(publicacaoDoDnaDoRegistro(registro), nome).toEqual(esperado);
+    }
+  });
+
+  it("INVARIANCIA DEPOIS DA MUDANCA: dois grupos opostos COM DNA geravel e nao publicado dao o mesmo texto", () => {
+    // A garantia central do guia, refeita no caminho NOVO (`dna_nao_publicado`):
+    // grupos grandes o bastante para o DNA existir, com conteudo de resposta
+    // oposto, produzem guia identico byte a byte e o mesmo hash.
+    const a = entradaDna(40, { convidados: 40, especie: { t: "sem_destaque" } });
+    const b = entradaDna(40, { convidados: 40, especie: { t: "dois", eixo: "integridade" } });
+    expect(gerarDnaColetivo(a).tipo).toBe("rascunho_para_revisao");
+    expect(gerarDnaColetivo(b).tipo).toBe("rascunho_para_revisao");
+    const ga = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: a }));
+    const gb = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: b }));
+    const agA = agregar(a.convidados, a.participantes);
+    const agB = agregar(b.convidados, b.participantes);
+    expect(agA.autodescricao.semDestaque).toBe(40);
+    expect(agB.autodescricao.comDestaque).toBe(40);
+    expect(ga.motivoSemDna).toBe("dna_nao_publicado");
+    expect(textoDoGuia(ga)).toBe(textoDoGuia(gb));
+    expect(hashDoGuia(ga)).toBe(hashDoGuia(gb));
   });
 
   it("os demais motivos de ausencia de DNA geram guia, com o motivo nomeado", () => {
@@ -505,7 +644,7 @@ describe("recusas do guia", () => {
       ],
     ];
     for (const [motivo, e] of casos) {
-      const g = guia(gerarGuiaDoFacilitador({ dna: e }));
+      const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: e }));
       expect(g.motivoSemDna).toBe(motivo);
       // O motivo e dito em prosa, sem numero nenhum.
       const t = textosDoBloco(g.semDna).join("\n");
@@ -522,7 +661,7 @@ describe("recusas do guia", () => {
       participantes: F.varias(3, { t: "sem_destaque" }, false),
       gateDeVolume: F.gateVerificado(0),
     };
-    const g = guia(gerarGuiaDoFacilitador({ dna: e }));
+    const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: e }));
     expect(g.motivoSemDna).toBe("sem_presentes");
     expect(g.populacoes.presentes).toBe(0);
     expect(g.populacoes.respostasCompletas).toBe(3);
@@ -539,7 +678,7 @@ describe("leituras individuais", () => {
     const completos = e.participantes.filter((p) => p.scores !== null);
     const semResposta = e.participantes.filter((p) => p.scores === null);
     const g = guia(
-      gerarGuiaDoFacilitador({
+      gerarGuiaDoFacilitador({ ...NAO_PUBLICADO,
         dna: e,
         autorizacoes: [
           { participanteId: completos[0].id, autorizado: true },
@@ -558,14 +697,14 @@ describe("leituras individuais", () => {
   });
 
   it("sem liberacao, o guia nao abre leitura nenhuma", () => {
-    const g = guia(gerarGuiaDoFacilitador({ dna: grupoDeDoze() }));
+    const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: grupoDeDoze() }));
     expect(g.populacoes.leiturasIndividuaisLiberadas).toBe(0);
     expect(g.acessoIndividual.idsLiberados).toEqual([]);
   });
 
   it("CONTROLE POSITIVO: liberacao para quem nao esta na lista recusa o guia", () => {
     const r = naoGerado(
-      gerarGuiaDoFacilitador({
+      gerarGuiaDoFacilitador({ ...NAO_PUBLICADO,
         dna: grupoDeDoze(),
         autorizacoes: [{ participanteId: "p-fora-da-lista", autorizado: true }],
       }),
@@ -578,7 +717,7 @@ describe("leituras individuais", () => {
     const e = grupoDeDoze();
     const id = e.participantes[0].id;
     const r = naoGerado(
-      gerarGuiaDoFacilitador({
+      gerarGuiaDoFacilitador({ ...NAO_PUBLICADO,
         dna: e,
         autorizacoes: [
           { participanteId: id, autorizado: true },
@@ -602,7 +741,7 @@ describe("moldura", () => {
   });
 
   it("montarGuia nao aceita canal alem das oito contagens (compilacao) e nomeia o evento", () => {
-    const { participacao, idsLiberados } = projetarParticipacao({ dna: grupoDeDoze() });
+    const { participacao, idsLiberados } = projetarParticipacao({ ...NAO_PUBLICADO, dna: grupoDeDoze() });
     const g = montarGuia(participacao, "volume_insuficiente", "Marco Zero | Itaqui", idsLiberados);
     expect(g.cabecalho.linhaEvento).toBe("Marco Zero | Itaqui");
     expect(() => exigirNumerosVerificados(g)).not.toThrow();

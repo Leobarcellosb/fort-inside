@@ -153,11 +153,88 @@ const MENSAGENS: Record<CodigoDeErro, Mensagem> = {
   IMPORT_PREVIEW_STALE:
     "A prévia que está na tela não corresponde mais ao que seria gravado: algo mudou entre a conferência e a confirmação -- os participantes do evento, o questionário, ou a própria planilha. Nada foi gravado, de propósito: gravar agora escreveria uma coisa enquanto a tela afirma outra. Gere a prévia outra vez, confira o que ela mostra e confirme a importação a partir dela.",
 
+  // --- a decisão do operador sobre identidade --------------------------------
+  // Nenhuma destas manda instalar nada e nenhuma usa o verbo reservado às
+  // mensagens de ausência: aqui se diz "registrar", "confirmar" e "gravar".
+  IMPORT_SUBMISSION_NOT_FOUND:
+    "Esta submissão externa não foi encontrada neste evento. Ela pode ter sido removida, ou a página está mostrando uma lista antiga. Recarregue a mesa de decisões e escolha outra vez a partir do que ela mostrar.",
+  IMPORT_DECISION_REFUSED: (d) => {
+    const estado = d?.estado_da_submissao;
+    if (d?.ato === "revogar") {
+      return (
+        "Não há reconciliação a revogar nesta submissão" +
+        (estado ? `: ela está no estado “${estado}”` : "") +
+        ". Revogar desfaz a ligação entre uma submissão e um participante; uma submissão que não está ligada a ninguém não tem o que desfazer. Nada foi alterado."
+      );
+    }
+    if (estado === "importavel" || estado === "incompativel") {
+      return "Esta submissão JÁ está reconciliada com um participante, então ela não é reconciliada de novo por cima. Para atribuí-la a outra pessoa, revogue a reconciliação atual primeiro -- a revogação fica registrada no histórico e não apaga o que já havia. Nada foi alterado.";
+    }
+    return "A decisão sobre esta submissão não foi autorizada: o participante escolhido não é deste evento, ou o estado da submissão mudou desde que a tela foi carregada. Nada foi registrado e nada foi gravado. Recarregue a mesa de decisões e confira antes de confirmar.";
+  },
+  IMPORT_DECISION_STALE:
+    "A ficha que está na tela não descreve mais o que seria gravado: algo mudou entre a conferência e a confirmação -- a submissão, o participante escolhido, as respostas que ele já tem, ou o questionário. Nada foi registrado e nada foi gravado, de propósito: confirmar aqui é afirmar que uma resposta é de uma pessoa, e essa afirmação não pode se referir a uma tela velha. Recarregue a mesa de decisões, leia a ficha outra vez e confirme a partir dela.",
+  IMPORT_TARGET_OCCUPIED: (d) => {
+    const n = d?.respostas_existentes;
+    const quantas = typeof n === "number" && n > 0 ? ` (${n} ${n === 1 ? "resposta" : "respostas"})` : "";
+    const porQue =
+      d?.ocupacao === "submissao_externa_ativa"
+        ? "este participante já tem OUTRA submissão externa ligada a ele"
+        : d?.ocupacao === "ambos"
+          ? `este participante já tem resposta registrada${quantas} e já tem outra submissão externa ligada a ele`
+          : `este participante já tem resposta registrada${quantas}`;
+    return (
+      `A submissão não foi atribuída a este participante porque ${porQue}, e nada foi alterado. ` +
+      "Isto é recusado por um motivo que não tem volta: a gravação escreveria as respostas importadas por cima das que ele já tem, e revogar depois removeria as importadas sem devolver as anteriores -- a resposta antiga some para sempre. " +
+      "Confira se é a mesma pessoa. Se for, e se as respostas importadas forem as que devem valer, revogue primeiro a reconciliação da submissão que já está ligada a ele; se não for, escolha outro participante."
+    );
+  },
+  IMPORT_REVALIDATION_REFUSED: (d) => {
+    const porQue: Record<NonNullable<DetalhesDeErro["revalidacao"]>, string> = {
+      resposta_do_aplicativo:
+        "entre a sua conferência e a sua confirmação, esse participante respondeu PELO APLICATIVO nas mesmas etapas. A resposta dele vale e fica; a importada foi recusada",
+      outra_submissao_externa:
+        "essas etapas já têm resposta de OUTRA submissão externa. Trocar uma coleta por outra em silêncio não é atualização, é conflito",
+      outra_submissao_ativa_do_participante:
+        "esse participante já tem outra submissão externa ligada a ele",
+      duplicidade_no_lote: "outra submissão do mesmo envio já gravou para esse participante",
+      participante_inexistente: "o participante escolhido não existe mais",
+      participante_fora_do_evento: "o participante escolhido não é mais deste evento",
+      email_do_participante_mudou: "o e-mail do participante mudou depois que a ficha foi gerada",
+    };
+    const causa = d?.revalidacao ? porQue[d.revalidacao] : null;
+    return (
+      "O banco conferiu na hora de gravar e RECUSOU" +
+      (causa ? `, porque ${causa}` : "") +
+      ". NENHUMA resposta foi gravada e nada que já existia foi tocado -- a resposta que o participante tinha continua como estava. " +
+      "A sua decisão e esta recusa ficam as duas no histórico: o que você decidiu não é apagado, e fica registrado que não foi efetivada. " +
+      "A submissão volta para a mesa, com o payload inteiro. Recarregue a mesa, leia a ficha nova e decida a partir dela."
+    );
+  },
+  IMPORT_ACT_NOT_APPLIED:
+    "Sua decisão FOI registrada no histórico, com seu nome e sua justificativa, e NÃO foi efetivada: nenhuma resposta foi gravada e a submissão continua sem participante. O histórico guarda o ato sem o efeito, que é o registro honesto do que aconteceu. Aguarde alguns instantes e confirme outra vez a partir da mesa de decisões; o histórico vai mostrar as duas tentativas, e é assim que se vê o que de fato pegou.",
+
   QUEUE_SCHEMA_MISSING: MENSAGEM_FILA_INDISPONIVEL,
   QUEUE_UNAVAILABLE:
     "A fila de processamento não respondeu agora. Algumas pessoas podem já ter entrado nela: confira a seção Prognósticos antes de tentar de novo (reenviar não duplica o trabalho). Se persistir, avise a equipe técnica.",
   QUEUE_CONFIG_INVALID:
     "A configuração da fila de processamento está inválida no servidor, então o processamento não foi iniciado. Avise a equipe técnica.",
+
+  // --- Guia de Preparação do Facilitador -------------------------------------
+  // As três recusas previstas do gerador, cada uma mandando fazer uma coisa
+  // diferente. Nenhuma manda instalar nada, e nenhuma usa o verbo reservado às
+  // mensagens de ausência de atualização de banco.
+  GUIDE_DNA_PUBLISHED:
+    "Este evento já tem DNA Coletivo disponibilizado, com a revisão metodológica registrada, então o Guia de Preparação do Facilitador não foi gerado. O guia é o material de condução do evento que NÃO tem esse documento; entregar os dois ao mesmo tempo faria um parecer complemento do outro. Use o DNA Coletivo disponibilizado e, para as conversas individuais, os one-pagers.",
+  GUIDE_DNA_STATE_UNVERIFIABLE:
+    "Não foi possível verificar se este evento já tem um DNA Coletivo disponibilizado, e por isso o guia não foi gerado. Isso NÃO quer dizer que exista um DNA disponibilizado, e também não quer dizer que não exista: quer dizer que não deu para saber, e gerar o guia sem saber poderia entregá-lo ao lado de um documento que o facilitador já recebeu. Aguarde alguns instantes e tente de novo; se persistir, avise a equipe técnica informando o número da ocorrência.",
+  GUIDE_DATA_INCONSISTENT:
+    "As contagens de participação deste evento não fecham entre si, então o guia não foi gerado. Um guia com a população errada afirmaria a coisa errada sobre o que foi verificado. Confira a lista de convidados, os check-ins e as respostas registradas deste evento antes de gerar outra vez.",
+
+  COVERAGE_UNAVAILABLE:
+    "A cobertura oficial deste evento não respondeu agora, e sem ela não há população verificada para o guia nem veredito do volume mínimo. Nada foi gerado. Aguarde alguns instantes e tente de novo; se persistir, avise a equipe técnica informando o número da ocorrência.",
+  INVITE_COUNT_UNDETERMINED:
+    "O total de convidados deste evento não está determinado: não há fotografia da lista de convites, ou ela não fecha com as pessoas registradas nela. O guia não foi gerado porque as contagens de participação sairiam sobre um total estimado, e estimativa não é população verificada. Encerre a lista de convites do evento e tente de novo.",
 
   INTERNAL_ERROR: MENSAGEM_GENERICA,
 };

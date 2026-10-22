@@ -469,6 +469,20 @@ describe("critério 7 -- cada erro tem controle positivo ao lado", () => {
       IMPORT_SPREADSHEET_INVALID: "recusado",
       IMPORT_PLAN_REFUSED: "recusado",
       IMPORT_PREVIEW_STALE: "recusado",
+      IMPORT_SUBMISSION_NOT_FOUND: "recusado",
+      IMPORT_DECISION_REFUSED: "recusado",
+      IMPORT_DECISION_STALE: "recusado",
+      IMPORT_TARGET_OCCUPIED: "recusado",
+      IMPORT_ACT_NOT_APPLIED: "bloqueado",
+      IMPORT_REVALIDATION_REFUSED: "recusado",
+      // Guia de Preparação do Facilitador: duas recusas conferidas e três
+      // indisponibilidades. "Não deu para saber se há DNA disponibilizado"
+      // bloqueia, e não é recusa.
+      GUIDE_DNA_PUBLISHED: "recusado",
+      GUIDE_DATA_INCONSISTENT: "recusado",
+      GUIDE_DNA_STATE_UNVERIFIABLE: "bloqueado",
+      COVERAGE_UNAVAILABLE: "bloqueado",
+      INVITE_COUNT_UNDETERMINED: "bloqueado",
       INTERNAL_ERROR: "erro_inesperado",
     };
     for (const c of CODIGOS_DE_ERRO) {

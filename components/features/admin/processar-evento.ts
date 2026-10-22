@@ -108,6 +108,20 @@ const CLASSE_DO_CODIGO: Record<CodigoDeErro, "recusado" | "bloqueado" | "fila_in
   IMPORT_SPREADSHEET_INVALID: "recusado",
   IMPORT_PLAN_REFUSED: "recusado",
   IMPORT_PREVIEW_STALE: "recusado",
+  IMPORT_SUBMISSION_NOT_FOUND: "recusado",
+  IMPORT_DECISION_REFUSED: "recusado",
+  IMPORT_DECISION_STALE: "recusado",
+  IMPORT_TARGET_OCCUPIED: "recusado",
+  IMPORT_ACT_NOT_APPLIED: "bloqueado",
+  IMPORT_REVALIDATION_REFUSED: "recusado",
+  // A família do Guia de Preparação do Facilitador também não é desta rota (ela
+  // é de /api/marco-zero/guia-facilitador). Está aqui porque o vocabulário é
+  // fechado, e cada uma cai na classe do fato que é.
+  GUIDE_DNA_PUBLISHED: "recusado",
+  GUIDE_DATA_INCONSISTENT: "recusado",
+  GUIDE_DNA_STATE_UNVERIFIABLE: "bloqueado",
+  COVERAGE_UNAVAILABLE: "bloqueado",
+  INVITE_COUNT_UNDETERMINED: "bloqueado",
   INTERNAL_ERROR: "inesperado",
 };
 

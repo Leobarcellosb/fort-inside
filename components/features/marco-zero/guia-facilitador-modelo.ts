@@ -49,6 +49,39 @@
 // diria, nao traz os ids de quem falta (isso e o relatorio operacional) e nao
 // decide nenhum limiar: quem decide se existe DNA e `gerarDnaColetivo`, que
 // este modulo CHAMA em vez de reimplementar.
+//
+// A EXCLUSIVIDADE, e o que mudou nela. A regra antiga recusava o guia quando
+// `gerarDnaColetivo` devolvia um RASCUNHO -- isto e, quando o DNA era apenas
+// GERAVEL. A revisao derrubou isso, e com razao: um rascunho e um documento que
+// ninguem recebeu. "Esta gerado e aguardando revisao", "indisponivel" e
+// "invalidado" sao tres situacoes em que o facilitador ainda precisa ser
+// preparado, e a mera existencia do registro nao pode tirar dele o guia.
+//
+// A regra VIGENTE, nas palavras da revisao: o guia nao pode ser publicado como
+// alternativa simultanea a um DNA VALIDO, REVISADO e DISPONIBILIZADO para o
+// mesmo conjunto de dados. O que aciona a recusa, portanto, nao e "existe um
+// DNA" e sim "existe um DNA PUBLICADO". Rascunho nao e publicacao.
+//
+// COMO ESSE ESTADO CHEGA AQUI -- o mesmo desenho do gate de volume do DNA, e
+// pelo mesmo motivo. O estado da revisao e da disponibilizacao do DNA mora no
+// BANCO, e este modulo e funcao PURA, sem I/O e sem relogio: a pureza e o que
+// sustenta o hash do conteudo e o canal estreito de oito numeros. Entao o
+// veredito e INJETADO, calculado fora, em `EntradaGuia.publicacaoDoDna`, que e
+// campo OBRIGATORIO de proposito -- o compilador cobra a decisao de cada
+// chamador e nao existe valor-padrao que signifique "nao publicado".
+//
+// O CANAL NAO ALARGOU. O veredito e um discriminante (`estado`) mais um boolean
+// (`publicado`) ou um motivo de enum. Nao carrega resposta, score, agregado nem
+// contagem, e NAO chega a `montarGuia`: ele decide se o guia sai, e nao o que o
+// guia diz. `montarGuia` continua recebendo as oito contagens de participacao,
+// um motivo de enum e o nome do evento -- e o teste de invariancia (dois grupos
+// com conteudo de resposta oposto, texto identico byte a byte e mesmo hash)
+// continua valendo, porque nada do conteudo das respostas passou a influir.
+//
+// INDISPONIBILIDADE, a distincao que vale em todo este projeto: "nao consegui
+// saber o estado do DNA" NAO e "nao ha DNA publicado". O primeiro e
+// indisponibilidade e RECUSA o guia (`estado_do_dna_indeterminado`); so o
+// segundo o libera. Falha de consulta nunca vira ausencia.
 
 import { createHash } from "node:crypto";
 import { ELEMENTOS } from "../../../lib/scoring/marco-zero";
@@ -147,9 +180,93 @@ export interface AutorizacaoDeLeitura {
   autorizado: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Veredito de PUBLICACAO do DNA (injetado; ver o cabecalho do arquivo)
+// ---------------------------------------------------------------------------
+
+/**
+ * Causas previstas de nao se saber o estado de publicacao do DNA. Conjunto
+ * FECHADO: cada uma tem texto proprio, e nenhum codigo cru de banco vaza.
+ */
+export type MotivoPublicacaoIndeterminada =
+  /** A leitura do registro de disponibilizacao nao respondeu. */
+  | "consulta_nao_respondeu"
+  /** A linha veio em forma inesperada (sem o veredito, ou com tipo errado). */
+  | "registro_ilegivel"
+  /**
+   * Ha disponibilizacao registrada e NAO se sabe se a aprovacao daquele
+   * fechamento continua valendo (os sinais de invalidacao nao vieram).
+   */
+  | "invalidacao_indeterminada";
+
+/**
+ * O veredito. `publicado: true` quer dizer, e so quer dizer: existe um DNA
+ * Coletivo VALIDO, REVISADO e DISPONIBILIZADO para ESTE conjunto de dados.
+ * Estabelecer isso e trabalho de quem tem o banco -- exatamente como no gate de
+ * volume, onde quem tem o cliente do banco traduz a linha oficial.
+ */
+export type PublicacaoDoDna =
+  | { estado: "verificado"; publicado: boolean }
+  | { estado: "indeterminado"; motivo: MotivoPublicacaoIndeterminada };
+
+/**
+ * Forma minima do registro de disponibilizacao que o tradutor consome. Quem
+ * chama passa `null` quando a consulta nao respondeu.
+ *
+ * `liberado` e o fato "houve revisao metodologica aprovada e o documento foi
+ * disponibilizado". Os dois outros campos sao os sinais de CADUCIDADE que o
+ * banco publica (`marco_zero_cobertura.aprovacao_invalidada` e
+ * `invalidacoes_pendentes`, migration 020): correcao de presenca ou de
+ * elegibilidade depois do fechamento invalida a aprovacao e o hash do DNA
+ * daquele fechamento -- e DNA invalidado nao e DNA publicado.
+ */
+export interface RegistroDePublicacaoDoDna {
+  liberado: boolean | null;
+  aprovacaoInvalidada: boolean | null;
+  invalidacoesPendentes: number | null;
+}
+
+/**
+ * Traduz o registro para o veredito. Qualquer forma inesperada fecha a porta:
+ * vira indeterminacao, nunca "nao publicado" -- publicar o guia por omissao
+ * seria o mesmo erro que publicar o DNA por omissao.
+ *
+ * Quando `liberado === false` nao se pergunta pela invalidacao: nao ha o que
+ * invalidar, e exigir o sinal faria o guia depender de um dado irrelevante.
+ */
+export function publicacaoDoDnaDoRegistro(
+  registro: RegistroDePublicacaoDoDna | null | undefined,
+): PublicacaoDoDna {
+  if (registro === null || registro === undefined || typeof registro !== "object") {
+    return { estado: "indeterminado", motivo: "consulta_nao_respondeu" };
+  }
+  if (typeof registro.liberado !== "boolean") {
+    return { estado: "indeterminado", motivo: "registro_ilegivel" };
+  }
+  if (!registro.liberado) return { estado: "verificado", publicado: false };
+  if (
+    typeof registro.aprovacaoInvalidada !== "boolean" ||
+    !Number.isInteger(registro.invalidacoesPendentes) ||
+    (registro.invalidacoesPendentes as number) < 0
+  ) {
+    return { estado: "indeterminado", motivo: "invalidacao_indeterminada" };
+  }
+  const caducou =
+    registro.aprovacaoInvalidada || (registro.invalidacoesPendentes as number) > 0;
+  return { estado: "verificado", publicado: !caducou };
+}
+
 export interface EntradaGuia {
   /** A mesma entrada do DNA Coletivo: quem decide o limiar é o módulo do DNA. */
   dna: EntradaDna;
+  /**
+   * Veredito do estado de publicacao do DNA Coletivo deste conjunto de dados.
+   *
+   * OBRIGATORIO de proposito, igual a `EntradaDna.gateDeVolume`: o compilador
+   * cobra a decisao de cada chamador, e nao existe valor-padrao que signifique
+   * "nao publicado". Sem veredito utilizavel o guia NAO e gerado.
+   */
+  publicacaoDoDna: PublicacaoDoDna;
   autorizacoes?: readonly AutorizacaoDeLeitura[];
 }
 
@@ -174,11 +291,27 @@ export interface GuiaDoFacilitador {
    * DNA): o varredor recusaria identificador dentro do texto.
    */
   acessoIndividual: { idsLiberados: readonly string[] };
-  /** Motivo, vindo do módulo do DNA, de não existir DNA Coletivo aqui. */
-  motivoSemDna: MotivoRelatorio;
+  /** Motivo de não existir DNA Coletivo PUBLICADO aqui. */
+  motivoSemDna: MotivoSemDnaPublicado;
 }
 
-export type MotivoSemGuia = "dna_disponivel" | "dados_inconsistentes";
+/**
+ * Por que este evento nao tem DNA Coletivo PUBLICADO. Os motivos de limiar vem
+ * do modulo do DNA (`MotivoRelatorio`) e nao sao reimplementados aqui; o unico
+ * acrescimo e o caso novo que a revisao abriu: o DNA e geravel, existe em
+ * rascunho, e nao foi disponibilizado.
+ *
+ * Todos sao strings de enum, sem numero: e por isso que este tipo pode atravessar
+ * o canal estreito ate `montarGuia`.
+ */
+export type MotivoSemDnaPublicado = MotivoRelatorio | "dna_nao_publicado";
+
+export type MotivoSemGuia =
+  /** Ha DNA valido, revisado e disponibilizado para este conjunto de dados. */
+  | "dna_publicado"
+  /** NAO se sabe o estado de publicacao do DNA. Nao e "nao ha DNA publicado". */
+  | "estado_do_dna_indeterminado"
+  | "dados_inconsistentes";
 
 export type ResultadoGuia =
   | { tipo: "guia_do_facilitador"; guia: GuiaDoFacilitador; conteudoSha256: string }
@@ -419,7 +552,15 @@ function blocoParticipacao(p: ParticipacaoVerificada): BlocoDna {
 // Secao POR QUE NAO HA DNA: o motivo vem do modulo do DNA, sem numero
 // ---------------------------------------------------------------------------
 
-const PROSA_SEM_DNA: Record<Exclude<MotivoRelatorio, "dados_inconsistentes">, string> = {
+const PROSA_SEM_DNA: Record<
+  Exclude<MotivoSemDnaPublicado, "dados_inconsistentes">,
+  string
+> = {
+  // O caso que a revisao abriu: o DNA e geravel e NAO foi disponibilizado.
+  // Redacao sem digito e sem vocabulario de retrato, como as demais -- e sem
+  // antecipar nada do que o rascunho vier a dizer.
+  dna_nao_publicado:
+    "Este evento tem um DNA Coletivo gerado e ainda não disponibilizado: enquanto a revisão metodológica não é registrada e o documento não é liberado, não existe DNA Coletivo para conduzir a experiência. Um rascunho é um documento que ainda não foi entregue a quem conduz.",
   volume_insuficiente:
     "As respostas completas recebidas não alcançam o volume mínimo exigido para o DNA Coletivo. Volume é contagem absoluta: uma taxa de resposta alta não substitui a contagem, e não existe revisão nem ratificação que dispense o limiar.",
   cobertura_insuficiente:
@@ -434,10 +575,10 @@ const PROSA_SEM_DNA: Record<Exclude<MotivoRelatorio, "dados_inconsistentes">, st
     "Não há presença registrada para este evento, e sem população não existe cobertura.",
 };
 
-function blocoSemDna(motivo: MotivoRelatorio): BlocoDna {
+function blocoSemDna(motivo: MotivoSemDnaPublicado): BlocoDna {
   const b = novoBloco("sem_dna", TEXTOS_GUIA.tituloSemDna);
   b.p(
-    PROSA_SEM_DNA[motivo as Exclude<MotivoRelatorio, "dados_inconsistentes">] ??
+    PROSA_SEM_DNA[motivo as Exclude<MotivoSemDnaPublicado, "dados_inconsistentes">] ??
       PROSA_SEM_DNA.gate_de_volume_indisponivel,
   );
   b.p(
@@ -766,7 +907,7 @@ export function projetarParticipacao(
  */
 export function montarGuia(
   participacao: ParticipacaoVerificada,
-  motivoSemDna: MotivoRelatorio,
+  motivoSemDna: MotivoSemDnaPublicado,
   nomeEvento: string | null,
   idsLiberados: readonly string[],
 ): GuiaDoFacilitador {
@@ -811,13 +952,56 @@ function naoGerado(
   return congelar({ tipo: "guia_nao_gerado" as const, motivo, paragrafos, acoes });
 }
 
+/** Texto de cada causa de indeterminacao. Sem codigo cru de banco. */
+const PROSA_PUBLICACAO_INDETERMINADA: Record<MotivoPublicacaoIndeterminada, string> = {
+  consulta_nao_respondeu:
+    "a consulta ao registro de disponibilização do DNA Coletivo não respondeu nesta geração",
+  registro_ilegivel:
+    "o registro de disponibilização do DNA Coletivo veio sem o veredito, ou em forma que este módulo não reconhece",
+  invalidacao_indeterminada:
+    "há disponibilização registrada e não foi possível saber se a aprovação daquele fechamento continua valendo",
+};
+
 /**
- * Ponto de entrada. O guia existe para o evento que NAO tem DNA Coletivo: quem
- * decide isso e `gerarDnaColetivo`, chamado aqui. Se o DNA existe, o guia e
- * recusado e o resultado aponta para o DNA -- dois documentos sobre o mesmo
- * grupo convidariam a ler um como complemento do outro.
+ * Ponto de entrada. O guia existe para o evento que NAO tem DNA Coletivo
+ * PUBLICADO. Quem decide os limiares continua sendo `gerarDnaColetivo`, chamado
+ * aqui; quem decide a publicacao e o veredito INJETADO em
+ * `entrada.publicacaoDoDna` (ver o cabecalho do arquivo).
+ *
+ * ORDEM, e o motivo de ela ser esta: o estado de publicacao e a PRIMEIRA porta,
+ * antes de qualquer avaliacao dos dados. Nao se monta documento algum sem saber
+ * se ja existe um publicado, e "nao consegui saber" bloqueia como recusa.
  */
 export function gerarGuiaDoFacilitador(entrada: EntradaGuia): ResultadoGuia {
+  // O veredito tem de estar na forma prevista. O compilador ja cobra o campo;
+  // esta checagem defende de JavaScript nao tipado (corpo de rota, JSON) que
+  // chegue aqui sem ele -- e a falta dele NAO e "nao publicado".
+  const publicacao: PublicacaoDoDna = ((p: unknown): PublicacaoDoDna => {
+    if (p === null || typeof p !== "object") {
+      return { estado: "indeterminado", motivo: "consulta_nao_respondeu" };
+    }
+    const e = (p as { estado?: unknown }).estado;
+    if (e === "verificado") {
+      const pub = (p as { publicado?: unknown }).publicado;
+      return typeof pub === "boolean"
+        ? { estado: "verificado", publicado: pub }
+        : { estado: "indeterminado", motivo: "registro_ilegivel" };
+    }
+    if (e === "indeterminado") return p as PublicacaoDoDna;
+    return { estado: "indeterminado", motivo: "consulta_nao_respondeu" };
+  })(entrada.publicacaoDoDna);
+
+  if (publicacao.estado === "indeterminado") {
+    return naoGerado(
+      "estado_do_dna_indeterminado",
+      [
+        `Não foi possível saber se este evento já tem um DNA Coletivo disponibilizado: ${PROSA_PUBLICACAO_INDETERMINADA[publicacao.motivo] ?? PROSA_PUBLICACAO_INDETERMINADA.consulta_nao_respondeu}.`,
+        "Não ter conseguido verificar é categoria diferente de ter verificado e encontrado que não há DNA disponibilizado, e só a segunda libera este guia. Gerar o guia aqui poderia colocá-lo ao lado de um DNA Coletivo que o facilitador já recebeu.",
+      ],
+      ["Restabeleça a consulta ao registro de disponibilização e gere o guia de novo."],
+    );
+  }
+
   let dna;
   try {
     dna = gerarDnaColetivo(entrada.dna);
@@ -830,19 +1014,42 @@ export function gerarGuiaDoFacilitador(entrada: EntradaGuia): ResultadoGuia {
       ["Corrija os dados de origem e gere o guia de novo."],
     );
   }
-  if (dna.tipo !== "relatorio_operacional") {
+
+  if (publicacao.publicado) {
+    // CONTRADICAO verificavel sem banco: um DNA valido e disponibilizado nao
+    // pode existir para um conjunto de dados que hoje nao sustenta nenhum DNA.
+    // O veredito e os dados discordam, e discordancia nao e liberacao.
+    if (dna.tipo === "relatorio_operacional") {
+      return naoGerado(
+        "estado_do_dna_indeterminado",
+        [
+          "O veredito diz que este evento tem DNA Coletivo disponibilizado, e os dados recebidos hoje não sustentam nenhum DNA Coletivo. Os dois discordam, e por isso não se sabe a qual conjunto de dados o documento disponibilizado se refere.",
+          "Enquanto essa divergência existir, o guia não é gerado: ele poderia ser entregue ao lado de um DNA Coletivo ainda válido, e é exatamente isso que a exclusividade existe para impedir.",
+        ],
+        [
+          "Confira o registro de disponibilização e os sinais de invalidação deste evento.",
+          "Para a conversa individual, use os one-pagers individuais.",
+        ],
+      );
+    }
     return naoGerado(
-      "dna_disponivel",
+      "dna_publicado",
       [
-        "Este evento tem DNA Coletivo: as travas de cobertura e de volume foram atendidas. O Guia de Preparação do Facilitador existe para o evento que não tem esse documento, e por isso não é gerado aqui.",
+        "Este evento tem DNA Coletivo válido, revisado e disponibilizado para este mesmo conjunto de dados. O Guia de Preparação do Facilitador existe para o evento que não tem esse documento, e entregar os dois ao mesmo tempo convidaria a ler um como complemento do outro.",
       ],
       [
-        "Use o DNA Coletivo, depois da revisão metodológica registrada.",
+        "Use o DNA Coletivo disponibilizado, com a revisão metodológica registrada.",
         "Para a conversa individual, use os one-pagers individuais.",
       ],
     );
   }
-  if (dna.motivo === "dados_inconsistentes") {
+
+  // Daqui para baixo: VERIFICADO que nao ha DNA disponibilizado. O guia sai
+  // mesmo que o DNA seja geravel -- rascunho nao e publicacao.
+  const motivoSemDna: MotivoSemDnaPublicado =
+    dna.tipo === "relatorio_operacional" ? dna.motivo : "dna_nao_publicado";
+
+  if (motivoSemDna === "dados_inconsistentes") {
     return naoGerado(
       "dados_inconsistentes",
       [
@@ -871,7 +1078,7 @@ export function gerarGuiaDoFacilitador(entrada: EntradaGuia): ResultadoGuia {
 
   const guia = montarGuia(
     projecao.participacao,
-    dna.motivo,
+    motivoSemDna,
     nomeDoEvento(entrada.dna.meta),
     projecao.idsLiberados,
   );
