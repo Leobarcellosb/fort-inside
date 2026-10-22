@@ -111,6 +111,25 @@ nesse intervalo, **a resposta dele era sobrescrita em silêncio**. Agora o banco
 
 ---
 
+## Uma coisa sobre segunda-feira que você precisa decidir
+
+A cadeia que gera o documento individual foi percorrida inteira pela primeira vez esta
+noite. Ela **funciona** — mas tem um detalhe operacional que não é defeito, é configuração
+ausente, e ele decide se os documentos saem na segunda:
+
+**Não existe agendador.** Não há `vercel.json` no projeto, então a fila de geração só anda
+enquanto alguém mantém uma página do painel aberta — a própria página empurra um ciclo a
+cada 45 segundos. Se ninguém abrir o painel na segunda, **nada é gerado**.
+
+São dois caminhos: configurar o agendador (é mudança de deploy, e eu não vou mexer nisso
+sem você), ou tratar como procedimento — alguém da operação fica com o painel aberto até a
+fila esvaziar. O segundo funciona e é o que existe hoje; só precisa estar combinado com
+alguém, e não descoberto na segunda de manhã.
+
+Dois defeitos reais da mesma cadeia foram encontrados e estão sendo corrigidos ainda esta
+noite: questionário respondido pela metade virava documento como se estivesse completo, e
+texto alterado depois de aprovado chegava ao participante sem nova aprovação.
+
 ## Duas dívidas que eu declaro
 
 1. **Nenhuma tela foi vista em navegador.** Importação, decisões de identidade, Caderno e
