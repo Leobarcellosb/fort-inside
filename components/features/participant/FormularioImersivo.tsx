@@ -11,7 +11,6 @@ import {
   contarRespondidas,
   ehLikert,
   erroDeIdentificacao,
-  estimarMinutos,
   indiceDaPergunta,
   indiceDaTela,
   motivoDaFalta,
@@ -93,7 +92,6 @@ export function FormularioImersivo({ eventCode, eventName, dataDoEvento, etapas:
   // nome de "Seus dados". A resposta dela entra no envio (ver `enviar`).
   const { etapas, idDoNome } = useMemo(() => separarPerguntaDoNome(etapasDoBanco), [etapasDoBanco]);
   const roteiro = useMemo(() => montarRoteiro(etapas), [etapas]);
-  const minutos = useMemo(() => estimarMinutos(etapas), [etapas]);
   const indiceDaRevisao = roteiro.length - 1;
 
   const [indice, setIndice] = useState(0);
@@ -700,9 +698,6 @@ export function FormularioImersivo({ eventCode, eventName, dataDoEvento, etapas:
         tituloRef={titulo}
         eventName={eventName}
         dataDoEvento={dataDoEvento}
-        totalDePerguntas={total}
-        totalDeEtapas={etapas.length}
-        minutos={minutos}
         rascunho={rascunhoAchado}
         respondidas={respondidas}
         envioAnterior={envioAnterior}
@@ -1198,9 +1193,6 @@ function BoasVindas(p: {
   tituloRef: React.RefObject<HTMLHeadingElement | null>;
   eventName: string;
   dataDoEvento: string | null;
-  totalDePerguntas: number;
-  totalDeEtapas: number;
-  minutos: { de: number; ate: number };
   rascunho: Rascunho | null;
   respondidas: number;
   envioAnterior: number | null;
@@ -1276,23 +1268,6 @@ function BoasVindas(p: {
               </p>
             </div>
 
-            <dl className="grid grid-cols-3 gap-4 border-y border-white/15 py-4">
-              <div>
-                <dt className="text-[11px] uppercase tracking-[0.14em] text-white/50">Perguntas</dt>
-                <dd className="mt-1 text-[22px] font-semibold tabular-nums">{p.totalDePerguntas}</dd>
-              </div>
-              <div>
-                <dt className="text-[11px] uppercase tracking-[0.14em] text-white/50">Etapas</dt>
-                <dd className="mt-1 text-[22px] font-semibold tabular-nums">{p.totalDeEtapas}</dd>
-              </div>
-              <div>
-                <dt className="text-[11px] uppercase tracking-[0.14em] text-white/50">Minutos</dt>
-                <dd className="mt-1 text-[22px] font-semibold tabular-nums">
-                  {p.minutos.de} a {p.minutos.ate}
-                </dd>
-              </div>
-            </dl>
-
             {p.rascunho ? (
               <div className="space-y-5">
                 <div className="space-y-1.5">
@@ -1300,8 +1275,7 @@ function BoasVindas(p: {
                     {nome ? `Que bom te ver de volta, ${nome}.` : "Que bom te ver de volta."}
                   </p>
                   <p className="text-[15px] leading-relaxed text-white/65">
-                    Você já respondeu <span className="text-white font-medium tabular-nums">{p.respondidas} de {p.totalDePerguntas}</span>{" "}
-                    perguntas neste aparelho. Dá para continuar exatamente de onde parou.
+                    Você já começou neste aparelho. Dá para continuar exatamente de onde parou.
                   </p>
                 </div>
                 <button type="button" onClick={p.onRetomar} className={cn(botao, "bg-white text-[#0D0C0A] hover:bg-white/90")}>
