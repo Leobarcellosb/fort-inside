@@ -15,6 +15,7 @@ import {
 } from "./fixtures-marco-zero";
 import {
   TEXTO_SITUACIONAL_SEM_DESTAQUE,
+  briefingParaPrompt,
   montarBriefingMarcoZero,
   textosDoParticipante,
 } from "../scoring/briefing-marco-zero";
@@ -36,6 +37,32 @@ function montar(o?: OpcoesDeRespostas) {
     blocoBriefing: b.bloco,
   });
   return { respostas, b, user, system: buildSystemPromptMarcoZero([]) };
+}
+
+/**
+ * O MESMO prompt, montado SEM o portao de completude -- briefing direto sobre o
+ * motor, do jeito que `prepararBriefing` o monta depois de aprovar a entrada.
+ *
+ * Existe porque o portao passou a exigir 37 de 37 (Elementos 7 de 7, correcao
+ * de revisao). Um estado com Elemento ausente nao vira mais documento, e e por
+ * isso que `montar()` nao serve para medi-lo. O que a CAMADA DE LINGUAGEM faz
+ * com um Elemento ausente continua sendo propriedade dela, continua valendo, e
+ * continua sendo a defesa que sobra se alguem afrouxar o portao amanha -- entao
+ * ela segue medida aqui, no nivel que a possui. Mesmo motivo, e mesma tecnica,
+ * do describe "o briefing nunca contradiz o veto" mais abaixo.
+ */
+function montarSemPortao(o?: OpcoesDeRespostas) {
+  const respostas = respostasMarcoZero(o);
+  const briefing = montarBriefingMarcoZero(
+    calcularMarcoZero(achatarRespostas(respostas)),
+    { rotulosEixos: ROTULOS_EIXOS_MARCO_ZERO },
+  );
+  const user = buildUserPromptMarcoZero("Ana Souza", {
+    responses: respostas,
+    stages: ETAPAS_MARCO_ZERO,
+    blocoBriefing: briefingParaPrompt(briefing),
+  });
+  return { respostas, briefing, user, system: buildSystemPromptMarcoZero([]) };
 }
 
 describe("a versao do Marco Zero", () => {
@@ -110,22 +137,37 @@ describe("criterio 2: sem eixo destacado o prompt nao pede para escolher eixo", 
 describe("criterio 3: elemento nao respondido nao vira fragilidade", () => {
   const SEM_EQUILIBRIO: OpcoesDeRespostas = { elementos: [7, 6, undefined, 5, 9, 7, 4] };
 
+  // ASSERCAO ACRESCENTADA, e e a primeira do bloco porque e ela que mudou: com
+  // os Elementos a 7 de 7, este estado (6 de 7) nao vira mais documento. Antes
+  // virava. As quatro medicoes seguintes continuam todas aqui, nenhuma apagada
+  // e nenhuma pulada -- elas passaram a ser montadas sem o portao (ver
+  // `montarSemPortao`), porque o que elas medem e a camada de LINGUAGEM e nao a
+  // existencia do documento.
+  it("o PORTAO recusa 6 de 7 Elementos: este estado nao vira mais documento", () => {
+    const r = prepararBriefing(respostasMarcoZero(SEM_EQUILIBRIO));
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe("PROGNOSTIC_RESPONSES_INSUFFICIENT");
+    expect(r.detalhes?.blocos_incompletos).toEqual(["elementos"]);
+    expect(r.error).toContain("6 de 7 respondidas (mínimo 7)");
+  });
+
   it("o nome do elemento ausente nao aparece em lugar nenhum do que vai ao modelo", () => {
-    const { user, system } = montar(SEM_EQUILIBRIO);
+    const { user, system } = montarSemPortao(SEM_EQUILIBRIO);
     expect(user).not.toContain("Equilíbrio emocional");
     expect(system).not.toContain("Equilíbrio emocional");
   });
 
   it("com 6 de 7 nao ha maior nem menor; a media avisa que os demais nao entram na conta", () => {
-    const { b, user } = montar(SEM_EQUILIBRIO);
-    expect(b.briefing.elementos.maior.classificacao).toBe("indeterminado");
-    expect(b.briefing.elementos.menor.classificacao).toBe("indeterminado");
+    const { briefing, user } = montarSemPortao(SEM_EQUILIBRIO);
+    expect(briefing.elementos.maior.classificacao).toBe("indeterminado");
+    expect(briefing.elementos.menor.classificacao).toBe("indeterminado");
     expect(user).not.toContain("Entre os sete elementos avaliados");
     expect(user).toContain("sem resposta e não entram na conta");
   });
 
   it("nenhum fragmento do usuario chama algo de fragilidade, lacuna ou nota baixa", () => {
-    const { user } = montar(SEM_EQUILIBRIO);
+    const { user } = montarSemPortao(SEM_EQUILIBRIO);
     const [briefing] = user.split("RESPOSTAS ABERTAS DE");
     // o bloco de regras diz "Dado ausente não é nota baixa" (negacao); fora dela, nada
     const fragmentos = briefing
@@ -136,7 +178,7 @@ describe("criterio 3: elemento nao respondido nao vira fragilidade", () => {
   });
 
   it("o numero cru do elemento ausente nao existe: nada de 0 inventado", () => {
-    const { user } = montar(SEM_EQUILIBRIO);
+    const { user } = montarSemPortao(SEM_EQUILIBRIO);
     expect(user).not.toMatch(/\b0 de 10\b|nota 0\b/);
   });
 });
@@ -150,14 +192,17 @@ describe("o briefing nunca contradiz o veto", () => {
     ["poucos elementos", { elementos: [7, undefined, undefined, undefined, 9, undefined, undefined] }],
   ];
   // Os CINCO casos seguem medidos, e nenhum foi apagado ou pulado. O que mudou
-  // e por onde eles chegam ao briefing: `prepararBriefing` passou a ter o
-  // PORTAO DE COMPLETUDE (lib/ai/completude-marco-zero.ts), e o caso "poucos
-  // elementos" (2 de 7) cai nele -- de proposito, porque um documento sobre 2
-  // dos 7 Elementos nao e o que o produto promete. O SUJEITO deste describe,
-  // porem, e a CAMADA DE LINGUAGEM: "nenhum texto que o briefing produz
-  // contradiz o veto de saida". Para continuar medindo isso nos cinco estados,
-  // o briefing e montado aqui direto sobre o motor, sem o portao -- que tem
-  // prova propria, logo abaixo e em completude-marco-zero.test.ts.
+  // e por onde eles chegam ao briefing: `prepararBriefing` tem o PORTAO DE
+  // COMPLETUDE (lib/ai/completude-marco-zero.ts), e os DOIS casos de Elemento
+  // ausente -- "elementos incompletos" (5 de 7) e "poucos elementos" (2 de 7) --
+  // caem nele. Os dois, agora: o portao exigia 5 de 7 e passou a exigir 7 de 7
+  // (correcao de revisao, declarada no cabecalho daquele arquivo), de proposito,
+  // porque as sete perguntas sao obrigatorias no questionario e tolerar a falta
+  // delas contradiz o instrumento. O SUJEITO deste describe, porem, e a CAMADA
+  // DE LINGUAGEM: "nenhum texto que o briefing produz contradiz o veto de
+  // saida". Para continuar medindo isso nos cinco estados, o briefing e montado
+  // aqui direto sobre o motor, sem o portao -- que tem prova propria, logo
+  // abaixo e em completude-marco-zero.test.ts.
   it.each(casos)("todo texto do briefing passa pela validacao de saida (%s)", (_n, o) => {
     const respostas = respostasMarcoZero(o);
     const briefing = montarBriefingMarcoZero(
@@ -169,13 +214,26 @@ describe("o briefing nunca contradiz o veto", () => {
     }
   });
 
-  it("e o PORTAO decide quais desses estados viram documento: 5 de 7 Elementos sim, 2 de 7 nao", () => {
-    // ASSERCAO ACRESCENTADA: a evidencia nova do portao, no mesmo arquivo em
-    // que os dois estados ja eram descritos. Antes, os dois geravam documento.
+  // ASSERCAO REESCRITA. O que ela afirmava antes: "o PORTAO decide quais desses
+  // estados viram documento: 5 de 7 Elementos SIM, 2 de 7 nao" -- e o controle
+  // positivo era `expect(cinco.ok).toBe(true)`. A revisao recusou essa
+  // tolerancia, e 5 de 7 passou a ser recusa. A evidencia nova sao os DOIS
+  // estados recusados pelo mesmo bloco, com o numero de cada um na mensagem; o
+  // controle positivo passou a ser o questionario COMPLETO, que e quem garante
+  // que o portao nao comecou a recusar todo mundo.
+  it("e o PORTAO decide quais desses estados viram documento: so 7 de 7 Elementos", () => {
+    const completo = prepararBriefing(respostasMarcoZero());
+    expect(completo.ok).toBe(true); // controle positivo: 7 de 7 segue gerando
+
     const cinco = prepararBriefing(
       respostasMarcoZero({ elementos: [7, undefined, undefined, 5, 9, 7, 4] }),
     );
-    expect(cinco.ok).toBe(true); // controle positivo: a leitura parcial existe
+    expect(cinco.ok).toBe(false);
+    if (cinco.ok) return;
+    expect(cinco.status).toBe(400);
+    expect(cinco.code).toBe("PROGNOSTIC_RESPONSES_INSUFFICIENT");
+    expect(cinco.detalhes?.blocos_incompletos).toEqual(["elementos"]);
+    expect(cinco.error).toContain("5 de 7");
 
     const dois = prepararBriefing(
       respostasMarcoZero({ elementos: [7, undefined, undefined, undefined, 9, undefined, undefined] }),

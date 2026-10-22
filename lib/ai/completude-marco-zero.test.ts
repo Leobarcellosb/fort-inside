@@ -15,6 +15,8 @@ import {
 } from "./completude-marco-zero";
 import { calcularMarcoZero, MINIMO_ELEMENTOS_ANALISE_PARCIAL } from "../scoring/marco-zero";
 import type { RespostasAchatadas } from "../scoring/marco-zero";
+import { readFileSync } from "node:fs";
+import { ehPerguntaPontuada } from "./prognostic-prompt";
 
 /** Um questionario COMPLETO, no formato que o motor consome. */
 function completo(): RespostasAchatadas {
@@ -42,11 +44,25 @@ describe("limiar de completude do Marco Zero", () => {
     expect(EXIGENCIA_DE_COMPLETUDE.elementos.total).toBe(7);
   });
 
-  it("o piso dos Elementos e o DO MOTOR, nao um numero escrito aqui", () => {
-    // Se alguem recalibrar MINIMO_ELEMENTOS_ANALISE_PARCIAL em
-    // lib/scoring/marco-zero.ts, o portao acompanha. Um segundo numero escrito
-    // a mao aqui seria duas regras dizendo a mesma coisa e divergindo depois.
-    expect(EXIGENCIA_DE_COMPLETUDE.elementos.minimo).toBe(MINIMO_ELEMENTOS_ANALISE_PARCIAL);
+  // ASSERCAO REESCRITA. O que ela afirmava antes: "o piso dos Elementos e o DO
+  // MOTOR, nao um numero escrito aqui" -- e amarrava
+  // `EXIGENCIA_DE_COMPLETUDE.elementos.minimo` a
+  // `MINIMO_ELEMENTOS_ANALISE_PARCIAL` (5). A revisao recusou a tolerancia, e
+  // com isso o proprio laco deixou de ser desejavel: o piso do motor decide
+  // "parcial" contra "insuficiente" DENTRO da analise, nao se o documento pode
+  // existir. A evidencia nova sao os dois fatos juntos -- o portao exige 7 de 7
+  // E nao esta mais amarrado ao piso do motor --, porque afirmar so o primeiro
+  // deixaria passar alguem reatando os dois com o valor 7.
+  it("Elementos: 7 de 7, e o limiar NAO e mais o piso do motor", () => {
+    expect(EXIGENCIA_DE_COMPLETUDE.elementos).toEqual({ total: 7, minimo: 7 });
+    expect(EXIGENCIA_DE_COMPLETUDE.elementos.minimo).not.toBe(
+      MINIMO_ELEMENTOS_ANALISE_PARCIAL,
+    );
+    // O piso do motor segue existindo e segue valendo onde ele vale: o motor
+    // continua declarando leitura "parcial" com 5 ou 6 Elementos respondidos.
+    // O que mudou e quem decide a EXISTENCIA do documento.
+    expect(MINIMO_ELEMENTOS_ANALISE_PARCIAL).toBe(5);
+    expect(calcularMarcoZero(sem("q12", "q13")).analiseElementos.status).toBe("parcial");
   });
 
   it("CONTROLE POSITIVO: questionario completo passa", () => {
@@ -73,15 +89,37 @@ describe("limiar de completude do Marco Zero", () => {
     expect(c.faltando).toEqual(["q44"]);
   });
 
-  it("Elementos, o lado que PASSA: 5 de 7 respondidos (duas ausentes)", () => {
-    const c = avaliar(sem("q12", "q13"));
-    expect(c.suficiente).toBe(true);
-    // E o motor, no mesmo estado, declara a leitura "parcial" -- que e
-    // justamente o estado que a camada de briefing sabe dizer em voz alta.
-    expect(calcularMarcoZero(sem("q12", "q13")).analiseElementos.status).toBe("parcial");
+  // ASSERCAO REESCRITA. O que ela afirmava antes: "Elementos, o lado que PASSA:
+  // 5 de 7 respondidos (duas ausentes)" -- isto e, AFIRMAVA a tolerancia que a
+  // revisao recusou. A fronteira nao desapareceu, ela MUDOU DE LUGAR: o unico
+  // lado que passa agora e 7 de 7, e UMA ausente ja recusa. A evidencia nova e
+  // o 6 de 7 recusado, que e a mudanca de comportamento desta correcao.
+  it("Elementos: zero tolerancia -- UMA de 7 em branco (6 de 7) ja RECUSA", () => {
+    const c = avaliar(sem("q13"));
+    expect(c.suficiente).toBe(false);
+    if (c.suficiente) return;
+    expect(c.insuficientes).toEqual(["elementos"]);
+    expect(c.faltando).toEqual(["q13"]);
+    // A mensagem diz O QUE falta, em quantidade e em qual bloco.
+    expect(mensagemDeCompletude(c)).toContain("6 de 7 respondidas (mínimo 7)");
+    // E o motor, no MESMO estado, segue declarando leitura "parcial": e esse o
+    // ponto da correcao -- "parcial" e um veredito sobre a ANALISE, e nunca foi
+    // permissao para o documento existir.
+    expect(calcularMarcoZero(sem("q13")).analiseElementos.status).toBe("parcial");
   });
 
-  it("Elementos, o lado que RECUSA: 4 de 7 respondidos (tres ausentes)", () => {
+  it("Elementos: 5 de 7 (duas ausentes) -- o caso que GERAVA e agora RECUSA", () => {
+    // Este e exatamente o caso que a versao anterior deixava passar. Ele fica
+    // medido em teste proprio para que a mudanca de comportamento nao dependa
+    // de ninguem lembrar dela.
+    const c = avaliar(sem("q12", "q13"));
+    expect(c.suficiente).toBe(false);
+    if (c.suficiente) return;
+    expect(c.insuficientes).toEqual(["elementos"]);
+    expect(c.faltando).toEqual(["q12", "q13"]);
+  });
+
+  it("Elementos: 4 de 7 respondidos (tres ausentes) segue RECUSADO", () => {
     const c = avaliar(sem("q11", "q12", "q13"));
     expect(c.suficiente).toBe(false);
     if (c.suficiente) return;
@@ -114,5 +152,94 @@ describe("limiar de completude do Marco Zero", () => {
     expect(c.suficiente).toBe(false);
     if (c.suficiente) return;
     expect(c.faltando).toEqual(["q16"]);
+  });
+});
+
+// ===========================================================================
+// AUDITORIA: "conferir todas as demais obrigatorias"
+// ===========================================================================
+// A segunda metade da ordem da revisao e trabalho de auditoria, nao de mudar um
+// numero: existe pergunta OBRIGATORIA do questionario que este portao NAO
+// cobre? Existe -- 15 delas. A decisao declarada em completude-marco-zero.ts e
+// NAO bloquear por elas, com a razao escrita la (resposta aberta ausente nao
+// vira numero errado; vira documento mais curto, desfecho que este repositorio
+// ja decidiu aceitar em lib/ai/prognostic-schema.ts).
+//
+// Uma decisao declarada em comentario envelhece em silencio. Este bloco e o que
+// a mantem viva: ele le o QUESTIONARIO CANONICO publicado e afirma a lista
+// EXATA das obrigatorias nao cobertas. Pergunta obrigatoria nova no
+// questionario, ou mudanca no que o motor consome, QUEBRA este teste -- e a
+// auditoria e refeita por decisao de produto, em vez de a divergencia crescer
+// sem ninguem olhar.
+interface PerguntaCanonica {
+  id: string;
+  required: boolean;
+  type: string;
+}
+interface EtapaCanonica {
+  n: number;
+  t: string;
+  q: PerguntaCanonica[];
+}
+
+const ETAPAS_CANONICAS: EtapaCanonica[] = JSON.parse(
+  readFileSync(new URL("../../docs/questionario-v2-canonico.json", import.meta.url), "utf8"),
+);
+const PERGUNTAS_CANONICAS = ETAPAS_CANONICAS.flatMap((e) =>
+  e.q.map((q) => ({ ...q, etapa: e.n })),
+);
+
+describe("auditoria das perguntas obrigatorias que o portao nao cobre", () => {
+  it("o questionario canonico tem 52 perguntas e TODAS sao obrigatorias", () => {
+    // Este e o fato que torna a exigencia de 7 de 7 barata: nao existe pergunta
+    // nao-obrigatoria entre as que o motor consome, porque nao existe pergunta
+    // nao-obrigatoria no questionario.
+    expect(PERGUNTAS_CANONICAS).toHaveLength(52);
+    expect(PERGUNTAS_CANONICAS.filter((q) => !q.required)).toEqual([]);
+  });
+
+  it("o portao cobre 37 das 52, e as 15 obrigatorias NAO cobertas sao estas", () => {
+    const cobertas = PERGUNTAS_CANONICAS.filter((q) => ehPerguntaPontuada(q.id));
+    const naoCobertas = PERGUNTAS_CANONICAS.filter(
+      (q) => q.required && !ehPerguntaPontuada(q.id),
+    );
+    expect(cobertas).toHaveLength(PERGUNTAS_QUE_O_MOTOR_CONSOME);
+    // A lista EXATA, nomeada e nao contada: e ela que a revisao pediu.
+    expect(naoCobertas.map((q) => q.id)).toEqual([
+      // Grupo 1 -- contexto (etapa 1 "Sobre voce"): nome, idade, cidade,
+      // organizacao, papel e ambientes de influencia.
+      "q1",
+      "q2",
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      // Grupo 2 -- as duas abertas da etapa dos Elementos: qual elemento pede
+      // atencao, e qual mudanca concreta em 90 dias.
+      "q14",
+      "q15",
+      // Grupo 3 -- etapa 5 "Sua preparacao para o Marco Zero", inteira.
+      "q46",
+      "q47",
+      "q48",
+      "q49",
+      "q50",
+      "q51",
+      "q52",
+    ]);
+  });
+
+  it("as 15 nao cobertas sao TODAS de texto livre -- nenhuma entra em pontuacao", () => {
+    // O que sustenta o veredito de nao bloquear: nenhuma delas alimenta soma,
+    // contagem ou ranking. Se uma pergunta de ESCALA aparecesse fora da
+    // cobertura do portao, o veredito nao se sustentaria -- ausente viraria zero
+    // -- e este teste e quem avisa.
+    const naoCobertas = PERGUNTAS_CANONICAS.filter(
+      (q) => q.required && !ehPerguntaPontuada(q.id),
+    );
+    expect([...new Set(naoCobertas.map((q) => q.type))].sort()).toEqual([
+      "short_text",
+      "text",
+    ]);
   });
 });

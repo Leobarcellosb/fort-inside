@@ -20,13 +20,88 @@
 // preenche com os ids que faltaram. Nada e recontado aqui.
 //
 // ---------------------------------------------------------------------------
-// O LIMIAR, e por que ele nao e um numero unico
+// O LIMIAR: 37 de 37, sem tolerancia em nenhum bloco
 // ---------------------------------------------------------------------------
-// Decisao de produto desta unidade, declarada:
 //
 //   Likert (24 itens, q16-q39)   -> exige 24 de 24. ZERO tolerancia.
 //   Situacionais (6, q40-q45)    -> exige 6 de 6.  ZERO tolerancia.
-//   Elementos (7, q7-q13)        -> exige MINIMO_ELEMENTOS_ANALISE_PARCIAL (5).
+//   Elementos (7, q7-q13)        -> exige 7 de 7.  ZERO tolerancia.
+//
+// CORRECAO DE REVISAO, declarada. A versao anterior deste arquivo tolerava
+// ausencia nos Elementos: o minimo era `MINIMO_ELEMENTOS_ANALISE_PARCIAL` (5),
+// importado do motor. A revisao aprovou a arquitetura deste portao e RECUSOU a
+// tolerancia, nestas palavras: "aprovo a arquitetura do novo portao, mas nao a
+// flexibilizacao de perguntas obrigatorias".
+//
+// O argumento, e ele e sobre ONDE um numero vale:
+//   as sete perguntas dos Elementos sao `required: true` no questionario
+//   canonico. Uma regra de completude que tolera a ausencia de pergunta
+//   OBRIGATORIA contradiz o contrato do proprio instrumento -- o questionario
+//   afirma "sem isto a etapa nao se envia" e o portao respondia "sem duas
+//   destas o documento ainda sai".
+//   `MINIMO_ELEMENTOS_ANALISE_PARCIAL` nao estava errado; estava no lugar
+//   errado. Ele existe no motor para uma decisao DENTRO da analise -- separar
+//   leitura "parcial" de "insuficiente" nos Elementos -- e nao para decidir se
+//   um documento pode EXISTIR. Reusa-lo aqui era um numero certo num lugar
+//   errado, e por isso o import foi desfeito: este portao nao depende mais
+//   daquele piso, e recalibrar o piso la nao afrouxa o portao aqui.
+//
+// O que a exigencia de 7 de 7 custa, medido antes de mudar: nada para quem
+// respondeu pelo aplicativo. As 37 perguntas que o motor consome sao todas
+// obrigatorias no questionario canonico (conferido em
+// docs/questionario-v2-canonico.json: as 52 perguntas sao `required`, zero
+// nao-obrigatorias) e a tela nao deixa enviar etapa com pergunta obrigatoria em
+// branco. Quem cai neste portao vem de planilha incompleta, de perda de dado ou
+// de linha escrita a mao -- exatamente os casos em que o numero seria mentira.
+//
+// ---------------------------------------------------------------------------
+// AUDITORIA: as perguntas obrigatorias que este portao NAO cobre
+// ---------------------------------------------------------------------------
+// A segunda metade da ordem da revisao era "conferir todas as demais
+// obrigatorias". Conferido, e o resultado esta declarado aqui porque e a
+// resposta que faltava:
+//
+//   o questionario canonico da versao 2 tem 52 perguntas, TODAS obrigatorias.
+//   Este portao cobre as 37 que o motor consome. As outras 15 sao
+//   q1-q6 (etapa 1, "Sobre voce"), q14-q15 (etapa 2) e q46-q52 (etapa 5),
+//   todas de texto livre.
+//
+// Elas ENTRAM no documento -- isto foi verificado, nao presumido: nenhum codigo
+// as consome por id (o nome do cabecalho vem de `participants.full_name`, nao
+// de q1), mas todas chegam ao modelo como RESPOSTAS ABERTAS, pela funcao
+// `formatarRespostasAbertas` de lib/ai/prognostic-prompt.ts, e o prompt do
+// Marco Zero autoriza recomendacao de foco nascida delas.
+//
+// VEREDITO, por grupo, e a razao de ele NAO ser "bloquear":
+//   q1-q5 (nome, idade, cidade, organizacao, papel) -- contexto. A ausencia
+//     tira uma linha de contexto do prompt e nada mais; nao produz afirmacao
+//     nenhuma sobre a pessoa.
+//   q6, q14, q15, q46-q52 -- o substrato interpretativo. A ausencia tira
+//     material, e o documento sai MAIS CURTO.
+//
+// O criterio deste portao nao e "o documento ficaria mais pobre": e "o
+// documento MENTIRIA". Nos tres blocos pontuados o item ausente nao vira
+// ausencia -- vira ZERO na soma, e sai um eixo rebaixado que o texto afirma com
+// autoridade. Numa resposta aberta ausente nao existe numero para sair errado:
+// ela simplesmente nao aparece, e as tres camadas seguintes ja impedem que o
+// modelo preencha a lacuna -- o briefing nao fala do que nao foi medido, a
+// regra 3 do prompt ("Ausente nao e baixo") proibe tratar falta como fraqueza,
+// e o verificador de saida (lib/ai/saida-prognostico.ts) devolve o texto que
+// afirmar o que o briefing nao autorizou.
+// E ha precedente MEDIDO neste repositorio para o desfecho desse caso, em
+// lib/ai/prognostic-schema.ts: um participante que respondeu so as escalas e
+// deixou as abertas vazias rendeu 2 areas-chave em vez de 3, e a decisao
+// registrada ali foi "entregar um mapa mais curto e melhor que nao entregar".
+// Bloquear as 15 aqui reverteria essa decisao de produto por efeito colateral
+// de uma correcao de completude -- e seria tirar o documento de quem respondeu
+// as 37 perguntas pontuadas, que e o oposto do que esta unidade foi corrigir.
+//
+// Entao o escopo do portao NAO muda, e a divergencia fica vigiada em vez de
+// esquecida: um teste em completude-marco-zero.test.ts le o questionario
+// canonico e afirma a lista EXATA das 15 obrigatorias nao cobertas. Se o
+// questionario ganhar pergunta obrigatoria nova, ou se uma destas passar a ser
+// consumida pelo motor, o teste quebra e a auditoria e refeita -- com decisao
+// de produto, nao em silencio.
 //
 // Por que os dois primeiros blocos nao toleram nem UM item:
 //   nos dois, o item ausente nao vira "nao sei" -- ele vira ZERO. O motor soma
@@ -39,15 +114,19 @@
 //   `situacionaisRespondidas === SITUACIONAIS.length` sao pre-condicao para
 //   existir eixo destacado) -- o que faltava era alguem recusar o DOCUMENTO.
 //
-// Por que os Elementos toleram ate dois ausentes:
-//   ali o motor trata ausencia como ausencia de verdade (`valor: null`, nunca
-//   0; fora da media; fora do ranking) e JA TEM um piso operacional declarado
-//   em um unico lugar -- `MINIMO_ELEMENTOS_ANALISE_PARCIAL`, de onde sai o
-//   status "parcial" (5 ou 6 respondidos) contra "insuficiente" (menos de 5).
-//   Este portao nao inventa um segundo numero: ele IMPORTA aquele. Mudar o piso
-//   la muda o portao aqui, e so la.
+// Por que os Elementos tambem nao toleram nenhum, apesar de o motor saber
+// conviver com a ausencia deles:
+//   e verdade que ali o motor trata ausencia como ausencia de verdade
+//   (`valor: null`, nunca 0; fora da media; fora do ranking) e que ele declara
+//   a leitura "parcial" em vez de inventar numero. Isso faz do Elemento
+//   ausente um problema menor DENTRO da analise -- e foi o que justificou a
+//   tolerancia anterior. Nao e o que se decide aqui. Aqui se decide se o
+//   documento EXISTE, e a pergunta e obrigatoria no instrumento: o portao nao
+//   tem autoridade para dispensar o que o questionario exige. O motor segue
+//   livre para dizer "parcial"; o que ele nao decide mais e a existencia do
+//   documento.
 //
-// Por que o lado rigido nao deixa ninguem sem documento na segunda:
+// Por que o limiar inteiro nao deixa ninguem sem documento na segunda:
 //   as 37 perguntas que o motor consome sao todas `required: true` no
 //   questionario canonico da versao 2, e a tela do quiz nao deixa enviar a
 //   etapa enquanto houver pergunta `required` em branco
@@ -62,7 +141,6 @@
 import {
   ITENS_ELEMENTOS,
   ITENS_LIKERT,
-  MINIMO_ELEMENTOS_ANALISE_PARCIAL,
   SITUACIONAIS,
   type MarcoZeroScores,
 } from "../scoring/marco-zero";
@@ -89,9 +167,10 @@ export const EXIGENCIA_DE_COMPLETUDE: Record<
   likert: { total: TOTAL_LIKERT, minimo: TOTAL_LIKERT },
   // 6 de 6.
   situacional: { total: TOTAL_SITUACIONAL, minimo: TOTAL_SITUACIONAL },
-  // 7 itens, piso IMPORTADO do motor (hoje 5): o unico numero do limiar que
-  // nao e "todos", e ele nao e redeclarado aqui.
-  elementos: { total: TOTAL_ELEMENTOS, minimo: MINIMO_ELEMENTOS_ANALISE_PARCIAL },
+  // 7 de 7. Era `MINIMO_ELEMENTOS_ANALISE_PARCIAL` (5), importado do motor;
+  // a revisao recusou a tolerancia e o import foi desfeito. Nao existe mais
+  // numero de limiar fora de "todos" neste portao.
+  elementos: { total: TOTAL_ELEMENTOS, minimo: TOTAL_ELEMENTOS },
 };
 
 const PERGUNTAS_POR_BLOCO: Record<BlocoDoInstrumento, ReadonlySet<string>> = {

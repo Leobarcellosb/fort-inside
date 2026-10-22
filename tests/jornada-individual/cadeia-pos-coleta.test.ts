@@ -675,7 +675,7 @@ descreve("cadeia pos-coleta do documento individual", () => {
           where table_schema = 'public' and table_name = 'prognostics'`,
       );
       const tabelasDeHistorico = sql(
-        `select coalesce(string_agg(table_name, ','), '(nenhuma)')
+        `select coalesce(string_agg(table_name, ',' order by table_name), '(nenhuma)')
            from information_schema.tables
           where table_schema = 'public'
             and (table_name like '%prognostic%version%'
@@ -698,17 +698,36 @@ descreve("cadeia pos-coleta do documento individual", () => {
       anota("elo4_checks_de_prognostics", travas.split(","));
       anota("elo4_gatilhos_de_prognostics", gatilhos.split(","));
       expect(linhasDeA).toBe(1);
-      // ASSERCAO REESCRITA. Antes ela so MEDIA a ausencia ("nenhuma coluna de
-      // versao, nenhuma tabela de historico") e parava ali, com o defeito 2
-      // aberto. O desenho escolhido para fecha-lo NAO foi versionar: foi amarrar
-      // a aprovacao a uma impressao digital do conteudo aprovado (migration
-      // 025). Entao a evidencia nova e: segue uma linha por participante e
-      // segue sem historico -- isto e a LIMITACAO declarada do desenho -- e
-      // existem as duas pecas que tornam a entrega de conteudo nao aprovado
-      // IMPOSSIVEL: a coluna do selo, o CHECK do invariante e o gatilho que e o
-      // unico que escreve o selo.
+      // ASSERCAO REESCRITA, pela SEGUNDA vez, e e por isso que as duas versoes
+      // anteriores estao nomeadas aqui.
+      //
+      // 1a versao: so MEDIA a ausencia ("nenhuma coluna de versao, nenhuma
+      //    tabela de historico") e parava ali, com o defeito 2 aberto.
+      // 2a versao: media a ausencia de historico como LIMITACAO DECLARADA do
+      //    desenho da 025 -- `expect(tabelasDeHistorico).toBe("(nenhuma)")` --
+      //    porque o desenho escolhido foi amarrar a aprovacao a uma impressao
+      //    digital, nao versionar.
+      //
+      // A revisao aceitou a protecao por hash E manteve a exigencia:
+      // "preservar historico do conteudo entregue continua necessario". A
+      // migration 026 a cumpre. Entao a EVIDENCIA NOVA e que a ausencia acabou:
+      // existe tabela de historico, ela e escrita por gatilho proprio, e existe
+      // a view que responde "o que esta pessoa leu, e quando".
+      //
+      // O que NAO mudou e segue medido aqui, porque continua sendo o desenho:
+      // `prognostics` segue com UMA linha por participante e SEM coluna de
+      // versao -- o historico nao versionou a tabela, ele registra ao lado o
+      // que JA ESTEVE ENTREGUE. E as tres pecas da 025 seguem todas de pe.
       expect(colunas.split(",")).not.toContain("version");
-      expect(tabelasDeHistorico).toBe("(nenhuma)");
+      expect(tabelasDeHistorico).toBe("prognostic_delivery_history");
+      expect(
+        sql(
+          `select count(*) from information_schema.views
+            where table_schema = 'public'
+              and table_name = 'v_historico_do_conteudo_entregue'`,
+        ),
+      ).toBe("1");
+      expect(gatilhos.split(",")).toContain("prognostics_historico_do_entregue");
       expect(colunas.split(",")).toContain("conteudo_aprovado_hash");
       expect(colunas.split(",")).toContain("aprovado_em");
       expect(travas.split(",")).toContain("prognostics_entrega_cobre_aprovacao");
@@ -891,6 +910,339 @@ descreve("cadeia pos-coleta do documento individual", () => {
       // servidor. A rota em si nao e servida nesta prova (ver o cabecalho); o
       // que esta prova garante e o FATO de banco em que ela se apoia.
       expect((error as any)?.code).toBe("23514");
+    });
+
+    // ===================================================================
+    // HISTORICO DO CONTEUDO ENTREGUE (migration 026)
+    // ===================================================================
+    it("HISTORICO: o conteudo entregue de B foi registrado pelo banco, com impressao e data", async () => {
+      // A primeira metade da exigencia que sobrou da revisao: "preservar
+      // historico do conteudo entregue continua necessario". B foi revisado e
+      // entregue no primeiro teste deste elo. O registro nao e feito pela
+      // aplicacao: quem sabe que uma entrega aconteceu e o banco, no mesmo
+      // instante em que ela passa pelo portao da 025.
+      const linhas = sql(
+        `select sequencia || '|' || (conteudo->>'analise_geral') || '|' || left(conteudo_hash, 16)
+           from public.v_historico_do_conteudo_entregue
+          where participant_id = '${P.B.id}'
+          order by sequencia`,
+      );
+      const impressaoDoEntregue = sql(
+        `select encode(sha256(convert_to(final_content::text, 'UTF8')), 'hex')
+           from public.prognostics where participant_id = '${P.B.id}'`,
+      );
+      const conferencia = sql(
+        `select (h.conteudo_hash = p.conteudo_aprovado_hash)::text || '|' ||
+                (h.conteudo = p.final_content)::text || '|' ||
+                (h.leu_ate is null)::text || '|' || h.vigente::text
+           from public.v_historico_do_conteudo_entregue h
+           join public.prognostics p on p.id = h.prognostic_id
+          where h.participant_id = '${P.B.id}'
+          order by h.sequencia desc limit 1`,
+      );
+      anota("elo4_historico_de_B_apos_a_1a_entrega", linhas.split("\n"));
+      anota("elo4_historico_de_B_confere_com_prognostics", {
+        impressao_do_entregue: impressaoDoEntregue.slice(0, 16),
+        hash_bate_com_o_selo_de_aprovacao: conferencia.split("|")[0],
+        conteudo_identico_ao_final_content: conferencia.split("|")[1],
+        leu_ate_nulo_porque_e_o_vigente: conferencia.split("|")[2],
+        vigente: conferencia.split("|")[3],
+      });
+
+      // UMA linha: o texto que B leu, e so ele.
+      expect(linhas.split("\n")).toHaveLength(1);
+      expect(linhas).toContain("TEXTO REVISADO DE B (marca da prova).");
+      expect(linhas).toContain(impressaoDoEntregue.slice(0, 16));
+      // O que foi registrado e o MESMO que o selo de aprovacao cobre: o
+      // historico e a 025 falam do mesmo texto, nao de dois.
+      expect(conferencia).toBe("true|true|true|true");
+
+      // E escrita que NAO e entrega nova nao duplica linha: a linha entregue
+      // recebe outras escritas depois (pdf_url, por exemplo) e cada uma dispara
+      // o gatilho. Sem a deduplicacao o historico encheria de repeticoes do
+      // mesmo texto, e "o que esta pessoa leu" viraria uma lista de copias.
+      const { error } = await db
+        .from("prognostics")
+        .update({ pdf_url: "https://127.0.0.1/pdf-da-prova.pdf" } as never)
+        .eq("participant_id", P.B.id);
+      expect(error).toBeNull();
+      const depoisDoPdf = Number(
+        sql(
+          `select count(*) from public.prognostic_delivery_history
+            where participant_id = '${P.B.id}'`,
+        ),
+      );
+      anota("elo4_historico_de_B_apos_escrita_que_nao_e_entrega", depoisDoPdf);
+      expect(depoisDoPdf).toBe(1);
+    });
+
+    it("HISTORICO: entregue, CORRIGIDO e REENTREGUE -- os DOIS textos, suas impressoes e suas datas", async () => {
+      // O caso que a revisao nomeou: "se um documento for entregue, depois
+      // corrigido e reentregue, ninguem consegue reconstruir o que o jovem leu
+      // da primeira vez".
+      //
+      // ACHADO MEDIDO, declarado, e ele muda o COMO desta prova: corrigir um
+      // documento JA ENTREGUE nao e possivel pelo caminho comum. O teste acima
+      // mediu a recusa -- `delivered` nao regride para `reviewed` (gatilho da
+      // 015) -- e sem voltar a `reviewed` o selo da 025 nao se refaz, entao a
+      // entrega do texto corrigido tambem seria recusada. As duas protecoes,
+      // juntas, fecham o caminho comum. Esta unidade NAO mexe nisso: afrouxar a
+      // maquina de estados seria decisao de produto que ninguem autorizou.
+      //
+      // Entao a correcao de documento entregue segue exigindo o PROCEDIMENTO
+      // EXCEPCIONAL de quem e dono da tabela (DDL para desligar o gatilho de
+      // estado) -- e e exatamente ali que o texto anterior desaparecia, porque
+      // o selo da 025 e reescrito no ato da nova aprovacao. O gatilho do
+      // historico nao participa da maquina de estados e continua de pe durante
+      // o procedimento: e isso que esta prova mede.
+      const docId = sql(
+        `select id from public.prognostics where participant_id = '${P.B.id}'`,
+      );
+      const primeiroTexto = sql(
+        `select conteudo->>'analise_geral' from public.prognostic_delivery_history
+          where participant_id = '${P.B.id}' order by sequencia limit 1`,
+      );
+      const primeiraImpressao = sql(
+        `select conteudo_hash from public.prognostic_delivery_history
+          where participant_id = '${P.B.id}' order by sequencia limit 1`,
+      );
+
+      // O PROCEDIMENTO EXCEPCIONAL, passo a passo e nomeado. Nenhum gatilho do
+      // historico e desligado, e o selo da 025 segue sendo exigido: o texto
+      // corrigido so e entregue porque foi REAPROVADO sobre ele mesmo.
+      sql(
+        `alter table public.prognostics disable trigger prognostics_status_sem_regressao;
+         update public.prognostics
+            set edited_content = '{"analise_geral":"TEXTO CORRIGIDO DE B (segunda versao da prova)."}'::jsonb,
+                status = 'reviewed',
+                reviewed_at = now()
+          where id = '${docId}';
+         alter table public.prognostics enable trigger prognostics_status_sem_regressao;`,
+      );
+      // A REENTREGA, pelo caminho normal: nada desligado aqui.
+      const { error: eReentrega } = await db
+        .from("prognostics")
+        .update({
+          final_content: {
+            analise_geral: "TEXTO CORRIGIDO DE B (segunda versao da prova).",
+          },
+          status: "delivered",
+          delivered_at: new Date().toISOString(),
+        } as never)
+        .eq("id", docId);
+      anota("elo4_reentrega_de_B", eReentrega?.message ?? "REENTREGUE");
+      expect(eReentrega).toBeNull();
+
+      const historico = sql(
+        `select sequencia || ' :: ' || (conteudo->>'analise_geral')
+                || ' :: impressao=' || left(conteudo_hash, 16)
+                || ' :: leu_de=' || leu_a_partir_de
+                || ' :: leu_ate=' || coalesce(leu_ate::text, '(vigente)')
+                || ' :: aprovado_em=' || coalesce(aprovado_em::text, '(nulo)')
+           from public.v_historico_do_conteudo_entregue
+          where participant_id = '${P.B.id}'
+          order by sequencia`,
+      );
+      anota("elo4_historico_de_B_os_dois_textos", historico.split("\n"));
+
+      const campos = sql(
+        `select string_agg(linha, '#') from (
+           select (conteudo->>'analise_geral') || '|' || conteudo_hash || '|' ||
+                  (leu_ate is null)::text || '|' || vigente::text as linha
+             from public.v_historico_do_conteudo_entregue
+            where participant_id = '${P.B.id}'
+            order by sequencia
+         ) x`,
+      ).split("#");
+      expect(campos).toHaveLength(2);
+
+      const [um, dois] = campos.map((l) => l.split("|"));
+      // OS DOIS TEXTOS: o primeiro nao foi sobrescrito nem apagado.
+      expect(um[0]).toBe(primeiroTexto);
+      expect(dois[0]).toBe("TEXTO CORRIGIDO DE B (segunda versao da prova).");
+      // AS DUAS IMPRESSOES, diferentes entre si, e a primeira e a que ja
+      // estava registrada antes da correcao.
+      expect(um[1]).toBe(primeiraImpressao);
+      expect(dois[1]).not.toBe(um[1]);
+      expect(dois[1]).toBe(
+        sql(
+          `select encode(sha256(convert_to(final_content::text, 'UTF8')), 'hex')
+             from public.prognostics where id = '${docId}'`,
+        ),
+      );
+      // AS DUAS DATAS: a primeira deixou de valer EXATAMENTE quando a segunda
+      // passou a valer, e so a segunda e a vigente. `leu_ate` nao e coluna --
+      // e derivado na view, porque guarda-lo exigiria UPDATE no historico, que
+      // e justamente o privilegio que o historico nao concede a ninguem.
+      expect(um[2]).toBe("false"); // a primeira tem `leu_ate`
+      expect(um[3]).toBe("false");
+      expect(dois[2]).toBe("true"); // a segunda e a vigente
+      expect(dois[3]).toBe("true");
+      expect(
+        sql(
+          `select (
+             (select leu_ate from public.v_historico_do_conteudo_entregue
+               where participant_id = '${P.B.id}' order by sequencia limit 1)
+             =
+             (select leu_a_partir_de from public.v_historico_do_conteudo_entregue
+               where participant_id = '${P.B.id}' order by sequencia desc limit 1)
+           )::text`,
+        ),
+      ).toBe("true");
+      // E a pergunta que o historico existe para responder, respondida: o selo
+      // de aprovacao vigente cobre o texto VIGENTE, e nao o que foi lido antes.
+      expect(
+        sql(
+          `select (p.conteudo_aprovado_hash = h.conteudo_hash)::text
+             from public.prognostics p
+             join public.prognostic_delivery_history h on h.prognostic_id = p.id
+            where p.id = '${docId}' order by h.sequencia desc limit 1`,
+        ),
+      ).toBe("true");
+      expect(
+        sql(
+          `select (p.conteudo_aprovado_hash = h.conteudo_hash)::text
+             from public.prognostics p
+             join public.prognostic_delivery_history h on h.prognostic_id = p.id
+            where p.id = '${docId}' order by h.sequencia asc limit 1`,
+        ),
+      ).toBe("false");
+    });
+
+    it("HISTORICO APPEND-ONLY: privilegio CONFERIDO no banco, e a tentativa real recusada", async () => {
+      // "Sem privilegio de alteracao nem de remocao" nao e afirmacao: e
+      // consulta. Mesma tecnica da 022, com `service_role` nomeado -- ele e o
+      // papel com que as rotas de administracao escrevem e ele NAO e alcancado
+      // pela RLS (BYPASSRLS).
+      const privilegios = sql(
+        `select r.papel || ': ler=' ||
+                has_table_privilege(r.papel, 'public.prognostic_delivery_history', 'select')::text ||
+                ' inserir=' ||
+                has_table_privilege(r.papel, 'public.prognostic_delivery_history', 'insert')::text ||
+                ' alterar=' ||
+                has_table_privilege(r.papel, 'public.prognostic_delivery_history', 'update')::text ||
+                ' apagar=' ||
+                has_table_privilege(r.papel, 'public.prognostic_delivery_history', 'delete')::text ||
+                ' truncar=' ||
+                has_table_privilege(r.papel, 'public.prognostic_delivery_history', 'truncate')::text
+           from (values ('anon'), ('authenticated'), ('service_role')) as r(papel)
+          order by r.papel`,
+      );
+      const rls = sql(
+        `select relrowsecurity::text from pg_class
+          where oid = 'public.prognostic_delivery_history'::regclass`,
+      );
+      const policies = sql(
+        `select coalesce(string_agg(polname || '[' || polcmd::text || ']', ',' order by polname), '(nenhuma)')
+           from pg_policy where polrelid = 'public.prognostic_delivery_history'::regclass`,
+      );
+      anota("elo4_historico_privilegios_conferidos_no_banco", privilegios.split("\n"));
+      anota("elo4_historico_rls_e_policies", { rls_ligada: rls, policies });
+
+      // NENHUM dos tres papeis altera, apaga, trunca OU insere.
+      for (const papel of ["anon", "authenticated", "service_role"]) {
+        expect(privilegios).toContain(`${papel}: ler=`);
+      }
+      expect(privilegios).not.toMatch(/alterar=true/);
+      expect(privilegios).not.toMatch(/apagar=true/);
+      expect(privilegios).not.toMatch(/truncar=true/);
+      expect(privilegios).not.toMatch(/inserir=true/);
+      // Ler, sim -- o historico existe para ser lido; a RLS decide por quem, e
+      // nao existe policy de escrita para ninguem abrir por descuido.
+      expect(privilegios).toContain("authenticated: ler=true");
+      expect(privilegios).toContain("service_role: ler=true");
+      expect(privilegios).toContain("anon: ler=false");
+      expect(rls).toBe("true");
+      expect(policies).toBe("prognostic_delivery_history_admin_select[r]");
+
+      // A TENTATIVA REAL, pelo caminho da aplicacao (PostgREST com a chave de
+      // service_role): nao basta o privilegio estar revogado na consulta acima,
+      // a escrita tem de ser recusada de fato.
+      const linhasAntes = sql(
+        `select count(*) from public.prognostic_delivery_history`,
+      );
+      const alterar = await fetch(
+        `${SUPA}/rest/v1/prognostic_delivery_history?participant_id=eq.${P.B.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            apikey: SERVICE,
+            Authorization: `Bearer ${SERVICE}`,
+            "content-type": "application/json",
+            Prefer: "return=representation",
+          },
+          body: JSON.stringify({ conteudo: { analise_geral: "REESCRITO PELA PROVA" } }),
+        },
+      );
+      const apagar = await fetch(
+        `${SUPA}/rest/v1/prognostic_delivery_history?participant_id=eq.${P.B.id}`,
+        {
+          method: "DELETE",
+          headers: { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` },
+        },
+      );
+      const inserir = await fetch(`${SUPA}/rest/v1/prognostic_delivery_history`, {
+        method: "POST",
+        headers: {
+          apikey: SERVICE,
+          Authorization: `Bearer ${SERVICE}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          prognostic_id: sql(
+            `select id from public.prognostics where participant_id = '${P.B.id}'`,
+          ),
+          participant_id: P.B.id,
+          conteudo: { analise_geral: "ENTREGA QUE NUNCA ACONTECEU" },
+          conteudo_hash:
+            "0000000000000000000000000000000000000000000000000000000000000000",
+          passou_a_valer_em: new Date().toISOString(),
+        }),
+      });
+      const linhasDepois = sql(
+        `select count(*) from public.prognostic_delivery_history`,
+      );
+      const textosDepois = sql(
+        `select string_agg(conteudo->>'analise_geral', ' | ' order by sequencia)
+           from public.prognostic_delivery_history where participant_id = '${P.B.id}'`,
+      );
+      anota("elo4_historico_tentativa_real_como_service_role", {
+        alterar: alterar.status,
+        apagar: apagar.status,
+        inserir: inserir.status,
+        linhas: { antes: linhasAntes, depois: linhasDepois },
+        textos_depois: textosDepois,
+      });
+
+      // Recusadas as tres, e o historico intacto -- os dois textos ainda la.
+      expect(alterar.ok).toBe(false);
+      expect(apagar.ok).toBe(false);
+      expect(inserir.ok).toBe(false);
+      expect(linhasDepois).toBe(linhasAntes);
+      expect(textosDepois).toContain("TEXTO REVISADO DE B (marca da prova).");
+      expect(textosDepois).toContain("TEXTO CORRIGIDO DE B (segunda versao da prova).");
+
+      // E a impressao digital nao pode mentir NEM PARA O DONO da tabela: o
+      // CHECK recalcula o hash do conteudo da propria linha em toda escrita.
+      // Sem isto, o unico caminho que sobra (DDL de quem e dono) poderia trocar
+      // o texto e manter a impressao antiga -- e o historico passaria a afirmar
+      // sobre si mesmo a unica coisa que ele nao pode errar.
+      let recusouODono = "ACEITO (nao deveria)";
+      try {
+        sql(
+          `update public.prognostic_delivery_history
+              set conteudo = '{"analise_geral":"TEXTO FORJADO"}'::jsonb
+            where participant_id = '${P.B.id}'`,
+        );
+      } catch (err) {
+        recusouODono = String((err as Error).message).includes(
+          "prognostic_delivery_history_hash_do_conteudo",
+        )
+          ? "RECUSADO pelo CHECK do hash"
+          : `RECUSADO: ${String((err as Error).message).slice(0, 120)}`;
+      }
+      anota("elo4_historico_dono_da_tabela_nao_forja_impressao", recusouODono);
+      expect(recusouODono).toBe("RECUSADO pelo CHECK do hash");
     });
   });
 
@@ -1181,20 +1533,43 @@ descreve("cadeia pos-coleta do documento individual", () => {
       expect(linhas).toBe(0); // nenhum documento gravado
     });
 
-    it("FRONTEIRA DO LIMIAR, os dois lados: 2 Elementos ausentes GERA; 3 ausentes RECUSA", async () => {
-      // O limiar e um por bloco, e o unico que nao e "todos" e o dos Elementos
-      // da Vida Plena: `MINIMO_ELEMENTOS_ANALISE_PARCIAL` (5 de 7), importado
-      // do motor, onde o proprio motor ja separa "parcial" de "insuficiente".
-      // Esta prova mede os dois lados do mesmo numero, no mesmo ambiente.
-      await criarParticipante("G"); // 5 de 7 Elementos: o lado que PASSA
-      const errosG = await gravarPelaTela(
-        "G",
-        respostasCanonicas({ omitir: new Set(["q12", "q13"]) }),
-      );
+    // ASSERCAO REESCRITA, e esta e a MUDANCA DE COMPORTAMENTO desta unidade.
+    //
+    // O que ela afirmava antes: "FRONTEIRA DO LIMIAR, os dois lados: 2 Elementos
+    // ausentes GERA; 3 ausentes RECUSA" -- o participante G, com 5 de 7
+    // Elementos, GERAVA documento, e o teste media isso como controle positivo
+    // do piso `MINIMO_ELEMENTOS_ANALISE_PARCIAL` (5), importado do motor.
+    //
+    // A revisao aprovou a arquitetura do portao e RECUSOU essa tolerancia:
+    // "aprovo a arquitetura do novo portao, mas nao a flexibilizacao de
+    // perguntas obrigatorias". As sete perguntas dos Elementos sao obrigatorias
+    // no questionario canonico, e uma regra de completude que tolera a falta de
+    // pergunta obrigatoria contradiz o contrato do instrumento. O piso do motor
+    // existe para separar leitura "parcial" de "insuficiente" DENTRO da
+    // analise, nao para decidir se um documento pode existir.
+    //
+    // A EVIDENCIA NOVA, e e por isso que a fronteira foi remedida aqui em vez
+    // de o teste antigo ser apagado: a fronteira MUDOU DE LUGAR. Ela nao esta
+    // mais entre 5 e 4 -- esta entre 7 e 6. Os tres estados ficam medidos no
+    // mesmo ambiente: 6 de 7 recusa (uma unica ausente, o caso mais barato de
+    // esquecer), 5 de 7 recusa (o caso que ANTES gerava) e 4 de 7 segue
+    // recusando. Com o controle positivo ao lado, para que a medicao nao possa
+    // ser "o portao passou a recusar todo mundo".
+    it("FRONTEIRA DO LIMIAR nos Elementos: 6 de 7 RECUSA (antes gerava), 5 de 7 RECUSA, 7 de 7 GERA", async () => {
+      await criarParticipante("G"); // 6 de 7: UMA ausente
+      const errosG = await gravarPelaTela("G", respostasCanonicas({ omitir: new Set(["q13"]) }));
       expect(errosG.every((e) => e === null)).toBe(true);
       await concluir("G");
 
-      await criarParticipante("H"); // 4 de 7 Elementos: o lado que RECUSA
+      await criarParticipante("J"); // 5 de 7: o estado que ANTES virava documento
+      const errosJ = await gravarPelaTela(
+        "J",
+        respostasCanonicas({ omitir: new Set(["q12", "q13"]) }),
+      );
+      expect(errosJ.every((e) => e === null)).toBe(true);
+      await concluir("J");
+
+      await criarParticipante("H"); // 4 de 7: seguia e segue recusado
       const errosH = await gravarPelaTela(
         "H",
         respostasCanonicas({ omitir: new Set(["q11", "q12", "q13"]) }),
@@ -1202,41 +1577,90 @@ descreve("cadeia pos-coleta do documento individual", () => {
       expect(errosH.every((e) => e === null)).toBe(true);
       await concluir("H");
 
+      // CONTROLE POSITIVO no MESMO ato: as 52 respondidas, nada omitido.
+      await criarParticipante("K");
+      const errosK = await gravarPelaTela("K", respostasCanonicas());
+      expect(errosK.every((e) => e === null)).toBe(true);
+      await concluir("K");
+
       await zerarCanario();
       const antes = await chamadasAoModelo();
       const rG = await generatePrognostic(P.G.id, eventId);
       const depoisDeG = await chamadasAoModelo();
+      const rJ = await generatePrognostic(P.J.id, eventId);
+      const depoisDeJ = await chamadasAoModelo();
       const rH = await generatePrognostic(P.H.id, eventId);
       const depoisDeH = await chamadasAoModelo();
+      const rK = await generatePrognostic(P.K.id, eventId);
+      const depoisDeK = await chamadasAoModelo();
 
-      anota("elo6_fronteira_5_de_7_elementos", {
+      const docs = (apelido: string) =>
+        Number(
+          sql(`select count(*) from public.prognostics where participant_id = '${P[apelido].id}'`),
+        );
+
+      anota("elo6_fronteira_6_de_7_elementos", {
         ok: rG.ok,
+        status: (rG as any).status ?? null,
         code: (rG as any).code ?? null,
+        detalhes: (rG as any).detalhes ?? null,
+        error: (rG as any).error ?? null,
         chamadas: { antes, depois: depoisDeG },
+        documentos_gravados: docs("G"),
+      });
+      anota("elo6_fronteira_5_de_7_elementos_o_caso_que_antes_gerava", {
+        ok: rJ.ok,
+        code: (rJ as any).code ?? null,
+        detalhes: (rJ as any).detalhes ?? null,
+        chamadas: { antes: depoisDeG, depois: depoisDeJ },
+        documentos_gravados: docs("J"),
       });
       anota("elo6_fronteira_4_de_7_elementos", {
         ok: rH.ok,
-        status: (rH as any).status ?? null,
         code: (rH as any).code ?? null,
         detalhes: (rH as any).detalhes ?? null,
-        chamadas: { antes: depoisDeG, depois: depoisDeH },
+        chamadas: { antes: depoisDeJ, depois: depoisDeH },
+        documentos_gravados: docs("H"),
       });
-      anota("elo6_fronteira_documentos_gravados", {
-        G: Number(sql(`select count(*) from public.prognostics where participant_id = '${P.G.id}'`)),
-        H: Number(sql(`select count(*) from public.prognostics where participant_id = '${P.H.id}'`)),
+      anota("elo6_fronteira_controle_positivo_7_de_7", {
+        ok: rK.ok,
+        chamadas: { antes: depoisDeH, depois: depoisDeK },
+        documentos_gravados: docs("K"),
       });
 
-      // O LADO QUE PASSA (controle positivo do limiar).
-      expect(rG.ok).toBe(true);
-      expect(depoisDeG).toBeGreaterThan(antes);
-      // O LADO QUE RECUSA, com o codigo proprio e sem gastar o modelo.
+      // 6 DE 7: RECUSADO, com codigo proprio, ZERO chamada ao modelo e ZERO
+      // documento gravado. Este caso GERAVA antes desta unidade.
+      expect(rG.ok).toBe(false);
+      expect((rG as any).status).toBe(400);
+      expect((rG as any).code).toBe("PROGNOSTIC_RESPONSES_INSUFFICIENT");
+      expect((rG as any).detalhes?.blocos_incompletos).toEqual(["elementos"]);
+      expect((rG as any).detalhes?.itens).toEqual(["q13"]);
+      expect((rG as any).detalhes?.completude).toEqual([
+        { bloco: "elementos", respondidas: 6, total: 7, minimo: 7 },
+      ]);
+      expect(depoisDeG).toBe(antes);
+      expect(docs("G")).toBe(0);
+
+      // 5 DE 7: o estado que o teste antigo media como "GERA". Recusado agora.
+      expect(rJ.ok).toBe(false);
+      expect((rJ as any).code).toBe("PROGNOSTIC_RESPONSES_INSUFFICIENT");
+      expect((rJ as any).detalhes?.itens).toEqual(["q12", "q13"]);
+      expect(depoisDeJ).toBe(depoisDeG);
+      expect(docs("J")).toBe(0);
+
+      // 4 DE 7: segue recusado, pelo mesmo bloco e sem gasto.
       expect(rH.ok).toBe(false);
       expect((rH as any).code).toBe("PROGNOSTIC_RESPONSES_INSUFFICIENT");
       expect((rH as any).detalhes?.blocos_incompletos).toEqual(["elementos"]);
-      expect(depoisDeH).toBe(depoisDeG);
-      expect(
-        Number(sql(`select count(*) from public.prognostics where participant_id = '${P.H.id}'`)),
-      ).toBe(0);
+      expect(depoisDeH).toBe(depoisDeJ);
+      expect(docs("H")).toBe(0);
+
+      // CONTROLE POSITIVO: 7 de 7 gera, gasta a chamada e grava o documento.
+      // Sem ele, as tres recusas acima nao distinguiriam "limiar correto" de
+      // "portao quebrado".
+      expect(rK.ok).toBe(true);
+      expect(depoisDeK).toBeGreaterThan(depoisDeH);
+      expect(docs("K")).toBe(1);
     });
 
     it("FRONTEIRA DO LIMIAR: UMA pergunta Likert em branco (29 de 30) ja RECUSA, e o controle positivo e A", async () => {
