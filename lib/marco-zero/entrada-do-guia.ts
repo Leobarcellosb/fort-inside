@@ -66,6 +66,17 @@
 //     indisponibilidade (COVERAGE_UNAVAILABLE), ANTES de olhar para os
 //     convidados. Falha de leitura nunca vira "lista ausente".
 //
+// AS CONTAGENS PERTENCEM AO EVENTO (Rodada 72). Toda linha que entra numa
+// contagem tem de ser DESTE evento: `events.id`, `marco_zero_cobertura.event_id`
+// e o `event_id` de cada linha de `participants`, `event_people`,
+// `event_checkins` e `event_logs` sao conferidos contra o evento pedido, e a
+// resposta de questionario so conta se for de um participante registrado nele
+// (`quiz_responses` nao tem event_id: pertence ao evento pelo participante).
+// Linha de outro evento, ou sem event_id, e contradicao verificada: o guia e
+// recusado com GUIDE_DATA_INCONSISTENT e `causa` "contagens_inconsistentes".
+// No registro de publicacao do DNA, a mesma linha vira indeterminacao (o guia
+// tambem e recusado). Falha de leitura continua sendo indisponibilidade.
+//
 // O resto continua recusando com INVITE_COUNT_UNDETERMINED: fotografia de
 // convites que o proprio banco desmente (`snapshot_inconsistente`), motivo fora
 // da lista, total invalido, ou a linha que se contradiz (motivo de ausencia COM
@@ -133,6 +144,20 @@ function linhas(data: unknown): Record<string, unknown>[] {
   return Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
 }
 
+/** Prefixo da `causa` das recusas por contagem de outro evento. */
+export const CAUSA_CONTAGENS_INCONSISTENTES = "contagens_inconsistentes";
+
+/** Primeira tabela com linha que nao e deste evento (ou sem event_id). */
+function linhaDeOutroEvento(
+  eventId: string,
+  fontes: Record<string, Record<string, unknown>[]>,
+): string | null {
+  for (const [tabela, ls] of Object.entries(fontes)) {
+    if (ls.some((l) => l.event_id !== eventId)) return tabela;
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Estado de publicacao do DNA
 // ---------------------------------------------------------------------------
@@ -151,13 +176,17 @@ export async function lerPublicacaoDoDna(
 ): Promise<PublicacaoDoDna> {
   const { data, error } = await supabase
     .from("event_logs")
-    .select("action, created_at")
+    .select("action, created_at, event_id")
     .eq("event_id", eventId)
     .in("action", ACOES_DE_PUBLICACAO_DO_DNA);
 
   // Leitura que falhou NAO e ausencia de registro.
   if (error) return publicacaoDoDnaDoRegistro(null);
   if (!Array.isArray(data)) return publicacaoDoDnaDoRegistro(null);
+  // Ato de OUTRO evento (ou sem evento) nao decide a publicacao DESTE.
+  if (linhaDeOutroEvento(eventId, { event_logs: linhas(data) }) !== null) {
+    return { estado: "indeterminado", motivo: "registro_ilegivel" };
+  }
 
   let ultimo: { acao: string; quando: number } | null = null;
   for (const l of linhas(data)) {
@@ -272,7 +301,7 @@ export async function lerParticipantes(
 > {
   const pes = await supabase
     .from("participants")
-    .select("id, full_name")
+    .select("id, full_name, event_id")
     .eq("event_id", eventId);
   if (pes.error) return { ok: false, codigo: "PARTICIPANTS_UNAVAILABLE", causa: pes.error };
   const participantes = linhas(pes.data)
@@ -283,15 +312,28 @@ export async function lerParticipantes(
   // event_checkins ATIVO e o registro que conta.
   const pessoas = await supabase
     .from("event_people")
-    .select("id, participant_id")
+    .select("id, participant_id, event_id")
     .eq("event_id", eventId);
   if (pessoas.error) return { ok: false, codigo: "PARTICIPANTS_UNAVAILABLE", causa: pessoas.error };
   const checkins = await supabase
     .from("event_checkins")
-    .select("person_id, estado")
+    .select("person_id, estado, event_id")
     .eq("event_id", eventId);
   if (checkins.error) {
     return { ok: false, codigo: "PARTICIPANTS_UNAVAILABLE", causa: checkins.error };
+  }
+  // Toda linha que entra numa contagem tem de ser DESTE evento.
+  const deOutroEvento = linhaDeOutroEvento(eventId, {
+    participants: linhas(pes.data),
+    event_people: linhas(pessoas.data),
+    event_checkins: linhas(checkins.data),
+  });
+  if (deOutroEvento !== null) {
+    return {
+      ok: false,
+      codigo: "GUIDE_DATA_INCONSISTENT",
+      causa: `${CAUSA_CONTAGENS_INCONSISTENTES}: ${deOutroEvento} trouxe linha de outro evento`,
+    };
   }
   const pessoasAtivas = new Set(
     linhas(checkins.data)
@@ -333,9 +375,19 @@ export async function lerParticipantes(
   if (resp.error) return { ok: false, codigo: "PARTICIPANTS_UNAVAILABLE", causa: resp.error };
 
   const porParticipante = new Map<string, LinhaDeRespostas[]>();
+  const registrados = new Set(participantes.map((p) => p.id));
   for (const l of linhas(resp.data)) {
     const pid = l.participant_id;
     const stage = l.stage_id;
+    // Resposta pertence ao evento PELO participante: de quem nao esta
+    // registrado neste evento, ela e de outra populacao.
+    if (typeof pid === "string" && !registrados.has(pid)) {
+      return {
+        ok: false,
+        codigo: "GUIDE_DATA_INCONSISTENT",
+        causa: `${CAUSA_CONTAGENS_INCONSISTENTES}: quiz_responses trouxe resposta de quem não é participante deste evento`,
+      };
+    }
     if (typeof pid !== "string" || typeof stage !== "number") continue;
     if (!idsDeEtapa.includes(stage)) continue;
     const lista = porParticipante.get(pid) ?? [];
@@ -397,6 +449,13 @@ export async function prepararEntradaDoGuia(
   if (!evento || typeof evento.id !== "string") {
     return { ok: false, codigo: "EVENT_NOT_FOUND" };
   }
+  if (evento.id !== eventId) {
+    return {
+      ok: false,
+      codigo: "GUIDE_DATA_INCONSISTENT",
+      causa: `${CAUSA_CONTAGENS_INCONSISTENTES}: events trouxe outro evento`,
+    };
+  }
   if (!Number.isInteger(evento.quiz_version)) {
     return {
       ok: false,
@@ -407,6 +466,13 @@ export async function prepararEntradaDoGuia(
 
   const { linha: cobertura, erro } = await lerCobertura(supabase, eventId);
   if (cobertura === null) return { ok: false, codigo: "COVERAGE_UNAVAILABLE", causa: erro };
+  if ((cobertura as { event_id?: unknown }).event_id !== eventId) {
+    return {
+      ok: false,
+      codigo: "GUIDE_DATA_INCONSISTENT",
+      causa: `${CAUSA_CONTAGENS_INCONSISTENTES}: marco_zero_cobertura trouxe a linha de outro evento`,
+    };
+  }
   if (typeof cobertura.checkin_fechado !== "boolean") {
     return {
       ok: false,

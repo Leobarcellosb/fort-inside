@@ -114,7 +114,7 @@ describe("2. proveniência por item", () => {
     for (const m of montarCaderno().momentos) {
       for (const i of m.itens.filter((x) => x.marca === "OFICIAL")) {
         oficiais++;
-        expect(i.fonte).toMatch(/^roteiro oficial — /);
+        expect(i.fonte).toMatch(/^roteiro oficial: /);
         expect(enderecos.some((e) => i.fonte!.includes(e))).toBe(true);
         expect(i.corpo.trim().length).toBeGreaterThan(0);
       }
@@ -162,7 +162,7 @@ describe("2. proveniência por item", () => {
         expect(i.corpo.trim().length).toBeGreaterThan(0);
         expect(i.deQuem).toBeTruthy();
         expect(i.porQue).toBeTruthy();
-        expect(i.fonte).toMatch(/^conferido em — /);
+        expect(i.fonte).toMatch(/^conferido em: /);
       }
     }
     for (const l of c.lacunas) {
@@ -383,7 +383,7 @@ describe("8. a página de impressão é autocontida", () => {
 
   it("traz os oito momentos, a lista de lacunas e as regras de impressão", () => {
     for (const m of montarCaderno().momentos) {
-      expect(html).toContain(`Momento ${m.numero} —`);
+      expect(html).toContain(`Momento ${m.numero}:`);
     }
     expect(html).toContain("@page");
     expect(html).toContain("@media print");

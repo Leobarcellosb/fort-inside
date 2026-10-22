@@ -35,8 +35,12 @@ import {
   encontrarRetratoColetivo,
   exigirNumerosVerificados,
   gerarGuiaDoFacilitador,
+  exigirContagensCoerentes,
+  montarGuia,
   numerosDoTexto,
   projetarParticipacao,
+  violacoesDasContagens,
+  type ParticipacaoVerificada,
   TEXTOS_GUIA,
   VERSAO_DO_MODELO_DO_GUIA,
   hashDoGuia,
@@ -168,6 +172,8 @@ interface Banco {
   cobertura: Linha | (() => RespostaDeLeitura);
   /** Tabelas cuja leitura devolve ERRO (falha de verdade, como o Postgres faz). */
   falhar?: readonly string[];
+  /** Tabelas que IGNORAM o filtro e devolvem tudo (um banco que mente). */
+  semFiltro?: readonly string[];
 }
 
 function clienteEmMemoria(banco: Banco): ClienteDoGuia {
@@ -179,6 +185,7 @@ function clienteEmMemoria(banco: Banco): ClienteDoGuia {
       }
       const linhas = banco.tabelas[tabela];
       if (linhas === undefined) throw new Error(`tabela nao servida: ${tabela}`);
+      if (banco.semFiltro?.includes(tabela)) return { data: linhas, error: null };
       return { data: linhas.filter((l) => filtros.every((f) => f(l))), error: null };
     };
     const q = {
@@ -264,6 +271,7 @@ function banco(
         .flatMap((pid) => ETAPAS.map((s) => ({ participant_id: pid, stage_id: s, answers: RESPOSTA[s] }))),
     },
     cobertura: {
+      event_id: EVENTO,
       status: "ok",
       motivo: null,
       respondentes_validos: responderam,
@@ -281,6 +289,10 @@ function banco(
 }
 
 const SEM_LISTA = { convidados: null, motivo_convidados: "sem_snapshot_de_convites" };
+
+/** A redacao do CTO para o motivo `convidados_nao_verificados` (Rodada 72). */
+const PROSA_DO_CTO =
+  "A população de convidados ainda não foi verificada. Por isso, não foi calculada a cobertura do evento nem realizada uma avaliação de elegibilidade coletiva.";
 
 // ---------------------------------------------------------------------------
 // 1. CONTROLE POSITIVO: sem lista de convidados, o guia sai neutro
@@ -336,7 +348,7 @@ describe("sem lista de convidados consolidada: guia neutro", () => {
       exigirNeutro(g);
       const t = textosDoBloco(g.semDna).join("\n");
       expect(numerosDoTexto(t)).toEqual([]);
-      expect(t).toContain("a cobertura fica desconhecida");
+      expect(t).toContain(PROSA_DO_CTO);
       expect(t).not.toContain("gerado e ainda não disponibilizado");
     }
     expect(espiaoDoDna).not.toHaveBeenCalled();
@@ -360,7 +372,7 @@ describe("sem lista de convidados consolidada: guia neutro", () => {
     expect(g.populacoes.presentes).toBe(30);
     expect(g.populacoes.respostasCompletasDePresentes).toBe(30);
     const todos = textosDoGuia(g).join("\n");
-    expect(todos).toContain("a cobertura fica desconhecida");
+    expect(todos).toContain(PROSA_DO_CTO);
     // "Cobertura" so aparece para dizer que e desconhecida: sem valor ao lado.
     expect(todos).not.toMatch(/cobertura (cheia|completa|total|de\s*\d)/i);
     expect(todos).not.toMatch(/100/);
@@ -756,4 +768,219 @@ describe("Baixar em texto: o arquivo baixado e o texto da versao vigente", () =>
       }
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// 6. INTEGRIDADE DAS OITO CONTAGENS (Rodada 72)
+// ---------------------------------------------------------------------------
+
+const OUTRO_EVENTO = "e8000000-0000-4000-8000-000000000008";
+
+/** Contagens coerentes, com convidados conhecidos: a base dos casos abaixo. */
+const COERENTE: ParticipacaoVerificada = {
+  convidados: 20,
+  respostasCompletas: 12,
+  respostasIncompletas: 2,
+  semRespostaRegistrada: 6,
+  presentes: 14,
+  respostasCompletasDePresentes: 11,
+  leiturasIndividuaisLiberadas: 1,
+  liberacoesSemRespostaRegistrada: 1,
+};
+
+function recusaPorContagem(r: ResultadoGuia): void {
+  expect(r.tipo).toBe("guia_nao_gerado");
+  if (r.tipo !== "guia_nao_gerado") return;
+  expect(r.motivo).toBe("dados_inconsistentes");
+  expect(r.causa).toBe("contagens_inconsistentes");
+  // Sem documento parcial: a recusa nao carrega guia, texto de guia nem hash.
+  expect("guia" in r).toBe(false);
+  expect("conteudoSha256" in r).toBe(false);
+}
+
+async function recusaDoBanco(b: Banco): Promise<string> {
+  const preparo = await prepararEntradaDoGuia(clienteEmMemoria(b), EVENTO);
+  expect(preparo.ok).toBe(false);
+  if (preparo.ok) return "";
+  expect(preparo.codigo).toBe("GUIDE_DATA_INCONSISTENT");
+  expect(String(preparo.causa)).toMatch(/^contagens_inconsistentes: /);
+  return String(preparo.causa);
+}
+
+describe("integridade das contagens: CONTROLE POSITIVO", () => {
+  it("dados coerentes geram o guia normalmente, com e sem lista, e as contagens passam na verificacao", async () => {
+    expect(violacoesDasContagens(COERENTE, 20)).toEqual([]);
+    for (const nome of NOMES_DOS_CASOS) {
+      const g = await guiaDoCaso(nome);
+      expect(violacoesDasContagens(g.populacoes)).toEqual([]);
+    }
+    for (const cobertura of [SEM_LISTA, { convidados: 20, motivo_convidados: null }]) {
+      const preparo = await prepararEntradaDoGuia(clienteEmMemoria(banco(14, 12, cobertura)), EVENTO);
+      if (!preparo.ok) throw new Error(preparo.codigo);
+      const g = guia(gerarGuiaDoFacilitador(preparo.entrada));
+      expect(violacoesDasContagens(g.populacoes, 14)).toEqual([]);
+    }
+  });
+});
+
+describe("regra 1: toda contagem conhecida e inteiro >= 0", () => {
+  it("negativo, fracionario, NaN, texto e nulo onde a contagem e obrigatoria sao recusados", () => {
+    const ruins: [string, Partial<Record<keyof ParticipacaoVerificada, unknown>>][] = [
+      ["negativo", { respostasCompletas: -1 }],
+      ["fracionario", { respostasIncompletas: 1.5 }],
+      ["NaN", { presentes: Number.NaN }],
+      ["texto", { leiturasIndividuaisLiberadas: "2" }],
+      ["nulo obrigatorio", { respostasCompletas: null }],
+      ["infinito", { convidados: Number.POSITIVE_INFINITY }],
+    ];
+    for (const [nome, troca] of ruins) {
+      const p = { ...COERENTE, ...troca } as ParticipacaoVerificada;
+      expect(violacoesDasContagens(p).length, nome).toBeGreaterThan(0);
+      // E nao vira documento: montarGuia LANCA, nao devolve guia parcial.
+      expect(() => montarGuia(p, "volume_insuficiente", null, []), nome).toThrow();
+    }
+  });
+});
+
+describe("regra 2: as contagens pertencem ao evento gerado", () => {
+  it("linha de participants, event_people ou event_checkins de OUTRO evento -> recusa", async () => {
+    for (const tabela of ["participants", "event_people", "event_checkins"]) {
+      const b = banco(14, 12, SEM_LISTA, { semFiltro: [tabela] });
+      const linha: Linha = { ...b.tabelas[tabela][0], event_id: OUTRO_EVENTO };
+      b.tabelas[tabela] = [...b.tabelas[tabela], { ...linha, id: `${String(linha.id ?? "x")}-outro` }];
+      expect(await recusaDoBanco(b), tabela).toContain(tabela);
+    }
+  });
+
+  it("linha SEM event_id nao prova que e do evento -> recusa", async () => {
+    // O banco em memoria filtra por event_id; a linha sem a coluna e entregue
+    // por fora do filtro, como um banco que devolvesse a linha sem ela.
+    const b = banco(14, 12, SEM_LISTA, { semFiltro: ["participants"] });
+    const semId: Linha = { ...b.tabelas.participants[0] };
+    delete semId.event_id;
+    b.tabelas.participants = [semId, ...b.tabelas.participants.slice(1)];
+    expect(await recusaDoBanco(b)).toContain("participants");
+  });
+
+  it("evento e linha de cobertura de OUTRO evento -> recusa", async () => {
+    const b1 = banco(14, 12, SEM_LISTA, { semFiltro: ["events"] });
+    b1.tabelas.events = [{ ...b1.tabelas.events[0], id: OUTRO_EVENTO }];
+    expect(await recusaDoBanco(b1)).toContain("events");
+
+    const b2 = banco(14, 12, { ...SEM_LISTA, event_id: OUTRO_EVENTO });
+    expect(await recusaDoBanco(b2)).toContain("marco_zero_cobertura");
+  });
+
+  it("resposta de quem nao e participante deste evento -> recusa", async () => {
+    const b = banco(14, 12, SEM_LISTA, { semFiltro: ["quiz_responses"] });
+    b.tabelas.quiz_responses = [
+      ...b.tabelas.quiz_responses,
+      { participant_id: "f0000000-0000-4000-8000-000000000000", stage_id: 101, answers: RESPOSTA[101] },
+    ];
+    expect(await recusaDoBanco(b)).toContain("quiz_responses");
+  });
+
+  it("ato de publicacao do DNA de OUTRO evento nao decide este: o guia NAO sai", async () => {
+    const b = banco(14, 12, SEM_LISTA, { semFiltro: ["event_logs"] });
+    b.tabelas.event_logs = [
+      { event_id: OUTRO_EVENTO, action: "dna_coletivo_revogado", created_at: "2026-11-14T18:00:00Z" },
+    ];
+    const preparo = await prepararEntradaDoGuia(clienteEmMemoria(b), EVENTO);
+    if (!preparo.ok) throw new Error(preparo.codigo);
+    expect(preparo.publicacao).toEqual({ estado: "indeterminado", motivo: "registro_ilegivel" });
+    expect(gerarGuiaDoFacilitador(preparo.entrada).tipo).toBe("guia_nao_gerado");
+  });
+});
+
+describe("regra 3: sem contradicao entre as contagens", () => {
+  it("cada contradicao e nomeada, e nenhuma vira documento", () => {
+    const contraditorias: [string, ParticipacaoVerificada, number | undefined][] = [
+      ["mais respondidas que registrados unicos", { ...COERENTE, convidados: null, semRespostaRegistrada: null }, 13],
+      ["mais presentes que registrados unicos", { ...COERENTE, convidados: null, semRespostaRegistrada: null, presentes: 30 }, 20],
+      ["completas de presentes acima dos presentes", { ...COERENTE, respostasCompletasDePresentes: 15 }, undefined],
+      ["completas de presentes acima das completas", { ...COERENTE, presentes: 14, respostasCompletas: 10, semRespostaRegistrada: 8, respostasCompletasDePresentes: 11 }, undefined],
+      ["sem resposta que nao e a subtracao", { ...COERENTE, semRespostaRegistrada: 5 }, undefined],
+      ["mais respostas que convidados", { ...COERENTE, convidados: 10, semRespostaRegistrada: -4 }, undefined],
+      ["mais presentes que convidados", { ...COERENTE, presentes: 25, respostasCompletasDePresentes: 11 }, undefined],
+      ["mais liberacoes que registrados", { ...COERENTE, leiturasIndividuaisLiberadas: 10, liberacoesSemRespostaRegistrada: 10 }, 15],
+    ];
+    for (const [nome, p, registrados] of contraditorias) {
+      expect(violacoesDasContagens(p, registrados).length, nome).toBeGreaterThan(0);
+      expect(() => exigirContagensCoerentes(p, registrados), nome).toThrow();
+    }
+    // As que nao dependem de `registrados` tambem impedem a montagem direta.
+    expect(() => montarGuia({ ...COERENTE, respostasCompletasDePresentes: 15 }, "volume_insuficiente", null, [])).toThrow(
+      /respostas completas de presentes/,
+    );
+  });
+
+  it("a conta e de PARTICIPANTES UNICOS, nao de linhas de submissao: 30 pessoas com 150 linhas de resposta passam", async () => {
+    // Cada pessoa tem cinco linhas (uma por etapa). Contar linhas daria 150
+    // "respostas" contra 30 registrados; a regra conta pessoas.
+    const b = banco(30, 30, SEM_LISTA);
+    expect(b.tabelas.quiz_responses).toHaveLength(150);
+    const preparo = await prepararEntradaDoGuia(clienteEmMemoria(b), EVENTO);
+    if (!preparo.ok) throw new Error(preparo.codigo);
+    const g = guia(gerarGuiaDoFacilitador(preparo.entrada));
+    expect(g.populacoes.respostasCompletas).toBe(30);
+    expect(violacoesDasContagens(g.populacoes, 30)).toEqual([]);
+  });
+
+  it("participante repetido na lista (nao e participante unico) -> recusa explicita, sem guia", () => {
+    const e = grupo(6);
+    recusaPorContagem(
+      gerarGuiaDoFacilitador({
+        ...NAO_PUBLICADO,
+        dna: semConvidados({ ...e, participantes: [...e.participantes, e.participantes[0]] }),
+      }),
+    );
+    recusaPorContagem(
+      gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: { ...e, participantes: [...e.participantes, e.participantes[0]] } }),
+    );
+  });
+
+  it("mais respostas do que convidados informados -> recusa explicita, sem guia", () => {
+    recusaPorContagem(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: grupo(12, { convidados: 5 }) }));
+  });
+});
+
+describe("regra: desconhecido continua desconhecido, nunca 0", () => {
+  it("sem lista, convidados e sem-resposta ficam null; com check-in aberto, presentes tambem", () => {
+    const g = guia(
+      gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: semConvidados(grupo(12, { checkinFechado: false })) }),
+    );
+    expect(g.populacoes.convidados).toBeNull();
+    expect(g.populacoes.semRespostaRegistrada).toBeNull();
+    expect(g.populacoes.presentes).toBeNull();
+    expect(g.populacoes.respostasCompletasDePresentes).toBeNull();
+    // E no texto nao aparece "0" no lugar de nenhuma delas.
+    for (const parte of g.participacao.partes) {
+      if (!("linhas" in parte)) continue;
+      for (const l of parte.linhas) {
+        if (/Convidados|Presentes|presente/.test(l.rotulo)) expect(l.valor).not.toBe("0");
+      }
+    }
+  });
+
+  it("CONTROLE: transformar desconhecido em numero e recusado", () => {
+    const desconhecido: ParticipacaoVerificada = {
+      ...COERENTE,
+      convidados: null,
+      semRespostaRegistrada: null,
+      presentes: null,
+      respostasCompletasDePresentes: null,
+    };
+    expect(violacoesDasContagens(desconhecido, 20)).toEqual([]);
+    // Sem convidados, uma subtracao "0" e invencao.
+    expect(violacoesDasContagens({ ...desconhecido, semRespostaRegistrada: 0 }).length).toBeGreaterThan(0);
+    // Sem presentes, "0 respostas de presentes" e invencao.
+    expect(violacoesDasContagens({ ...desconhecido, respostasCompletasDePresentes: 0 }).length).toBeGreaterThan(0);
+  });
+
+  it("a prosa do motivo sem lista e a do CTO, sem travessao", () => {
+    const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: semConvidados(grupo(12)) }));
+    const semDna = textosDoBloco(g.semDna);
+    expect(semDna[1]).toBe(PROSA_DO_CTO);
+    expect(TRAVESSAO.test(PROSA_DO_CTO)).toBe(false);
+  });
 });

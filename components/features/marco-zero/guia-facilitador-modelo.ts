@@ -393,6 +393,12 @@ export type ResultadoGuia =
       motivo: MotivoSemGuia;
       paragrafos: readonly string[];
       acoes: readonly string[];
+      /**
+       * Presente quando a recusa vem das CONTAGENS de participacao (invalidas
+       * ou contraditorias). `motivo` continua `dados_inconsistentes`, que e o
+       * que a rota mapeia para GUIDE_DATA_INCONSISTENT.
+       */
+      causa?: "contagens_inconsistentes";
     };
 
 // ---------------------------------------------------------------------------
@@ -708,8 +714,9 @@ const PROSA_SEM_DNA: Record<
     "O check-in ainda não foi fechado, e sem a população de presentes não existe cobertura oficial para calcular.",
   sem_presentes:
     "Não há presença registrada para este evento, e sem população não existe cobertura.",
+  // Redacao do CTO (Rodada 72), palavra por palavra.
   convidados_nao_verificados:
-    "A população de convidados deste evento não foi verificada, porque não há lista de convidados consolidada. Sem essa população, este guia não avalia se o evento teria DNA Coletivo: a cobertura fica desconhecida, e não se calcula limiar sobre um total que não existe. As respostas recebidas não substituem a lista: elas dizem quem respondeu, e não quem foi chamado.",
+    "A população de convidados ainda não foi verificada. Por isso, não foi calculada a cobertura do evento nem realizada uma avaliação de elegibilidade coletiva.",
 };
 
 function blocoSemDna(motivo: MotivoSemDnaPublicado): BlocoDna {
@@ -980,6 +987,118 @@ export interface Projecao {
   idsLiberados: readonly string[];
 }
 
+// ---------------------------------------------------------------------------
+// Integridade das oito contagens (Rodada 72)
+// ---------------------------------------------------------------------------
+// O agregador comportamental do DNA nao roda no caminho sem lista, e o CTO
+// aceitou isso com uma condicao: o guia valida, ele mesmo, o minimo das
+// contagens que mostra. As regras:
+//
+//   1. toda contagem CONHECIDA e inteiro >= 0;
+//   2. DESCONHECIDO continua desconhecido: `null` nunca vira 0, e as contagens
+//      que dependem de uma populacao desconhecida tambem ficam `null`;
+//   3. sem contradicao entre elas. As contagens sao de PARTICIPANTES UNICOS
+//      (uma pessoa, uma linha, ids sem repeticao): respostas completas e
+//      iniciadas de participantes unicos nao passam dos participantes unicos
+//      registrados, sob a mesma definicao. Submissao em conflito (segunda
+//      resposta de quem ja respondeu) nao e participante unico e nao entra
+//      nesta conta: ela nao esta na lista de participantes que o guia le.
+//
+// A regra de PERTENCER AO EVENTO (o event_id de cada fonte) e cobrada por quem
+// le o banco (`lib/marco-zero/entrada-do-guia.ts`): aqui nao ha event_id.
+//
+// Contagem que nao passa nao gera guia, nem parcial: a montagem LANCA
+// `ParticipacaoInconsistente` e o ponto de entrada recusa com
+// `causa: "contagens_inconsistentes"`.
+
+/**
+ * As violacoes das regras 1 a 3 (vazio = coerente). `registrados` e o numero
+ * de participantes UNICOS registrados, quando quem chama o conhece; sem ele, so
+ * as regras internas as oito contagens sao conferidas.
+ */
+export function violacoesDasContagens(
+  p: ParticipacaoVerificada,
+  registrados?: number,
+): string[] {
+  const v: string[] = [];
+  const opcionais = new Set<string>([
+    "convidados",
+    "semRespostaRegistrada",
+    "presentes",
+    "respostasCompletasDePresentes",
+  ]);
+  for (const campo of CAMPOS_DE_PARTICIPACAO) {
+    const valor: unknown = p[campo];
+    if (valor === null && opcionais.has(campo)) continue;
+    if (!Number.isInteger(valor) || (valor as number) < 0) {
+      v.push(`a contagem ${campo} não é um inteiro maior ou igual a zero`);
+    }
+  }
+  if (v.length > 0) return v;
+
+  // Desconhecido continua desconhecido, e o que depende dele tambem.
+  if (p.convidados === null && p.semRespostaRegistrada !== null) {
+    v.push("há subtração sobre uma população de convidados desconhecida");
+  }
+  if (p.presentes === null && p.respostasCompletasDePresentes !== null) {
+    v.push("há respostas de presentes sem a população de presentes verificada");
+  }
+  if (p.presentes !== null && p.respostasCompletasDePresentes === null) {
+    v.push("a população de presentes é conhecida e as respostas dela não");
+  }
+
+  const respondidas = p.respostasCompletas + p.respostasIncompletas;
+  if (p.convidados !== null) {
+    if (p.semRespostaRegistrada !== p.convidados - respondidas) {
+      v.push("a contagem sem resposta não é a subtração entre convidados e respostas");
+    }
+    if (respondidas > p.convidados) {
+      v.push("chegaram mais respostas do que o total de convidados informado");
+    }
+    if (p.presentes !== null && p.presentes > p.convidados) {
+      v.push("há mais pessoas presentes do que convidados informados");
+    }
+  }
+  if (p.presentes !== null && p.respostasCompletasDePresentes !== null) {
+    if (p.respostasCompletasDePresentes > p.presentes) {
+      v.push("há mais respostas completas de presentes do que presentes");
+    }
+    if (p.respostasCompletasDePresentes > p.respostasCompletas) {
+      v.push("há mais respostas completas de presentes do que respostas completas");
+    }
+  }
+
+  if (registrados !== undefined) {
+    if (!Number.isInteger(registrados) || registrados < 0) {
+      v.push("o número de participantes registrados é inválido");
+    } else {
+      if (respondidas > registrados) {
+        v.push("há mais participantes com resposta do que participantes únicos registrados");
+      }
+      if (p.presentes !== null && p.presentes > registrados) {
+        v.push("há mais presentes do que participantes únicos registrados");
+      }
+      if (p.liberacoesSemRespostaRegistrada > registrados - respondidas) {
+        v.push("há mais liberações sem resposta do que participantes sem resposta");
+      }
+      // Cada liberacao e de um participante unico da lista.
+      if (p.leiturasIndividuaisLiberadas + p.liberacoesSemRespostaRegistrada > registrados) {
+        v.push("há mais liberações de leitura do que participantes únicos registrados");
+      }
+    }
+  }
+  return v;
+}
+
+/** Lanca `ParticipacaoInconsistente` na primeira violacao. */
+export function exigirContagensCoerentes(
+  p: ParticipacaoVerificada,
+  registrados?: number,
+): void {
+  const v = violacoesDasContagens(p, registrados);
+  if (v.length > 0) throw new ParticipacaoInconsistente(v[0]);
+}
+
 export function projetarParticipacao(
   entrada: EntradaGuia,
 ): Projecao {
@@ -1046,19 +1165,19 @@ export function projetarParticipacao(
     }
   }
 
-  return {
-    participacao: {
-      convidados,
-      respostasCompletas,
-      respostasIncompletas,
-      semRespostaRegistrada: semResposta,
-      presentes: checkinFechado ? presentes : null,
-      respostasCompletasDePresentes: checkinFechado ? completasDePresentes : null,
-      leiturasIndividuaisLiberadas: liberadas,
-      liberacoesSemRespostaRegistrada: liberacoesSemResposta,
-    },
-    idsLiberados,
+  const participacao: ParticipacaoVerificada = {
+    convidados,
+    respostasCompletas,
+    respostasIncompletas,
+    semRespostaRegistrada: semResposta,
+    presentes: checkinFechado ? presentes : null,
+    respostasCompletasDePresentes: checkinFechado ? completasDePresentes : null,
+    leiturasIndividuaisLiberadas: liberadas,
+    liberacoesSemRespostaRegistrada: liberacoesSemResposta,
   };
+  // Integridade, contra os participantes UNICOS desta entrada (Rodada 72).
+  exigirContagensCoerentes(participacao, porId.size);
+  return { participacao, idsLiberados };
 }
 
 // ---------------------------------------------------------------------------
@@ -1077,6 +1196,8 @@ export function montarGuia(
   nomeEvento: string | null,
   idsLiberados: readonly string[],
 ): GuiaDoFacilitador {
+  // Contagem incoerente nao vira documento, nem parcial (Rodada 72).
+  exigirContagensCoerentes(participacao);
   return {
     versaoDoModelo: VERSAO_DO_MODELO_DO_GUIA,
     cabecalho: {
@@ -1144,13 +1265,15 @@ function recusaPorDnaPublicado(): ResultadoGuia {
 }
 
 function recusaPorContagens(e: { descricaoPublica: string }): ResultadoGuia {
-  return naoGerado(
-    "dados_inconsistentes",
-    [
+  return congelar({
+    tipo: "guia_nao_gerado" as const,
+    motivo: "dados_inconsistentes" as const,
+    causa: "contagens_inconsistentes" as const,
+    paragrafos: [
       `As contagens de participação não fecham: ${e.descricaoPublica}. Um guia com população errada diria a coisa errada sobre o que foi verificado, e por isso ele não é gerado.`,
     ],
-    ["Corrija os dados de origem e gere o guia de novo."],
-  );
+    acoes: ["Corrija os dados de origem e gere o guia de novo."],
+  });
 }
 
 /**
@@ -1308,6 +1431,17 @@ export function gerarGuiaDoFacilitador(entrada: EntradaGuia): ResultadoGuia {
     dna.tipo === "relatorio_operacional" ? dna.motivo : "dna_nao_publicado";
 
   if (motivoSemDna === "dados_inconsistentes") {
+    // Se a inconsistencia esta nas proprias CONTAGENS de participacao, a
+    // recusa diz isso (causa "contagens_inconsistentes"); a projecao e pura e
+    // nao recebe total inventado. Senao, o motivo e o do relatorio do DNA.
+    try {
+      projetarParticipacao(entrada);
+    } catch (e) {
+      if (e instanceof DadosInconsistentesDna || e instanceof ParticipacaoInconsistente) {
+        return recusaPorContagens(e);
+      }
+      throw e;
+    }
     return naoGerado(
       "dados_inconsistentes",
       [

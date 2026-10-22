@@ -44,6 +44,22 @@
 // "o Nucleo tem dificuldade de decidir" nao passa.
 //
 // As duas rodam sobre TODA string do Caderno na montagem, e a montagem LANCA.
+//
+// SEM TRAVESSAO (Rodada 72, mudanca so editorial). O texto que alguem le nao
+// tem travessao nem meia-risca. O texto fixo deste arquivo foi reescrito com
+// dois pontos; o conteudo que vem de `roteiro-oficial.ts` (que nao e editado
+// aqui) passa por `semTravessao` na montagem, com DUAS trocas e so duas:
+// " — " vira ": ", e a meia-risca entre horarios ("9h40–10h20") vira " às "
+// ("9h40 às 10h20"), a mesma forma que o proprio roteiro usa ("8h15 às 9h00").
+// Nada mais muda: dado, regra, proveniencia e conclusao sao os mesmos. Se o
+// roteiro trouxer travessao em outra forma, a montagem LANCA em vez de deixar
+// passar (`exigirSemTravessao`).
+//
+// VERSAO DO MODELO. O Caderno tinha versao do ROTEIRO (`VERSAO_DO_ROTEIRO`, o
+// conteudo) e nao tinha versao do MODELO (a redacao fixa e a forma). Agora tem:
+// `VERSAO_DO_MODELO_DO_CADERNO`. A versao 1 e a emitida ate a Rodada 72, com
+// travessao; o hash dela esta registrado em `HASHES_DO_CADERNO_POR_VERSAO`, para
+// que um Caderno impresso antes continue identificavel.
 
 import { createHash } from "node:crypto";
 import { encontrarRetratoColetivo } from "../../components/features/marco-zero/guia-facilitador-modelo";
@@ -63,16 +79,58 @@ import {
 // Moldura (textos escritos aqui: sao sobre o PROPRIO documento, nao sobre o evento)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Versao do modelo e a troca editorial
+// ---------------------------------------------------------------------------
+
+/**
+ * Versao do MODELO do Caderno (redacao fixa e forma), separada da versao do
+ * roteiro (conteudo).
+ *
+ *   1: emitida ate a Rodada 72. Texto com travessao e meia-risca.
+ *   2: Rodada 72. A unica mudanca e editorial (ver `semTravessao`).
+ */
+export const VERSAO_DO_MODELO_DO_CADERNO = 2;
+
+/**
+ * O hash do conteudo (`hashDoCaderno`) de cada versao do modelo, para o roteiro
+ * `roteiro-oficial-marco-zero-2026-10-22`. A versao 1 fica registrada para que
+ * o Caderno ja impresso continue identificavel; nao apagar.
+ */
+export const HASHES_DO_CADERNO_POR_VERSAO: Readonly<Record<number, string>> = {
+  1: "a71bd62321d09d292f2f34e82e14ce800f8713eb15f1adf3ff5fb4dc15164ae5",
+  2: "69a4a41b25ef94359b8a0012b57f29d8dc7c126001a495c07edcccf962731c9f",
+};
+
+const TRAVESSAO = /[—–]/;
+
+/**
+ * A troca editorial da versao 2, aplicada ao conteudo do roteiro. Duas regras,
+ * e so duas: " — " vira ": "; meia-risca entre digitos (horario) vira " às ".
+ */
+export function semTravessao(texto: string): string {
+  return texto.replace(/ — /g, ": ").replace(/(\d)–(\d)/g, "$1 às $2");
+}
+
+/** Lanca se sobrou travessao: forma nao prevista nao passa calada. */
+export function exigirSemTravessao(textos: readonly string[]): void {
+  for (const t of textos) {
+    if (TRAVESSAO.test(t)) {
+      throw new Error(`Caderno com travessao em forma nao prevista: ${t}`);
+    }
+  }
+}
+
 export const TEXTOS_CADERNO = {
-  restricao: "MARCO ZERO — CADERNO DE CONDUÇÃO · USO INTERNO DA ORGANIZAÇÃO",
+  restricao: "MARCO ZERO: CADERNO DE CONDUÇÃO · USO INTERNO DA ORGANIZAÇÃO",
   titulo: "Caderno de Condução",
   abertura:
-    "Este Caderno responde a UMA pergunta: como conduzir o dia. Ele não afirma nada sobre as pessoas que estarão na sala e não depende de questionário respondido — existe com zero resposta digital, é montado de conteúdo estático e foi feito para ser impresso e usado sem internet.",
+    "Este Caderno responde a UMA pergunta: como conduzir o dia. Ele não afirma nada sobre as pessoas que estarão na sala e não depende de questionário respondido: existe com zero resposta digital, é montado de conteúdo estático e foi feito para ser impresso e usado sem internet.",
   tituloComoLer: "Como ler este Caderno",
   comoLer: [
-    "[OFICIAL] — conteúdo do roteiro oficial do evento. A fonte vem ao lado, com o endereço e a seção de onde saiu. É verificável.",
-    "[OPERAÇÃO] — procedimento escrito por quem montou este Caderno: conferência de material, guarda, contagem, digitalização, registro de quem levou o que, o que fazer sem internet. É operação, não é planejamento pedagógico e não substitui nenhum.",
-    "[FALTA] — lacuna. Não há conteúdo oficial para este item. O Caderno diz o que falta e de quem tem de vir, e NÃO preenche o espaço. Um item [FALTA] é uma coisa a buscar antes de sábado, não uma coisa a improvisar na sala.",
+    "[OFICIAL]: conteúdo do roteiro oficial do evento. A fonte vem ao lado, com o endereço e a seção de onde saiu. É verificável.",
+    "[OPERAÇÃO]: procedimento escrito por quem montou este Caderno: conferência de material, guarda, contagem, digitalização, registro de quem levou o que, o que fazer sem internet. É operação, não é planejamento pedagógico e não substitui nenhum.",
+    "[FALTA]: lacuna. Não há conteúdo oficial para este item. O Caderno diz o que falta e de quem tem de vir, e NÃO preenche o espaço. Um item [FALTA] é uma coisa a buscar antes de sábado, não uma coisa a improvisar na sala.",
   ],
   tituloRegra: "A regra de redação deste Caderno",
   regraDeRedacao:
@@ -296,7 +354,19 @@ const PALAVRAS_DA_CLASSE: Record<ClasseDeLacuna, string> = {
 function linhaDeFonte(p: Proveniencia): string {
   const f = FONTES[p.fonte];
   if (!f) throw new Error(`Proveniência aponta para fonte desconhecida: ${String(p.fonte)}`);
-  return `${f.onde} · ${p.secao}`;
+  return semTravessao(`${f.onde} · ${p.secao}`);
+}
+
+/** Copia profunda do roteiro com `semTravessao` em toda string. */
+function comTrocaEditorial<T>(valor: T): T {
+  if (typeof valor === "string") return semTravessao(valor) as T;
+  if (Array.isArray(valor)) return valor.map((v) => comTrocaEditorial(v)) as T;
+  if (valor !== null && typeof valor === "object") {
+    return Object.fromEntries(
+      Object.entries(valor as Record<string, unknown>).map(([k, v]) => [k, comTrocaEditorial(v)]),
+    ) as T;
+  }
+  return valor;
 }
 
 function itemDoCaderno(item: ItemDoRoteiro): ItemDoCaderno {
@@ -308,7 +378,7 @@ function itemDoCaderno(item: ItemDoRoteiro): ItemDoCaderno {
       marca: "OFICIAL",
       rotulo: item.rotulo,
       corpo: item.texto,
-      fonte: `roteiro oficial — ${linhaDeFonte(item.proveniencia)}`,
+      fonte: `roteiro oficial: ${linhaDeFonte(item.proveniencia)}`,
       deQuem: null,
       porQue: null,
     };
@@ -325,7 +395,7 @@ function itemDoCaderno(item: ItemDoRoteiro): ItemDoCaderno {
       fonte:
         apoio.length === 0
           ? "procedimento escrito para este Caderno; não é planejamento pedagógico"
-          : `procedimento escrito para este Caderno; fatos de apoio no roteiro oficial — ${apoio
+          : `procedimento escrito para este Caderno; fatos de apoio no roteiro oficial: ${apoio
               .map(linhaDeFonte)
               .join(" ; ")}`,
       deQuem: null,
@@ -342,7 +412,7 @@ function itemDoCaderno(item: ItemDoRoteiro): ItemDoCaderno {
     marca: "FALTA",
     rotulo: item.rotulo,
     corpo: item.falta,
-    fonte: `conferido em — ${item.conferidoEm.map(linhaDeFonte).join(" ; ")}`,
+    fonte: `conferido em: ${item.conferidoEm.map(linhaDeFonte).join(" ; ")}`,
     deQuem: item.deQuem,
     porQue: PALAVRAS_DA_CLASSE[item.classe],
   };
@@ -369,7 +439,10 @@ function somar(cs: readonly ContagemDeItens[]): ContagemDeItens {
  * momento repetido, momento fora da lista fechada, item sem proveniencia, lacuna
  * sem responsavel -- ou texto que afirma algo sobre quem estara na sala.
  */
-export function montarCaderno(roteiro: RoteiroOficial = ROTEIRO_OFICIAL): CadernoDeConducao {
+export function montarCaderno(roteiroBruto: RoteiroOficial = ROTEIRO_OFICIAL): CadernoDeConducao {
+  // A troca editorial da versao 2 do modelo, sobre TODO texto que vem do
+  // roteiro. Ids e enums nao tem travessao, e a troca e identidade neles.
+  const roteiro = comTrocaEditorial(roteiroBruto);
   const ids = roteiro.momentos.map((m) => m.id);
   const faltando = MOMENTOS_OBRIGATORIOS.filter((id) => !ids.includes(id));
   if (faltando.length > 0) {
@@ -431,11 +504,14 @@ export function montarCaderno(roteiro: RoteiroOficial = ROTEIRO_OFICIAL): Cadern
     lacunas,
     limites: TEXTOS_CADERNO.limites,
     contagem: somar(momentos.map((m) => m.contagem)),
-    fontes: Object.values(FONTES).map((f) => `${f.titulo} — ${f.onde} (lido em ${f.lidoEm})`),
+    fontes: Object.values(FONTES).map((f) =>
+      semTravessao(`${f.titulo}: ${f.onde} (lido em ${f.lidoEm})`),
+    ),
   };
 
   // O VARREDOR, nas duas camadas, sobre TODA string do Caderno. Lanca.
   exigirCadernoSemAfirmacaoSobreOsJovens(textosDoCaderno(caderno));
+  exigirSemTravessao(textosDoCaderno(caderno));
 
   return caderno;
 }
@@ -467,7 +543,7 @@ export function textosDoCaderno(c: CadernoDeConducao): string[] {
     }
   }
   for (const l of c.lacunas) {
-    fora.push(`${l.momentoNumero}. ${l.momentoTitulo} — ${l.rotulo}`);
+    fora.push(`${l.momentoNumero}. ${l.momentoTitulo}: ${l.rotulo}`);
     fora.push(l.falta);
     fora.push(`De quem: ${l.deQuem}`);
     fora.push(...l.conferidoEm);
@@ -502,7 +578,7 @@ export function textoDoCaderno(c: CadernoDeConducao): string {
   ];
 
   for (const m of c.momentos) {
-    const cab = `MOMENTO ${m.numero} — ${m.titulo.toUpperCase()}${m.quando ? `\n(${m.quando})` : ""}`;
+    const cab = `MOMENTO ${m.numero}: ${m.titulo.toUpperCase()}${m.quando ? `\n(${m.quando})` : ""}`;
     const corpo = m.itens.map((i) => {
       const linhas = [`[${i.marca}] ${i.rotulo}`, `  ${i.corpo}`];
       if (i.deQuem) linhas.push(`  DE QUEM: ${i.deQuem}`);
@@ -560,14 +636,14 @@ export function paginaImprimivelDoCaderno(c: CadernoDeConducao): string {
           return `<div class="${classe}"><p class="rotulo"><span class="marca">[${e(i.marca)}]</span> ${e(i.rotulo)}</p><p class="corpo">${e(i.corpo)}</p>${extras.join("")}</div>`;
         })
         .join("");
-      return `<section class="momento"><h2>Momento ${m.numero} — ${e(m.titulo)}</h2>${m.quando ? `<p class="quando">${e(m.quando)}</p>` : ""}${itens}</section>`;
+      return `<section class="momento"><h2>Momento ${m.numero}: ${e(m.titulo)}</h2>${m.quando ? `<p class="quando">${e(m.quando)}</p>` : ""}${itens}</section>`;
     })
     .join("");
 
   const lacunas = c.lacunas
     .map(
       (l, n) =>
-        `<li><strong>${n + 1}. ${e(l.rotulo)}</strong> <span class="quando">(momento ${l.momentoNumero}, ${e(l.momentoTitulo)})</span><p class="corpo">${e(l.falta)}</p><p class="meta"><strong>De quem:</strong> ${e(l.deQuem)}</p><p class="fonte">conferido em — ${e(l.conferidoEm.join(" ; "))}</p></li>`,
+        `<li><strong>${n + 1}. ${e(l.rotulo)}</strong> <span class="quando">(momento ${l.momentoNumero}, ${e(l.momentoTitulo)})</span><p class="corpo">${e(l.falta)}</p><p class="meta"><strong>De quem:</strong> ${e(l.deQuem)}</p><p class="fonte">conferido em: ${e(l.conferidoEm.join(" ; "))}</p></li>`,
     )
     .join("");
 
@@ -576,7 +652,7 @@ export function paginaImprimivelDoCaderno(c: CadernoDeConducao): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${e(c.cabecalho.titulo)} — Marco Zero</title>
+<title>${e(c.cabecalho.titulo)}: Marco Zero</title>
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
@@ -642,6 +718,8 @@ export function cadernoDeConducao(): {
   conteudoSha256: string;
   texto: string;
   versao: string;
+  /** `VERSAO_DO_MODELO_DO_CADERNO`. Fora do texto, como no Guia. */
+  versaoDoModelo: number;
 } {
   const caderno = montarCaderno(ROTEIRO_OFICIAL);
   return {
@@ -649,5 +727,6 @@ export function cadernoDeConducao(): {
     conteudoSha256: hashDoCaderno(caderno),
     texto: textoDoCaderno(caderno),
     versao: VERSAO_DO_ROTEIRO,
+    versaoDoModelo: VERSAO_DO_MODELO_DO_CADERNO,
   };
 }

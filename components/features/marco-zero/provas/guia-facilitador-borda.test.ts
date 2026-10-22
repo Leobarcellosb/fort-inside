@@ -75,10 +75,10 @@ const TRABALHO = URL_ALVO ? mkdtempSync(join(tmpdir(), "prova-guia-")) : "";
 
 const COLUNAS: Record<string, string[]> = {
   events: ["id", "name", "event_date", "quiz_version"],
-  event_logs: ["action", "created_at"],
-  participants: ["id", "full_name"],
-  event_people: ["id", "participant_id"],
-  event_checkins: ["person_id", "estado"],
+  event_logs: ["action", "created_at", "event_id"],
+  participants: ["id", "full_name", "event_id"],
+  event_people: ["id", "participant_id", "event_id"],
+  event_checkins: ["person_id", "estado", "event_id"],
   quiz_stages: ["id"],
   quiz_responses: ["participant_id", "stage_id", "answers"],
 };
