@@ -22,7 +22,7 @@ Os blocos 2 a 6 são detalhe, para quando o boletim acender algum alerta (`<<`).
 
 | Quando | O que confirmar |
 |---|---|
-| Quinta, depois do disparo da Malu | "Último questionário recebido" com horário depois do disparo, e "Questionários completos" subindo. |
+| Quinta, depois do disparo da Malu | "Último questionário recebido" com horário depois do disparo, e "Cadastros com 52/52" subindo. |
 | Sexta, 12h | "Erros de gravação" e "Conflitos aguardando" em zero ou com tempo de resolver. |
 | Sexta, 18h | Lembretes: ver abaixo. |
 | Sexta, 22h30 | Último recebido recente, nenhum erro novo, prazo confere com sexta 23h59. |
