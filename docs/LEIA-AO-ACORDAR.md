@@ -1,10 +1,29 @@
 # Leia ao acordar — 23 de outubro
 
-Duas coisas têm prazo **hoje ou amanhã**, e nenhuma das duas é código.
+Três coisas têm prazo **hoje ou amanhã**, e nenhuma das três é código.
 
 ---
 
-## 1. A gráfica fecha e falta conteúdo para dois materiais
+## 1. Os gabaritos dos cinco casos estão públicos no site do evento
+
+Medi agora, sem estar logado em nada:
+
+- `evento-marcozero.velvoramedia.com.br/caso-1.html` até `caso-5.html` respondem **HTTP 200**
+  para qualquer pessoa;
+- cada uma tem uma seção chamada, literalmente, **"Gabarito (só concierge)"**, com cerca de
+  2.400 caracteres de conteúdo;
+- as cinco estão **linkadas na página inicial pública** — não é preciso adivinhar URL;
+- não há autenticação, nem senha, nem cabeçalho de não-indexação.
+
+Ou seja: qualquer um dos 50 participantes que abrir o site do evento chega, em dois cliques,
+na solução do caso que o Núcleo dele vai receber à tarde. A Missão 03 perde o sentido para
+quem olhar.
+
+Isso é do site, não do app — eu não tenho acesso para corrigir. Quem publicou o site precisa
+pôr as cinco fichas atrás de senha, tirar do ar até sábado, ou trocar as URLs por algo não
+listado. **É a correção mais barata e mais urgente desta lista.**
+
+## 2. A gráfica fecha e falta conteúdo para dois materiais
 
 O roteiro oficial do evento tem uma lista chamada **"Produzir até sexta, 23/10"**. Dois
 itens dela **não têm conteúdo escrito em lugar nenhum**:
@@ -22,7 +41,7 @@ Eu **não escrevi** esses conteúdos de propósito: formular o Mural e o pacto �
 planejamento pedagógico, não é meu. O que eu fiz foi deixar a falta nomeada, com
 responsável, dentro do Caderno de Condução.
 
-## 2. O Forms pré-evento deveria sair hoje, e o e-mail continua travado
+## 3. O Forms pré-evento deveria sair hoje, e o e-mail continua travado
 
 O próprio roteiro oficial diz: **"Quinta 22 ou sexta 23: Forms pré-evento, enviado entre
 48h e 24h antes, respostas até sexta — Carlos e Léo montam, Malu valida e envia."**
