@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import type { PrognosticContent, Prognostic, Event } from "@/types/database";
 import { PrognosticView } from "@/components/features/prognostic/PrognosticView";
 import { DocumentoSuspensoView } from "@/components/features/prognostic/DocumentoSuspensoView";
+import { pdfPermitido } from "@/lib/pdf/politica-do-pdf";
 
 // Sem o nome da pessoa no titulo: o link vai por WhatsApp, onde o titulo vira a
 // previa da conversa. E documento pessoal nao entra em buscador.
@@ -60,9 +61,10 @@ export default async function PrognosticPage({ params }: Props) {
 
   const { data: event } = await supabase
     .from("events")
-    .select("name, event_date, host_name")
+    .select("name, event_date, host_name, quiz_version")
     .eq("id", participant?.event_id ?? "")
-    .single() as { data: Pick<Event, "name" | "event_date" | "host_name"> | null; error: unknown };
+    .single() as { data: Pick<Event, "name" | "event_date" | "host_name" | "quiz_version"> | null; error: unknown };
+  const comPdf = pdfPermitido(event);
 
   const content = (prognostic.final_content ?? prognostic.raw_ai_output) as PrognosticContent;
 
@@ -75,7 +77,8 @@ export default async function PrognosticPage({ params }: Props) {
       content={content}
       yuriNote={prognostic.yuri_note ?? null}
       token={token}
-      pdfUrl={prognostic.pdf_url ?? null}
+      pdfUrl={comPdf ? (prognostic.pdf_url ?? null) : null}
+      pdfDisponivel={comPdf}
     />
   );
 }

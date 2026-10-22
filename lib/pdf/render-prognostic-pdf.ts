@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { PrognosticContent, Prognostic, Event } from "@/types/database";
+import { pdfPermitido, TEXTO_PDF_INDISPONIVEL } from "./politica-do-pdf";
 
 // Core PDF render + upload, callable in-process. The generate-prognostic route
 // used to self-fetch /api/generate-pdf from inside after(), which forced that
@@ -26,22 +27,28 @@ export async function renderAndStorePdf(prognosticId: string): Promise<PdfResult
     return { ok: false, status: 404, error: "Prognóstico não encontrado" };
   }
 
+  const participant = prognostic.participants;
+
+  const { data: event } = (await supabase
+    .from("events")
+    .select("name, event_date, host_name, quiz_version")
+    .eq("id", participant?.event_id ?? "")
+    .single()) as {
+    data: Pick<Event, "name" | "event_date" | "host_name" | "quiz_version"> | null;
+    error: unknown;
+  };
+
+  // ANTES de devolver um PDF ja gravado: evento sem PDF nao devolve nem o
+  // arquivo antigo (politica-do-pdf.ts). Sem evento legivel, tambem nao.
+  if (!pdfPermitido(event)) {
+    return { ok: false, status: 409, error: TEXTO_PDF_INDISPONIVEL };
+  }
+
   // Already rendered — reuse. Editing a prognostic nulls pdf_url, so this only
   // short-circuits when the stored file still matches the current content.
   if (prognostic.pdf_url) {
     return { ok: true, pdfUrl: prognostic.pdf_url };
   }
-
-  const participant = prognostic.participants;
-
-  const { data: event } = (await supabase
-    .from("events")
-    .select("name, event_date, host_name")
-    .eq("id", participant?.event_id ?? "")
-    .single()) as {
-    data: Pick<Event, "name" | "event_date" | "host_name"> | null;
-    error: unknown;
-  };
 
   // Prefer the reviewed text over the raw IA output: an admin edit that hadn't
   // been delivered yet used to render the unedited version into the PDF.

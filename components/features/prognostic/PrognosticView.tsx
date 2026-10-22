@@ -16,6 +16,8 @@ interface Props {
   yuriNote: string | null;
   token: string;
   pdfUrl: string | null;
+  /** Evento sem PDF (lib/pdf/politica-do-pdf.ts): sem botao e sem consulta de status. */
+  pdfDisponivel?: boolean;
 }
 
 export function PrognosticView({
@@ -27,12 +29,14 @@ export function PrognosticView({
   yuriNote,
   token,
   pdfUrl: initialPdfUrl,
+  pdfDisponivel = true,
 }: Props) {
   const [pdfUrl, setPdfUrl] = useState<string | null>(initialPdfUrl);
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [pollingTimedOut, setPollingTimedOut] = useState(false);
 
   useEffect(() => {
+    if (!pdfDisponivel) return;
     if (pdfUrl) return;
     if (pollingTimedOut) return;
     const POLL_INTERVAL_MS = 3000;
@@ -57,7 +61,7 @@ export function PrognosticView({
     pollOnce();
     const interval = setInterval(pollOnce, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [pdfUrl, pollingTimedOut, token]);
+  }, [pdfDisponivel, pdfUrl, pollingTimedOut, token]);
 
   const isPolling = !pdfUrl && !pollingTimedOut;
   const firstName = participantName.trim().split(" ")[0];
@@ -111,6 +115,7 @@ export function PrognosticView({
       </div>
 
       {/* Fixed PDF download — top-right */}
+      {pdfDisponivel && (
       <div className="fixed top-4 right-4 z-30">
         {pdfUrl ? (
           <a
@@ -170,6 +175,7 @@ export function PrognosticView({
           </Button>
         )}
       </div>
+      )}
 
       {/* Hero */}
       <CinematicHero
