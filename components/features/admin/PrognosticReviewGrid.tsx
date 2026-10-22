@@ -24,6 +24,8 @@ interface Participant {
 
 interface Props {
   eventId: string;
+  /** O evento gera PDF (questionario v1)? Repassado ao editor, que muda so o texto. */
+  pdfDisponivel: boolean;
   participants: Participant[];
   prognostics: Prognostic[];
 }
@@ -36,7 +38,7 @@ const TRAIL_COLORS: Record<string, string> = {
   "Sessão Privada": "bg-primary/20 text-primary border-primary/30",
 };
 
-export function PrognosticReviewGrid({ eventId, participants, prognostics }: Props) {
+export function PrognosticReviewGrid({ eventId, pdfDisponivel, participants, prognostics }: Props) {
   const [localPrognostics, setLocalPrognostics] = useState<Prognostic[]>(prognostics);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -423,6 +425,7 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
           (editingProg.edited_content ?? editingProg.raw_ai_output) as PrognosticContent
         }
         initialYuriNote={editingProg.yuri_note}
+        pdfDisponivel={pdfDisponivel}
         onClose={() => setEditingId(null)}
         onSaved={() => {
           const id = editingProg.id;

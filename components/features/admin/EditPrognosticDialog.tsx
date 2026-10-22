@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import type { PrognosticContent, TrailRecommendation } from "@/types/database";
 import { Button } from "@/components/ui/button";
+import { textosDaRevisao } from "./textos-da-revisao";
 
 const TRAILS: TrailRecommendation[] = [
   "Exploração",
@@ -18,6 +19,8 @@ interface Props {
   participantName: string;
   initialContent: PrognosticContent;
   initialYuriNote: string | null;
+  /** O evento gera PDF (questionario v1)? Muda so o que a tela diz. */
+  pdfDisponivel: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -27,12 +30,14 @@ export function EditPrognosticDialog({
   participantName,
   initialContent,
   initialYuriNote,
+  pdfDisponivel,
   onClose,
   onSaved,
 }: Props) {
   const [content, setContent] = useState<PrognosticContent>(initialContent);
   const [yuriNote, setYuriNote] = useState(initialYuriNote ?? "");
   const [saving, setSaving] = useState(false);
+  const textos = textosDaRevisao(pdfDisponivel);
 
   async function handleSave() {
     setSaving(true);
@@ -47,7 +52,7 @@ export function EditPrognosticDialog({
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Erro ao salvar");
-      toast.success("Edição salva. PDF será regenerado ao entregar.");
+      toast.success(textos.aoSalvar);
       onSaved();
       onClose();
     } catch (err) {
@@ -164,7 +169,7 @@ export function EditPrognosticDialog({
               placeholder="3-5 parágrafos. Use **bold** em conceitos-chave."
             />
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Markdown: <code>**texto**</code> vira negrito no PDF e na web.
+              Markdown: <code>**texto**</code>{textos.negrito}
             </p>
           </section>
 

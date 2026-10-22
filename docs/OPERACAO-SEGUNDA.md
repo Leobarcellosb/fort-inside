@@ -66,5 +66,9 @@ Nunca prepare vários links de uma vez para colar depois.
   de mostrar o conteúdo na hora. Corrija, salve de novo e reenvie à pessoa certa.
 - **Documento com erro de conteúdo já enviado:** o mesmo caminho. O link da pessoa continua
   o mesmo depois de corrigido.
+- **"Entrega recusada: o texto deste documento não é o que foi revisado e aprovado":** o
+  texto mudou depois da última aprovação. Não tente contornar e não basta recarregar a
+  página. Abra o documento em **Editar**, leia o texto inteiro como ele está agora, **Salve
+  alterações** (nova aprovação) e só então disponibilize de novo.
 - **O link do documento funciona para quem tiver o endereço.** Não peça para o jovem
   repassar, e não poste em grupo.

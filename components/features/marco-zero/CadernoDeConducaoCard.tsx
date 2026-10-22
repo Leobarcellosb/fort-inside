@@ -71,7 +71,7 @@ export function CadernoDeConducaoCard() {
           Como conduzir o dia, nos oito momentos. Sempre disponível: não depende de questionário
           respondido, não depende de DNA Coletivo e não afirma nada sobre as pessoas que estarão na
           sala. Cada item carrega a fonte de onde veio, e o que não tem conteúdo oficial aparece
-          como lacuna nomeada, com o responsável — nunca preenchido. Feito para ser impresso e
+          como lacuna nomeada, com o responsável, e nunca é preenchido. Feito para ser impresso e
           usado sem internet.
         </p>
       </div>
@@ -115,7 +115,7 @@ export function CadernoDeConducaoCard() {
           {caderno.lacunas.length > 0 && (
             <div className="rounded border border-border bg-background p-3">
               <p className="text-xs font-medium text-foreground">
-                Falta conteúdo oficial nestes itens — buscar antes de sábado:
+                Falta conteúdo oficial nestes itens. Buscar antes de sábado:
               </p>
               <ul className="mt-1 space-y-1 text-xs text-muted-foreground">
                 {caderno.lacunas.map((l) => (
@@ -123,7 +123,7 @@ export function CadernoDeConducaoCard() {
                     <span className="text-foreground">
                       Momento {l.momento_numero} · {l.rotulo}
                     </span>{" "}
-                    — de quem: {l.de_quem}
+                    · de quem: {l.de_quem}
                   </li>
                 ))}
               </ul>

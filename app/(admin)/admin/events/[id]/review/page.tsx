@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import { PrognosticReviewGrid } from "@/components/features/admin/PrognosticReviewGrid";
 import type { Event, Participant, Prognostic } from "@/types/database";
+import { pdfPermitido } from "@/lib/pdf/politica-do-pdf";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -13,9 +14,9 @@ export default async function ReviewPage({ params }: Props) {
 
   const { data: event } = await supabase
     .from("events")
-    .select("id, name, status")
+    .select("id, name, status, quiz_version")
     .eq("id", id)
-    .single() as { data: Pick<Event, "id" | "name" | "status"> | null; error: unknown };
+    .single() as { data: Pick<Event, "id" | "name" | "status" | "quiz_version"> | null; error: unknown };
 
   if (!event) notFound();
 
@@ -44,6 +45,7 @@ export default async function ReviewPage({ params }: Props) {
 
       <PrognosticReviewGrid
         eventId={id}
+        pdfDisponivel={pdfPermitido(event)}
         participants={participants ?? []}
         prognostics={prognostics ?? []}
       />
