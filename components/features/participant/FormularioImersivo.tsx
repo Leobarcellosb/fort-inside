@@ -867,9 +867,6 @@ export function FormularioImersivo({ eventCode, eventName, dataDoEvento, etapas:
         {e.descricao && (
           <p className="text-[17px] leading-relaxed text-foreground/80 whitespace-pre-line">{e.descricao}</p>
         )}
-        <p className="text-[14px] text-muted-foreground">
-          {e.questions.length} {e.questions.length === 1 ? "pergunta" : "perguntas"}
-        </p>
       </section>
     );
   } else if (tela.tipo === "perguntas") {
@@ -978,11 +975,10 @@ function Cabecalho({
           style={{ width: `${pct}%` }}
         />
       </div>
-      <div className="max-w-xl mx-auto px-6 pt-3 flex items-baseline justify-between text-[12px] text-muted-foreground">
+      {/* Sem "37 de 51" a vista (pedido do dono: contagem de perguntas assusta).
+          A barra mostra o avanco; o leitor de tela continua ouvindo os numeros. */}
+      <div className="max-w-xl mx-auto px-6 pt-3 text-[12px] text-muted-foreground">
         <span className="font-medium tracking-wide">{onde}</span>
-        <span className="tabular-nums" aria-hidden="true">
-          {respondidas} de {total}
-        </span>
       </div>
     </header>
   );
@@ -1105,10 +1101,6 @@ function TelaDePerguntas({
   return (
     <section className={cn("space-y-8", className)}>
       <div className="space-y-4">
-        <p className="text-[13px] font-medium tracking-wide text-muted-foreground tabular-nums">
-          {tela.primeiroNumero}
-          <span className="text-muted-foreground/60"> / {totalNaEtapa}</span>
-        </p>
         <h2
           ref={tituloRef}
           id={idDoEnunciado}
@@ -1468,7 +1460,7 @@ function Revisao(p: {
               <p className="text-[16px] font-medium leading-snug">{etapa.titulo}</p>
               <p className={cn("text-[13px] pt-0.5", faltam === 0 ? "text-primary" : "text-[#9B2C1F] font-medium")}>
                 {faltam === 0
-                  ? `Completa · ${etapa.questions.length} de ${etapa.questions.length}`
+                  ? "Completa"
                   : faltam === 1
                     ? "Falta 1 pergunta"
                     : `Faltam ${faltam} perguntas`}
