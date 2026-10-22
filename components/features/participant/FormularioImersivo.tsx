@@ -676,11 +676,12 @@ export function FormularioImersivo({ eventCode, eventName, dataDoEvento, etapas:
   );
 
   if (desfecho === "segunda") {
-    return casca(<TelaDeSegundaResposta nome={identificacao.nome} eventName={eventName} />);
+    return casca(<TelaDeSegundaResposta nome={identificacao.nome} eventName={eventName} />, { cheia: true });
   }
   if (desfecho === "ok") {
     return casca(
       <TelaFinal nome={identificacao.nome} eventName={eventName} dataDoEvento={dataDoEvento} />,
+      { cheia: true },
     );
   }
 
@@ -1515,90 +1516,106 @@ function Revisao(p: {
 }
 
 // ---------------------------------------------------------------------------
-// Telas finais -- o texto da versao simples, que esta bom, sem mudanca de
-// sentido. So a moldura muda.
+// Telas finais. Mesma moldura escura da capa, com o Yuri: quem termina precisa
+// VER que chegou (o dono testou e a tela clara "parecia nem que foi enviado").
 // ---------------------------------------------------------------------------
 
-function TelaFinal({ nome, eventName, dataDoEvento }: { nome: string; eventName: string; dataDoEvento: string | null }) {
-  const n = primeiroNome(nome) || "tudo certo";
+function MolduraDoAgradecimento({ children }: { children: React.ReactNode }) {
   return (
-    <section className="space-y-8 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 motion-reduce:animate-none">
-      <div className="space-y-4">
-        <div className="w-12 h-12 rounded-full bg-primary text-primary-foreground inline-flex items-center justify-center" aria-hidden="true">
-          <svg viewBox="0 0 20 20" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2.2">
-            <path d="M4.5 10.5l3.5 3.5 7.5-8" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
-        <p className="text-[13px] font-medium tracking-wide text-primary">Recebemos</p>
-        <h1 tabIndex={-1} className="text-[34px] leading-[1.1] font-semibold tracking-tight outline-none">
-          Prontinho, {n}.
-        </h1>
+    <section className="relative min-h-full overflow-hidden bg-[#0D0C0A] text-white">
+      <div className="absolute inset-x-0 top-0 h-[64dvh] lg:bottom-0 lg:left-auto lg:h-auto lg:w-[52%]">
+        <Image
+          src="/marco-zero/obrigado-yuri.jpg"
+          alt="Yuri Fortes"
+          fill
+          preload
+          sizes="(min-width: 1024px) 52vw, 100vw"
+          className="object-cover object-[50%_22%] animate-[capa-entra_2.4s_cubic-bezier(0.2,0.7,0.2,1)_both] motion-reduce:animate-none"
+        />
+        <div aria-hidden="true" className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(13,12,10,0)_0%,rgba(13,12,10,0)_45%,rgba(13,12,10,0.85)_80%,#0D0C0A_100%)] lg:bg-[linear-gradient(to_right,#0D0C0A_0%,rgba(13,12,10,0.5)_30%,rgba(13,12,10,0)_60%)]" />
       </div>
-      <div className="space-y-4 text-[16px] leading-relaxed text-foreground/80">
-        <p>
-          Suas respostas chegaram aqui inteiras. Você não precisa preencher nada de novo, nem
-          guardar nenhum código: está tudo registrado no seu nome.
-        </p>
-        <p>
-          <span className="text-foreground font-medium">O que acontece agora:</span> a equipe lê o
-          que você escreveu antes do encontro. É isso que faz o {eventName} falar da sua vida e não
-          de um roteiro genérico.
-        </p>
-        <p>
-          {dataDoEvento ? (
-            <>
-              A gente se vê <span className="text-foreground font-medium">{dataDoEvento}</span>.
-            </>
-          ) : (
-            <>A gente se vê no dia do encontro.</>
-          )}{" "}
-          Depois do encontro, você recebe um documento feito a partir das suas próprias respostas.
-          Ele é seu, individual, e não um relatório de turma.
-        </p>
-        <p>
-          Se precisar corrigir alguma coisa, você pode responder de novo neste mesmo link, com o
-          mesmo e-mail. O novo envio <span className="text-foreground font-medium">não apaga este</span>:
-          ele fica guardado ao lado, e a equipe confirma qual vale antes do encontro.
-        </p>
+      <style>{`@keyframes capa-entra{from{transform:scale(1.08);opacity:0}to{transform:scale(1);opacity:1}}`}</style>
+
+      <div className="relative min-h-[100dvh] flex flex-col">
+        <div className="flex-1 min-h-[40svh] lg:min-h-0" />
+        <div className="w-full max-w-6xl mx-auto px-6 pb-12 lg:pb-16">
+          <div className="max-w-md space-y-6 animate-in fade-in-0 slide-in-from-bottom-3 duration-700 delay-300 fill-mode-both motion-reduce:animate-none">
+            {children}
+          </div>
+        </div>
       </div>
     </section>
   );
 }
 
-function TelaDeSegundaResposta({ nome, eventName }: { nome: string; eventName: string }) {
-  const n = primeiroNome(nome) || "tudo certo";
+function SeloRecebido({ texto }: { texto: string }) {
   return (
-    <section className="space-y-8 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 motion-reduce:animate-none">
-      <div className="space-y-4">
-        <p className="text-[13px] font-medium tracking-wide text-primary">Recebemos</p>
-        <h1 tabIndex={-1} className="text-[30px] leading-[1.15] font-semibold tracking-tight outline-none">
-          Seu envio está guardado, {n}.
-        </h1>
-      </div>
-      <div className="space-y-4 text-[16px] leading-relaxed text-foreground/80">
-        <p>
-          Já existe um questionário respondido com este e-mail neste evento. Guardamos inteiro o que
-          você respondeu agora.{" "}
-          <span className="text-foreground font-medium">Nada do que você escreveu se perdeu</span>, e
-          não colocamos nada por cima do que já estava aqui.
-        </p>
-        <p>
-          <span className="text-foreground font-medium">Por que não substituímos:</span> pode ser você
-          corrigindo o que respondeu antes, e pode ser que este e-mail seja de outra pessoa e tenha
-          vindo com uma letra trocada. Pela tela não há como saber qual dos dois é, e apagar as
-          respostas de alguém por engano não tem volta. Então nenhuma das duas é apagada.
-        </p>
-        <p>
-          <span className="text-foreground font-medium">O que acontece agora:</span> alguém da
-          equipe vê os dois envios e confirma qual é o seu antes do encontro. Você não precisa
-          responder tudo de novo.
-        </p>
-        <p>
-          Se o e-mail que você digitou tem algum erro de letra, ou se quiser contar qual dos envios é
-          o certo, fale com a equipe do {eventName}: é o caminho mais rápido para o seu envio ser
-          reconhecido como seu.
-        </p>
-      </div>
-    </section>
+    <p className="inline-flex items-center gap-2.5 text-[12px] font-semibold uppercase tracking-[0.22em] text-[#D9C291]">
+      <span className="w-6 h-6 rounded-full bg-[#D9C291] text-[#0D0C0A] inline-flex items-center justify-center" aria-hidden="true">
+        <svg viewBox="0 0 20 20" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.6">
+          <path d="M4.5 10.5l3.5 3.5 7.5-8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
+      {texto}
+    </p>
   );
+}
+
+function TelaFinal({ nome, dataDoEvento }: { nome: string; eventName: string; dataDoEvento: string | null }) {
+  const n = primeiroNome(nome);
+  return (
+    <MolduraDoAgradecimento>
+      <div className="space-y-4">
+        <SeloRecebido texto="Respostas recebidas" />
+        <h1 tabIndex={-1} className="text-[44px] sm:text-[56px] leading-[1.02] font-semibold tracking-[-0.02em] outline-none">
+          {n ? `Obrigado, ${n}.` : "Obrigado."}
+        </h1>
+        <p className="text-[17px] leading-relaxed text-white/80">
+          Suas respostas chegaram inteiras. Você não precisa fazer mais nada.
+        </p>
+      </div>
+
+      <blockquote className="border-l-2 border-[#D9C291]/70 pl-4 space-y-2">
+        <p className="text-[17px] leading-relaxed text-white">
+          Obrigado por levar isso a sério. É com o que você escreveu que o encontro vai falar da sua
+          vida.{" "}
+          {dataDoEvento ? <>A gente se vê {dataCurtaPorExtenso(dataDoEvento)}.</> : <>A gente se vê no encontro.</>}
+        </p>
+        <footer className="text-[13px] font-medium tracking-wide text-white/60">Yuri Fortes</footer>
+      </blockquote>
+
+      <p className="text-[13.5px] leading-relaxed text-white/50">
+        Depois do encontro você recebe um documento feito a partir das suas respostas, só seu. Se
+        precisar corrigir algo, é só responder de novo neste link: o envio anterior não se perde.
+      </p>
+    </MolduraDoAgradecimento>
+  );
+}
+
+function TelaDeSegundaResposta({ nome, eventName }: { nome: string; eventName: string }) {
+  const n = primeiroNome(nome);
+  return (
+    <MolduraDoAgradecimento>
+      <div className="space-y-4">
+        <SeloRecebido texto="Envio guardado" />
+        <h1 tabIndex={-1} className="text-[40px] sm:text-[52px] leading-[1.04] font-semibold tracking-[-0.02em] outline-none">
+          {n ? `Recebemos, ${n}.` : "Recebemos."}
+        </h1>
+        <p className="text-[17px] leading-relaxed text-white/80">
+          Este e-mail já tinha um questionário respondido. Guardamos o que você enviou agora{" "}
+          <span className="text-white font-medium">ao lado</span>, sem apagar nada.
+        </p>
+      </div>
+      <p className="text-[15px] leading-relaxed text-white/65">
+        Antes do encontro, a equipe confere os dois envios e confirma qual é o seu. Você não precisa
+        responder de novo. Se o e-mail tiver algum erro de digitação, avise a equipe do {eventName}.
+      </p>
+    </MolduraDoAgradecimento>
+  );
+}
+
+/** "sábado, 24 de outubro" -> "no sábado, 24 de outubro", para a frase do Yuri. */
+function dataCurtaPorExtenso(data: string): string {
+  const dia = data.split(",")[0]?.trim().toLowerCase() ?? "";
+  return dia === "sábado" || dia === "domingo" ? `no ${data}` : `na ${data}`;
 }
