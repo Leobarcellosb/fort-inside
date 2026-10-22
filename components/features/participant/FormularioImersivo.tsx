@@ -25,7 +25,6 @@ import {
   type Tela,
 } from "./formulario-imersivo/roteiro";
 import {
-  PRAZO_DO_RASCUNHO_DIAS,
   apagarRascunho,
   esquecerEnvio,
   gravarRascunho,
@@ -1230,8 +1229,7 @@ function BoasVindas(p: {
 
       <style>{`@keyframes capa-entra{from{transform:scale(1.08);opacity:0}to{transform:scale(1);opacity:1}}`}</style>
 
-      {/* Primeira dobra: canto, foto e o bloco que leva ao botao. O aviso do
-          rascunho fica logo abaixo dela, para o rosto nao sumir atras do texto. */}
+      {/* Primeira dobra: canto, foto e o bloco que leva ao botao. */}
       <div className="relative min-h-[100dvh] flex flex-col">
         <div className="w-full max-w-6xl mx-auto px-6 pt-6 flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.28em] text-white/85">
           {p.dataDoEvento && <span className="tracking-[0.18em] text-white/70">{dataCurta(p.dataDoEvento)}</span>}
@@ -1329,15 +1327,16 @@ function BoasVindas(p: {
         </div>
       </div>
 
-      <div className="relative w-full max-w-6xl mx-auto px-6 pb-10">
-        <div className="max-w-md">
-          <p className="text-[12.5px] leading-relaxed text-white/45">
-            {p.salvoNoAparelho
-              ? `Enquanto você responde, o que escrever fica salvo só neste aparelho, por até ${PRAZO_DO_RASCUNHO_DIAS} dias, para você poder parar e continuar depois. Ao enviar, sai daqui. Se o aparelho for compartilhado, você pode apagar a qualquer momento.`
-              : "Este navegador não deixa guardar o rascunho (aba privativa, talvez). Dá para responder normalmente, só não feche a página antes de enviar."}
+      {/* So o aviso que muda o que a pessoa faz: sem rascunho, fechar a pagina
+          perde tudo. O "fica salvo neste aparelho" saiu a pedido do dono. */}
+      {!p.salvoNoAparelho && (
+        <div className="relative w-full max-w-6xl mx-auto px-6 pb-10">
+          <p className="max-w-md text-[12.5px] leading-relaxed text-white/45">
+            Este navegador não deixa guardar o rascunho (aba privativa, talvez). Dá para responder
+            normalmente, só não feche a página antes de enviar.
           </p>
         </div>
-      </div>
+      )}
     </section>
   );
 }
