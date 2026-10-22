@@ -174,3 +174,47 @@ join pg_namespace n on n.oid = c.relnamespace
 where n.nspname = 'public'
   and c.relname in ('participants', 'quiz_responses', 'external_submissions', 'event_logs', 'prognostics')
 order by 1;
+
+-- 7. DIAGNOSTICO: GRAVACOES DEPOIS DO PRAZO (Rodada 79). So contagens.
+--    Leia com cuidado: gravado depois do prazo NAO quer dizer aceito depois do
+--    prazo. O formulario publico decide no recebimento, entao um envio aceito
+--    antes pode terminar de gravar depois. E o fluxo antigo autenticado (/quiz)
+--    ainda aceita, pelo banco, ate 15 minutos depois do prazo para quem abriu a
+--    etapa antes. Limites do que o banco guarda:
+--      - quiz_responses so tem a hora da PRIMEIRA gravacao (submitted_at); uma
+--        alteracao posterior da mesma resposta nao deixa hora: nao verificavel;
+--      - no fluxo antigo, submitted_at pode ser informado pelo proprio aparelho:
+--        e indicio, nao prova.
+with ev as (
+  select id, form_closes_at as f from public.events where event_code = 'MARCOZERO'
+),
+r as (
+  select q.submitted_at as t
+  from public.quiz_responses q
+  join public.participants pa on pa.id = q.participant_id
+  join ev on ev.id = pa.event_id
+),
+c as (
+  select pa.completed_at as t
+  from public.participants pa join ev on ev.id = pa.event_id
+  where pa.completed_at is not null
+),
+s as (
+  select x.criado_em as t
+  from public.external_submissions x join ev on ev.id = x.event_id
+)
+select concat_ws(E'\n',
+  'Gravações depois do prazo (diagnóstico)',
+  case when ev.f is null then 'Prazo não cadastrado: não verificável.' else concat_ws(E'\n',
+    'Respostas por etapa gravadas depois do prazo: ' || (select count(*) from r where t >= ev.f),
+    '  até 15 minutos depois: ' || (select count(*) from r where t >= ev.f and t < ev.f + interval '15 minutes'),
+    '  além de 15 minutos: ' || (select count(*) from r where t >= ev.f + interval '15 minutes'),
+    'Questionários concluídos depois do prazo: ' || (select count(*) from c where t >= ev.f),
+    '  até 15 minutos depois: ' || (select count(*) from c where t >= ev.f and t < ev.f + interval '15 minutes'),
+    '  além de 15 minutos: ' || (select count(*) from c where t >= ev.f + interval '15 minutes'),
+    'Segundas respostas guardadas depois do prazo: ' || (select count(*) from s where t >= ev.f),
+    'Alterações de respostas depois do prazo: não verificável (o banco não guarda a hora da alteração).',
+    'Estes números não distinguem envio aceito antes e gravado depois de envio admitido por outro caminho.'
+  ) end
+) as diagnostico_pos_prazo
+from ev;
