@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Operação de sábado · Marco Zero</title>
+<style>
+  @page { size: A4; margin: 14mm 14mm 16mm; }
+  :root { --tinta: #111; --suave: #555; --linha: #999; --fundo: #fff; --faixa: #f1f1f1; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fundo); color: var(--tinta);
+         font: 10.5pt/1.42 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  main { max-width: 182mm; margin: 0 auto; padding: 8mm 0; }
+  h1 { font-size: 17pt; margin: 0 0 1mm; letter-spacing: .02em; }
+  h2 { font-size: 12.5pt; margin: 6mm 0 2mm; padding-bottom: 1mm; border-bottom: 1.5pt solid var(--tinta); }
+  h3 { font-size: 11pt; margin: 4.5mm 0 1.5mm; }
+  p { margin: 1.5mm 0; }
+  ul { margin: 1mm 0 1mm 5mm; padding: 0; }
+  li { margin: .8mm 0; }
+  table { width: 100%; border-collapse: collapse; margin: 2mm 0; }
+  th, td { border: .6pt solid var(--linha); padding: 1.6mm 2mm; text-align: left; vertical-align: top; }
+  th { background: var(--faixa); font-weight: 600; }
+  .sub { color: var(--suave); font-size: 9.5pt; }
+  .caixa { display: inline-block; width: 3.6mm; height: 3.6mm; border: 1pt solid var(--tinta);
+           vertical-align: -0.6mm; margin-right: 2mm; }
+  .marcar li { list-style: none; margin-left: -5mm; }
+  .campo { display: inline-block; min-width: 38mm; border-bottom: .6pt solid var(--tinta); }
+  .alerta { border: 1.2pt solid var(--tinta); padding: 2mm 3mm; margin: 2.5mm 0; }
+  td.vazio { height: 8mm; }
+  /* Página 1: o cartão de comando cabe sozinho numa A4. */
+  .comando { page-break-after: always; break-after: page; }
+  .comando h2 { margin-top: 4mm; }
+  .comando { font-size: 10pt; }
+  .comando table td, .comando table th { padding: .8mm 2mm; }
+  .comando .marcar li { margin: .4mm 0 .4mm -5mm; }
+  .comando h2 { margin-top: 3mm; }
+  .duas { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+  @media (max-width: 640px) { main { padding: 4mm 16px; } .duas { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+
+<!-- ============================ PÁGINA 1 ============================ -->
+<section class="comando">
+  <h1>MARCO ZERO | 24.10.2026</h1>
+  <p><strong>Comando da operação.</strong> Esta página manda; o procedimento completo vem atrás.
+  O encontro inteiro acontece sem o aplicativo.</p>
+
+  <h2>Quem responde por quê</h2>
+  <table>
+    <tr><th style="width:42%">Função</th><th>Quem</th><th>Substituto</th></tr>
+    <tr><td>Responsável geral</td><td></td><td></td></tr>
+    <tr><td>Recepção e presença</td><td></td><td></td></tr>
+    <tr><td>Segurança e contatos de emergência</td><td></td><td></td></tr>
+    <tr><td>Materiais e Núcleos (mesa)</td><td></td><td></td></tr>
+    <tr><td>Tempo do dia</td><td></td><td></td></tr>
+    <tr><td>Concierge do Núcleo 1</td><td></td><td></td></tr>
+    <tr><td>Concierge do Núcleo 2</td><td></td><td></td></tr>
+    <tr><td>Concierge do Núcleo 3</td><td></td><td></td></tr>
+    <tr><td>Concierge do Núcleo 4</td><td></td><td></td></tr>
+    <tr><td>Concierge do Núcleo 5</td><td></td><td></td></tr>
+    <tr><td>Guarda dos celulares</td><td></td><td></td></tr>
+    <tr><td>Custódia da caixa</td><td></td><td></td></tr>
+    <tr><td>Decide conteúdo (o que o Caderno não decide)</td><td></td><td></td></tr>
+  </table>
+
+  <h2>Conferência antes da abertura</h2>
+  <ul class="marcar">
+    <li><span class="caixa"></span>Lista oficial conferida, impressa e protegida (só a recepção vê)</li>
+    <li><span class="caixa"></span>Contatos de emergência em folha separada, só com recepção e segurança</li>
+    <li><span class="caixa"></span>Caderno v2 conferido por uma pessoa e impresso em duas vias</li>
+    <li><span class="caixa"></span>Materiais M01, M02 e M03 presentes, em cinco pilhas por Núcleo</li>
+    <li><span class="caixa"></span>Mural e Pacto com versão aprovada (ou "não pronto" com decisão registrada)</li>
+    <li><span class="caixa"></span>Gabaritos fora do acesso público: as cinco fichas testadas sem login</li>
+    <li><span class="caixa"></span>Missão 03 com decisão pedagógica registrada sobre os gabaritos</li>
+    <li><span class="caixa"></span>Equipe e substitutos orientados</li>
+    <li><span class="caixa"></span>QR do formulário fora do sábado; nenhum QR sem destino testado</li>
+    <li><span class="caixa"></span>Custódia da caixa definida antes de abrir a porta</li>
+  </ul>
+
+  <div class="duas">
+    <div>
+      <h2>Mural do Futuro</h2>
+      <ul class="marcar">
+        <li><span class="caixa"></span>A: entra no documento de segunda</li>
+        <li><span class="caixa"></span>B: usado em etapa posterior</li>
+        <li><span class="caixa"></span>Pendente: segunda não pressupõe A</li>
+      </ul>
+      <p class="sub">Decidido por <span class="campo"></span></p>
+    </div>
+    <div>
+      <h2>Missão 03</h2>
+      <ul class="marcar">
+        <li><span class="caixa"></span>GO: casos mantidos, decisão registrada</li>
+        <li><span class="caixa"></span>Casos trocados ou atividade ajustada</li>
+        <li><span class="caixa"></span>Sem decisão: sem GO presumido</li>
+      </ul>
+      <p class="sub">Decidido por <span class="campo"></span></p>
+    </div>
+  </div>
+
+  <div class="alerta"><strong>No encerramento:</strong> conferir presenças, recolher materiais,
+  registrar divergências e transferir a custódia, com assinatura.</div>
+</section>
+
+<!-- ======================= PROCEDIMENTO COMPLETO ======================= -->
+<section>
+  <h1>Procedimento completo</h1>
+  <p class="sub">Complementa o Caderno de Condução v2. O Caderno diz o que acontece em cada
+  momento; esta folha diz quem faz, com o quê, quando, como registra e o que fazer se falhar.
+  Nada aqui é conteúdo pedagógico: o que não foi entregue por quem planejou continua marcado
+  como FALTA no Caderno e não é improvisado. Se alguma atividade precisa de alguém explicando
+  o que o sistema deveria fazer, ela não está pronta.</p>
+  <p class="sub">Imprimir em duas vias: o Caderno v2, esta folha, a lista de presença, a folha
+  de emergência e a folha de registro de materiais. Uma via com quem conduz, outra guardada em
+  outro canto da sala.</p>
+
+  <h2>1. Recepção e presença (8h15 às 9h00)</h2>
+  <ul>
+    <li><strong>Quem:</strong> a pessoa da recepção.</li>
+    <li><strong>Material:</strong> lista de presença em papel, feita a partir da relação oficial
+      da organização (não do banco do formulário); crachás; pulseiras; mapa dos Núcleos com as
+      cores; recipientes de celular por Núcleo.</li>
+    <li><strong>Colunas da lista:</strong> nº · nome como está na relação oficial · Núcleo ·
+      hora de chegada · conferido por (iniciais) · observação.</li>
+    <li><strong>Contatos de emergência</strong> ficam numa folha separada, só com a recepção e a
+      pessoa de segurança. Não vão nas folhas dos Núcleos e não ficam expostos sobre a mesa. A
+      organização confere antes que tem contato de emergência de todos e sabe o que fazer se
+      alguém precisar de atendimento.</li>
+    <li><strong>Como registra:</strong> cada chegada vira uma linha com hora e iniciais. Durante
+      a recepção, linha sem marcação quer dizer <em>presença ainda não registrada</em>, não
+      ausência: alguém pode ter entrado sem ser marcado. Só depois do encerramento e da
+      conferência a linha vazia pode ser classificada como ausência.</li>
+    <li><strong>Jovem fora da relação:</strong> vai para uma área separada no fim da folha, com o
+      nome dito pela pessoa e a hora. Quem decide se entra é a pessoa nomeada. Não se cria
+      cadastro, não se escreve nome inventado, e a lista não é mostrada ao jovem (ela tem dados
+      de outros 49).</li>
+    <li><strong>Se falhar:</strong> relação oficial indisponível na hora: folha em branco com as
+      mesmas colunas, registrando quem efetivamente chegou. Nunca presumir que os 50 vieram.</li>
+    <li><strong>Concluído quando:</strong> 9h, total de presentes por Núcleo escrito no rodapé,
+      assinado por quem recebeu.</li>
+  </ul>
+
+  <h2>2. Condução (9h00 às 16h30)</h2>
+  <ul>
+    <li><strong>Quem:</strong> Yuri, com o Caderno v2 impresso; um concierge por Núcleo.</li>
+    <li><strong>Material:</strong> o que o Caderno lista em cada momento. Nada lido de tela.</li>
+    <li><strong>Como registra:</strong> na folha de registro, cada fase encurtada (quanto e por
+      quê), cada Núcleo sem concierge (a partir de que hora) e "Forms sem efeito: roda mantida
+      como publicada", se for o caso.</li>
+    <li><strong>Se falhar:</strong> o momento 8 do Caderno (Contingências) é o procedimento. Não
+      se encurtam as fases de entrega das missões nem os 50 minutos do Mural.</li>
+    <li><strong>Lacuna aberta no sábado</strong> (instruções do Mural, perguntas da matriz, texto
+      do pacto, texto das Missões 01 e 02): quem conduz diz em voz alta que o conteúdo oficial
+      não chegou e não inventa.</li>
+  </ul>
+
+  <h2>3. Materiais (conferência antes de abrir a porta, antes de 8h15)</h2>
+  <ul>
+    <li><strong>Quem:</strong> a mesa de materiais.</li>
+    <li><strong>Material:</strong> folha de registro de materiais (item · Núcleo · quem recebeu ·
+      hora · assinatura · quem devolveu · hora).</li>
+    <li><strong>Como registra:</strong> conferência item por item contra M01, M02 e M03, em cinco
+      pilhas. Item ausente é anotado FALTANDO com o Núcleo afetado, nunca como conferido.</li>
+    <li><strong>Mural e Pacto</strong> só entram com versão aprovada, quantidade impressa e
+      guardião nomeado. Sem texto aprovado até o prazo da gráfica: anotar "não pronto" e pedir
+      decisão pedagógica explícita. Folha em branco só vale se a dinâmica tiver sido aprovada
+      assim.</li>
+    <li><strong>Se falhar:</strong> usar a segunda via; sem segunda via, o concierge conduz pela
+      via impressa do Caderno e a falta é anotada.</li>
+  </ul>
+
+  <h2>4. Painel e QR</h2>
+  <ul>
+    <li><strong>O que se projeta:</strong> só o que o roteiro prevê para a projeção (os elementos
+      da identidade visual, a partir dos arquivos da Bia). Sem projeção, vão impressos.</li>
+    <li><strong>O painel do aplicativo não é aberto na frente dos jovens.</strong> Ele não tem papel
+      no sábado.</li>
+    <li><strong>QR do formulário: não usar no sábado.</strong> A coleta fecha sexta 23h59. Não se
+      reabre a coleta para um QR funcionar.</li>
+    <li><strong>Qualquer outro QR</strong> só entra com finalidade aprovada e destino testado num
+      celular antes de sábado: destino <span class="campo"></span> · testado por
+      <span class="campo"></span> em ___/___ às ____.</li>
+    <li><strong>Nada de fluxo antigo:</strong> ninguém abre /join, "Liberar etapa" ou entrada por
+      código.</li>
+  </ul>
+
+  <h2>5. Encerramento e custódia (16h30 às 17h00, e depois)</h2>
+  <ul>
+    <li><strong>Quem:</strong> concierges recolhem; a mesa de materiais confere; a pessoa de
+      custódia recebe.</li>
+    <li><strong>Material:</strong> a mesma folha de registro da manhã, caixa, lacre, envelopes de
+      Murais por Núcleo.</li>
+    <li><strong>Presença:</strong> a lista é reconciliada aqui. Só agora a linha vazia vira
+      ausência, depois de conferida com concierges e materiais.</li>
+    <li><strong>Como registra:</strong> conferência final linha por linha (quantidade encontrada,
+      quem, hora, assinatura). Linha que não fecha é anotada como não fechada, com o número
+      encontrado, nunca ajustada. Murais contados por Núcleo. A caixa sai lacrada, e quem recebe
+      assina.</li>
+    <li><strong>Murais:</strong> identificáveis por pessoa se a decisão for o Caminho A. Depois de
+      recolhido, o Mural não fica à vista de outros jovens e não é fotografado fora da
+      digitalização.</li>
+    <li><strong>Celulares:</strong> devolução Núcleo por Núcleo, com o concierge presente; aparelho
+      que sobra é anotado e entregue à guarda.</li>
+    <li><strong>Se falhar:</strong> material sem dono ou sem identificação vai num envelope
+      separado, anotado "sem identificação", e não é atribuído a ninguém por suposição.</li>
+  </ul>
+
+  <h2>A decisão dos Murais</h2>
+  <ul class="marcar">
+    <li><span class="caixa"></span><strong>Caminho A:</strong> os Murais entram no direcionamento
+      individual de segunda. Exige Mural identificável por pessoa, digitalização no domingo com
+      responsável e prazo, e um jeito de ligar cada Mural ao participante sem adivinhar.
+      Digitalização: quem <span class="campo"></span> · onde <span class="campo"></span> · até
+      domingo ____h.</li>
+    <li><span class="caixa"></span><strong>Caminho B:</strong> os Murais são usados depois. O
+      documento de segunda sai sem eles, e isso é dito a quem recebe.</li>
+  </ul>
+  <p>Sem esta marcação, o documento de segunda não pressupõe o Caminho A.</p>
+
+  <h2>Gabaritos: bloqueio com dois responsáveis</h2>
+  <p>Em 22/10, 17h26, sem login, as cinco fichas <code>caso-1</code> a <code>caso-5</code> do
+  site do evento ainda respondiam com a seção "Gabarito (só concierge)", e continuavam linkadas
+  na página inicial.</p>
+  <table>
+    <tr><th style="width:30%">Responsável</th><th>O que entrega</th><th style="width:26%">Nome e prazo</th></tr>
+    <tr><td>Técnico</td><td>As cinco fichas fora do acesso público, com e sem ".html", conferidas
+      abrindo cada endereço sem login.</td><td class="vazio"></td></tr>
+    <tr><td>Pedagógico</td><td>Decidir se a Missão 03 usa os mesmos casos diante da exposição.
+      Não depende de provar que alguém leu: não há como afirmar que ninguém viu.</td><td class="vazio"></td></tr>
+  </table>
+  <p>Sem decisão pedagógica até o ensaio de sexta, a Missão 03 não recebe GO presumido. O resto
+  do encontro segue, desde que a organização aprove como aquela atividade será tratada.</p>
+
+  <h2>Ensaio com a equipe (sexta)</h2>
+  <p>Cada cena passa quando a equipe executa <strong>sem o desenvolvedor na sala</strong>. Cena
+  que falha é registrada com o responsável pela correção e o prazo; nada é aprovado por existir
+  um procedimento escrito.</p>
+  <table>
+    <tr><th style="width:30%">Cena</th><th>Passa quando</th><th style="width:12%">Passou</th></tr>
+    <tr><td>Chegada</td><td>Jovem da relação: a recepção confere, registra hora e iniciais.</td><td></td></tr>
+    <tr><td>Exceção</td><td>Jovem fora da relação entra na área separada; ninguém cria cadastro;
+      ninguém vê dados de outro jovem.</td><td></td></tr>
+    <tr><td>Condução</td><td>Yuri percorre os momentos do Caderno e a equipe aponta material e
+      responsável de cada missão; lacuna aberta é dita como lacuna.</td><td></td></tr>
+    <tr><td>Material ausente</td><td>Há decisão pedagógica registrada para cada material que não
+      chegou.</td><td></td></tr>
+    <tr><td>Falha técnica</td><td>Sem internet e sem tela, as atividades com suporte em papel
+      continuam; a identidade visual vai impressa.</td><td></td></tr>
+    <tr><td>Encerramento</td><td>Lista reconciliada, materiais conferidos linha por linha, caixa
+      lacrada e custódia transferida com assinatura.</td><td></td></tr>
+  </table>
+  <table>
+    <tr><th style="width:30%">Cena que falhou</th><th>Responsável pela correção</th><th style="width:26%">Prazo</th></tr>
+    <tr><td class="vazio"></td><td></td><td></td></tr>
+    <tr><td class="vazio"></td><td></td><td></td></tr>
+  </table>
+  <p>Ensaio em ___/10 · participaram <span class="campo"></span>. Sem ensaio, este documento
+  está aprovado como plano, mas a operação não está homologada.</p>
+
+  <h2>Fora desta folha</h2>
+  <p><strong>Formulário depois de sexta 23h59:</strong> o que está publicado hoje só recusa envio
+  de evento marcado como concluído. A recusa pelo prazo depende da trava de prazo, ainda não
+  publicada. Até lá, o prazo existe no cadastro, não no servidor.</p>
+</section>
+
+</main>
+</body>
+</html>
