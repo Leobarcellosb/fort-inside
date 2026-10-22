@@ -126,9 +126,15 @@ sem você), ou tratar como procedimento — alguém da operação fica com o pai
 fila esvaziar. O segundo funciona e é o que existe hoje; só precisa estar combinado com
 alguém, e não descoberto na segunda de manhã.
 
-Dois defeitos reais da mesma cadeia foram encontrados e estão sendo corrigidos ainda esta
-noite: questionário respondido pela metade virava documento como se estivesse completo, e
-texto alterado depois de aprovado chegava ao participante sem nova aprovação.
+Dois defeitos reais da mesma cadeia foram encontrados e **corrigidos**: questionário
+respondido pela metade virava documento como se estivesse completo, e texto alterado depois
+de aprovado chegava ao participante sem nova aprovação.
+
+**E a correção mudou uma coisa no seu dia de segunda, então decida antes:** entregar um
+documento que nunca foi revisado deixou de ser possível. Antes passava. Agora quem entregar
+os 50 precisa abrir e salvar a revisão de cada um — salvar a revisão *é* o ato de aprovar.
+É mais trabalho e é a promessa de revisão humana sendo cumprida de verdade. Se você quiser
+o contrário, é mudança de uma linha, mas tem que ser escolha sua e não descoberta na pressa.
 
 ## Duas dívidas que eu declaro
 
