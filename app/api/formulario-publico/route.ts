@@ -1,0 +1,159 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { novaOcorrencia } from "@/lib/erros/codigos";
+import {
+  receberFormulario,
+  type ClienteDeRecepcao,
+} from "./receber-formulario";
+
+/*
+ * A PORTA DO FORMULARIO PUBLICO. Sem autenticacao, de proposito.
+ *
+ * A decisao e as suas consequencias estao escritas no topo de
+ * receber-formulario.ts, que e onde vive toda a logica (e onde os testes a
+ * provam). Este arquivo e so a borda HTTP: valida o formato do corpo, chama, e
+ * traduz o desfecho em status.
+ *
+ * O QUE ESTA ROTA NAO VERIFICA, E POR QUE
+ * ---------------------------------------
+ * `events.max_participants`. A pagina /join barra quando o evento esta cheio, e
+ * aqui NAO se barra. Nao e esquecimento:
+ *
+ *   - `max_participants` e limitado a 20 por `createEventSchema`, e o link
+ *     publico vai para cerca de 50 pessoas. Barrar no 21o faria o formulario
+ *     parar de funcionar no meio da divulgacao, calado, e o dono so descobriria
+ *     pelos que reclamassem;
+ *   - a instrucao desta entrega e explicita em nao exigir configuracao nova do
+ *     dono: o formulario tem de funcionar com o evento que JA esta no ar;
+ *   - o limite nunca existiu no banco (nenhum CHECK, nenhum gatilho): ele e
+ *     tamanho de sala para o dia do evento, nao integridade de dado.
+ *
+ * O que se aceita em troca: o evento pode acumular mais participantes do que
+ * `max_participants` diz, e quem olhar esse numero no painel nao tera a
+ * contagem real. A contagem real esta na tabela, e o painel a mostra.
+ */
+
+const valorDeResposta = z.union([
+  z.string(),
+  z.array(z.string()),
+  z.number().finite(),
+]);
+
+const bodySchema = z.object({
+  event_code: z.string().min(1).max(40),
+  full_name: z.string().min(2, "Nome deve ter ao menos 2 caracteres").max(200),
+  email: z.string().email("E-mail inválido").max(320),
+  phone: z.string().max(40).optional(),
+  // Mapa PLANO id da pergunta -> valor, das 5 etapas juntas. Um teto de chaves
+  // para que o corpo nao seja um vetor de carga: o questionario tem 52.
+  respostas: z.record(z.string().max(120), valorDeResposta).refine(
+    (r) => Object.keys(r).length <= 400,
+    "Respostas em excesso"
+  ),
+});
+
+const NO_STORE = { "Cache-Control": "no-store" } as const;
+
+function json(status: number, corpo: Record<string, unknown>) {
+  return NextResponse.json(corpo, { status, headers: NO_STORE });
+}
+
+/**
+ * O texto que a pessoa LE quando o sistema falha do nosso lado. Diz que as
+ * respostas NAO foram perdidas do ponto de vista dela (ela ainda tem a tela
+ * preenchida) e o que fazer. Nunca mostra erro cru de banco.
+ */
+const ERRO_INTERNO =
+  "Não conseguimos registrar suas respostas agora. Elas continuam aqui na tela: toque em enviar de novo em alguns segundos. Se continuar, avise a equipe do evento.";
+
+export async function POST(req: NextRequest) {
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return json(400, { error: "Dados inválidos" });
+  }
+
+  const parsed = bodySchema.safeParse(body);
+  if (!parsed.success) {
+    // Os erros de formato do corpo que a PESSOA pode causar sao nome curto e
+    // e-mail invalido, e a tela ja os mostra campo a campo antes de enviar. O
+    // resto seria pedido forjado, e nada do que foi enviado e ecoado de volta.
+    return json(400, {
+      error:
+        "Confira o nome e o e-mail: o nome precisa de ao menos 2 letras e o e-mail precisa ser válido.",
+    });
+  }
+
+  const dados = parsed.data;
+  const supabase = createAdminClient() as unknown as ClienteDeRecepcao;
+
+  const r = await receberFormulario(supabase, {
+    eventCode: dados.event_code,
+    fullName: dados.full_name,
+    email: dados.email,
+    phone: dados.phone,
+    respostas: dados.respostas,
+  });
+
+  switch (r.tipo) {
+    case "ok":
+      return json(200, { success: true, participant_id: r.participantId });
+
+    case "evento_nao_encontrado":
+      return json(404, {
+        error:
+          "Não encontramos este evento. Confira se o link está completo, igual ao que você recebeu.",
+      });
+
+    case "evento_encerrado":
+      return json(409, {
+        error:
+          "Esta imersão já foi concluída, então o questionário não recebe mais respostas. Fale com a equipe do evento.",
+      });
+
+    case "questionario_indisponivel": {
+      // Problema de CONFIGURACAO do questionario, nao da pessoa, e tentar de novo
+      // nao resolve. O detalhe tecnico fica no log; a tela recebe o fato.
+      const ocorrencia = novaOcorrencia();
+      console.error("[formulario-publico] questionario indisponivel", {
+        ocorrencia,
+        detalhe: r.detalhe,
+      });
+      return json(503, {
+        error:
+          "O questionário deste evento não está disponível para resposta agora. Isso não é problema com os seus dados. Avise a equipe do evento.",
+        ocorrencia,
+      });
+    }
+
+    case "faltam_obrigatorias":
+      // 422: o corpo esta bem formado, o CONTEUDO e que nao atende a regra do
+      // questionario. O corpo leva a lista por etapa e pergunta, para a tela
+      // marcar cada campo -- e nao so um aviso generico no topo.
+      return json(422, {
+        error: r.resumo,
+        codigo: "faltam_obrigatorias",
+        faltando: r.etapas,
+      });
+
+    case "resposta_invalida":
+      // Alcancavel so por pedido forjado: a tela nunca monta um valor de formato
+      // incompativel com o tipo da pergunta.
+      return json(400, {
+        error: "Uma das respostas veio em formato inesperado. Recarregue a página e tente de novo.",
+        codigo: "resposta_invalida",
+      });
+
+    case "erro":
+    default: {
+      const ocorrencia = novaOcorrencia();
+      console.error("[formulario-publico] falha ao registrar", {
+        ocorrencia,
+        causa: r.tipo === "erro" ? r.causa : r,
+      });
+      return json(500, { error: ERRO_INTERNO, ocorrencia });
+    }
+  }
+}
