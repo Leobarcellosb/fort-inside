@@ -101,6 +101,24 @@ export async function POST(req: NextRequest) {
     case "ok":
       return json(200, { success: true, participant_id: r.participantId });
 
+    case "segunda_resposta_guardada":
+      // 200, e nao erro: NADA falhou. O envio foi recebido e esta guardado -- o
+      // que ele nao fez foi apagar a resposta que ja existia, que e o ponto.
+      //
+      // O QUE ESTA RESPOSTA REVELA, declarado: ela diz a quem enviou que aquele
+      // e-mail ja tinha resposta neste evento. Isso e mais do que o silencio
+      // anterior entregava, e e deliberado -- a pessoa precisa saber que o envio
+      // dela nao virou a resposta oficial, senao ela vai embora acreditando que
+      // virou. O que NAO vai na resposta, e nao pode passar a ir: o nome de quem
+      // respondeu antes, quando respondeu, ou qualquer parte das respostas dela.
+      // Quem quisesse usar isto para sondar e-mails teria de preencher 52
+      // perguntas por tentativa, e colheria apenas "alguem usou este endereço".
+      return json(200, {
+        success: true,
+        codigo: "segunda_resposta_guardada",
+        na_mesa_de_decisao: r.naMesa,
+      });
+
     case "evento_nao_encontrado":
       return json(404, {
         error:

@@ -42,6 +42,10 @@ interface Tabelas {
   quiz_stages: Record<string, unknown>[];
   participants: LinhaParticipante[];
   quiz_responses: LinhaResposta[];
+  /** A mesa de decisao do operador (migration 022). */
+  external_submissions: Record<string, unknown>[];
+  /** O registro do evento (migration 001): onde a procedencia fica. */
+  event_logs: Record<string, unknown>[];
 }
 
 class BancoFalso {
@@ -58,6 +62,8 @@ class BancoFalso {
       quiz_stages: tabelas.quiz_stages ?? [],
       participants: tabelas.participants ?? [],
       quiz_responses: tabelas.quiz_responses ?? [],
+      external_submissions: tabelas.external_submissions ?? [],
+      event_logs: tabelas.event_logs ?? [],
     };
   }
 
@@ -108,6 +114,101 @@ class BancoFalso {
           },
         };
         return consulta as never;
+      },
+
+      insert(valores: Record<string, unknown>) {
+        const executar = () => {
+          const erro = banco.erroDe(`${tabela}:insert`);
+          if (erro) return { data: null, error: erro };
+          banco.escritas.push(
+            `${tabela}:insert(${Object.keys(valores).sort().join("+")})`,
+          );
+          // As chaves unicas da 022 que importam aqui: (event_id,
+          // formulario_id, submissao_id). Duas submissoes com o mesmo
+          // `submissao_id` ESTOURAM, em vez de a segunda sobrescrever a primeira.
+          if (tabela === "external_submissions") {
+            const igual = linhas().find(
+              (l) =>
+                l.event_id === valores.event_id &&
+                l.formulario_id === valores.formulario_id &&
+                l.submissao_id === valores.submissao_id,
+            );
+            if (igual) {
+              return {
+                data: null,
+                error: {
+                  code: "23505",
+                  message: "duplicate key value violates external_submissions_natural_idx",
+                },
+              };
+            }
+            // Os CHECK da 022 que este caminho nao pode violar.
+            const estado = valores.estado as string;
+            if (
+              (estado === "pendente" || estado === "conflito") &&
+              valores.participant_id !== null
+            ) {
+              return {
+                data: null,
+                error: { code: "23514", message: "external_submissions_identidade_check" },
+              };
+            }
+            if (valores.apto_para_pontuar === true && estado !== "importavel") {
+              return {
+                data: null,
+                error: { code: "23514", message: "external_submissions_aptidao_check" },
+              };
+            }
+            const bloqueio = valores.bloqueio as Record<string, unknown> | null;
+            if (estado !== "importavel" && estado !== "revogada") {
+              if (!bloqueio || bloqueio.motivo === undefined) {
+                return {
+                  data: null,
+                  error: { code: "23514", message: "external_submissions_bloqueio_check" },
+                };
+              }
+            }
+            if (!/^[0-9a-f]{64}$/.test(String(valores.questionario_impressao))) {
+              return {
+                data: null,
+                error: { code: "23514", message: "external_submissions_impressao_check" },
+              };
+            }
+            const via = valores.identidade_via;
+            if (via !== null && via !== "email_verificado" && via !== "decisao_do_operador") {
+              return {
+                data: null,
+                error: { code: "23514", message: "external_submissions_via_check" },
+              };
+            }
+            if (valores.importado_por === null || valores.importado_por === undefined) {
+              return {
+                data: null,
+                error: { code: "23502", message: "importado_por is not null" },
+              };
+            }
+          }
+          const linha: Record<string, unknown> = { id: `id-${banco.proximoId++}`, ...valores };
+          linhas().push(linha as never);
+          return { data: [linha], error: null };
+        };
+
+        const insercao = {
+          select() {
+            return {
+              single() {
+                const r = executar();
+                return Promise.resolve(
+                  r.error ? r : { data: (r.data as unknown[])[0] ?? null, error: null },
+                );
+              },
+            };
+          },
+          then(ok: (v: unknown) => unknown, falha?: (e: unknown) => unknown) {
+            return Promise.resolve(executar()).then(ok, falha);
+          },
+        };
+        return insercao as never;
       },
 
       upsert(
@@ -350,27 +451,168 @@ describe("envio completo", () => {
 });
 
 describe("o MESMO e-mail no MESMO evento, duas vezes", () => {
-  it("nao cria pessoa duplicada: a segunda substitui a primeira", async () => {
+  // ESTE BLOCO E O DEFEITO CORRIGIDO. O comportamento anterior era "a segunda
+  // substitui a primeira", e com e-mail autodeclarado isso dava a qualquer
+  // pessoa o poder de apagar as 52 respostas de outra errando uma letra.
+
+  it("a SEGUNDA NAO apaga a primeira: as respostas de quem respondeu antes ficam intactas", async () => {
     const banco = bancoPadrao();
     await receberFormulario(banco.cliente, envio({ fullName: "Maria S." }));
+
     const r2 = await receberFormulario(
       banco.cliente,
       envio({
-        fullName: "Maria Silva Souza",
+        fullName: "Joana Outra",
         respostas: { ...RESPOSTAS_COMPLETAS, p1: "18", p4: 3 },
       }),
     );
 
-    expect(r2.tipo).toBe("ok");
-    expect(banco.tabelas.participants).toHaveLength(1);
-    expect(banco.tabelas.quiz_responses).toHaveLength(2);
+    expect(r2.tipo).toBe("segunda_resposta_guardada");
 
-    const p = banco.tabelas.participants[0];
-    expect(p.full_name).toBe("Maria Silva Souza");
+    // As respostas da PRIMEIRA, palavra por palavra.
+    expect(banco.tabelas.quiz_responses).toHaveLength(2);
     const etapa1 = banco.tabelas.quiz_responses.find((l) => l.stage_id === 101)!;
     const etapa2 = banco.tabelas.quiz_responses.find((l) => l.stage_id === 102)!;
-    expect(etapa1.answers.p1).toBe("18");
-    expect(etapa2.answers.p4).toBe(3);
+    expect(etapa1.answers.p1).toBe("17");
+    expect(etapa2.answers.p4).toBe(8);
+    expect(etapa2.answers.p5).toEqual(["b", "a", "c"]);
+
+    // E o NOME de quem respondeu antes tambem nao foi trocado: renomear a
+    // pessoa porque alguem errou o e-mail dela tambem e dano.
+    expect(banco.tabelas.participants).toHaveLength(1);
+    expect(banco.tabelas.participants[0].full_name).toBe("Maria S.");
+  });
+
+  it("a segunda nao escreve NADA em quiz_responses nem em participants -- so acrescenta", async () => {
+    const banco = bancoPadrao();
+    await receberFormulario(banco.cliente, envio());
+    banco.escritas.length = 0;
+
+    await receberFormulario(banco.cliente, envio({ fullName: "Joana Outra" }));
+
+    // A prova pela borda: nenhuma escrita MENCIONOU as tabelas canonicas.
+    expect(banco.escritas.filter((e) => e.startsWith("quiz_responses"))).toEqual([]);
+    expect(banco.escritas.filter((e) => e.startsWith("participants"))).toEqual([]);
+  });
+
+  it("a segunda NAO se perde: vira linha na mesa de decisao, com o payload inteiro", async () => {
+    const banco = bancoPadrao();
+    await receberFormulario(banco.cliente, envio());
+    await receberFormulario(
+      banco.cliente,
+      envio({ fullName: "Joana Outra", respostas: { ...RESPOSTAS_COMPLETAS, p1: "18" } }),
+    );
+
+    expect(banco.tabelas.external_submissions).toHaveLength(1);
+    const s = banco.tabelas.external_submissions[0];
+    // O estado que a mesa (ESTADOS_QUE_SE_DECIDEM) lista como "espera humano".
+    expect(s.estado).toBe("conflito");
+    expect(s.participant_id).toBeNull();
+    expect(s.apto_para_pontuar).toBe(false);
+    expect(s.nome_declarado).toBe("Joana Outra");
+    expect(s.email_coletado).toBe("maria@exemplo.com");
+    // As respostas da segunda, inteiras: e delas que a decisao vai ser tomada.
+    expect(s.respostas_brutas).toEqual({ ...RESPOSTAS_COMPLETAS, p1: "18" });
+    expect((s.bloqueio as Record<string, unknown>).codigo).toBe("SEGUNDA_RESPOSTA_MESMO_EMAIL");
+  });
+
+  it("DOIS envios equivocados viram DUAS linhas: a segunda nao sobrescreve a primeira na mesa", async () => {
+    const banco = bancoPadrao();
+    await receberFormulario(banco.cliente, envio());
+    await receberFormulario(banco.cliente, envio({ fullName: "Joana" }));
+    await receberFormulario(banco.cliente, envio({ fullName: "Pedro" }));
+
+    expect(banco.tabelas.external_submissions).toHaveLength(2);
+    expect(banco.tabelas.external_submissions.map((s) => s.nome_declarado)).toEqual([
+      "Joana",
+      "Pedro",
+    ]);
+  });
+
+  it("o operador consegue ver que houve duas: o fato fica em event_logs", async () => {
+    const banco = bancoPadrao();
+    await receberFormulario(banco.cliente, envio());
+    await receberFormulario(banco.cliente, envio({ fullName: "Joana Outra" }));
+
+    const log = banco.tabelas.event_logs.find(
+      (l) => l.action === "formulario_publico_segunda_resposta",
+    )!;
+    expect(log).toBeDefined();
+    const payload = log.payload as Record<string, unknown>;
+    expect(payload.primeira_resposta_preservada).toBe(true);
+    expect(payload.na_mesa_de_decisao).toBe(true);
+    expect(payload.email_verificado).toBe(false);
+  });
+
+  it("se a mesa nao estiver disponivel, a segunda vai INTEIRA para event_logs em vez de se perder", async () => {
+    // O caso real: a 022 nao aplicada neste banco. Perder a mesa e ruim; perder
+    // a resposta de quem preencheu 52 perguntas nao e aceitavel.
+    const banco = bancoPadrao();
+    await receberFormulario(banco.cliente, envio());
+    banco.falhas.set("external_submissions:insert", {
+      code: "42P01",
+      message: 'relation "external_submissions" does not exist',
+    });
+
+    const r = await receberFormulario(banco.cliente, envio({ fullName: "Joana Outra" }));
+    expect(r.tipo).toBe("segunda_resposta_guardada");
+    if (r.tipo === "segunda_resposta_guardada") expect(r.naMesa).toBe(false);
+
+    const log = banco.tabelas.event_logs.find(
+      (l) => l.action === "formulario_publico_segunda_resposta_fora_da_mesa",
+    )!;
+    expect(log).toBeDefined();
+    expect((log.payload as Record<string, unknown>).respostas).toEqual(RESPOSTAS_COMPLETAS);
+    // E a primeira continua lá, intacta.
+    expect(banco.tabelas.quiz_responses).toHaveLength(2);
+  });
+
+  it("se NEM a mesa NEM o log receberem, recusa em vez de dizer que guardou", async () => {
+    const banco = bancoPadrao();
+    await receberFormulario(banco.cliente, envio());
+    banco.falhas.set("external_submissions:insert", { code: "42P01", message: "sem tabela" });
+    banco.falhas.set("event_logs:insert", { code: "42P01", message: "sem tabela" });
+
+    const r = await receberFormulario(banco.cliente, envio({ fullName: "Joana Outra" }));
+    expect(r.tipo).toBe("erro");
+    // E mesmo assim: a primeira nao foi tocada.
+    expect(banco.tabelas.quiz_responses).toHaveLength(2);
+    const etapa1 = banco.tabelas.quiz_responses.find((l) => l.stage_id === 101)!;
+    expect(etapa1.answers.p1).toBe("17");
+  });
+
+  it("se a leitura das respostas anteriores falhar, RECUSA em vez de apostar", async () => {
+    const banco = bancoPadrao();
+    await receberFormulario(banco.cliente, envio());
+    banco.falhas.set("quiz_responses:select", { code: "08006", message: "conexao caiu" });
+
+    const r = await receberFormulario(banco.cliente, envio({ fullName: "Joana Outra" }));
+    expect(r.tipo).toBe("erro");
+    expect(banco.escritas.filter((e) => e.startsWith("quiz_responses:upsert"))).toHaveLength(2);
+  });
+
+  it("participante que existe mas NUNCA respondeu segue pelo caminho feliz", async () => {
+    // Quem entrou pelo /join e nao respondeu nao tem nada a perder. Barrar essa
+    // pessoa seria impedi-la de responder, sem proteger resposta nenhuma.
+    const banco = bancoPadrao({
+      participants: [
+        {
+          id: "p-sem-resposta",
+          event_id: EVENTO_ID,
+          email: "maria@exemplo.com",
+          full_name: "Maria",
+          phone: null,
+          user_id: null,
+          course_or_moment: null,
+          completed_at: null,
+        },
+      ],
+    });
+
+    const r = await receberFormulario(banco.cliente, envio());
+    expect(r.tipo).toBe("ok");
+    expect(banco.tabelas.quiz_responses).toHaveLength(2);
+    expect(banco.tabelas.external_submissions).toHaveLength(0);
   });
 
   it("o instante da conclusao e o da PRIMEIRA vez -- reenviar nao o reescreve", async () => {
@@ -625,5 +867,66 @@ describe("quando o banco recusa", () => {
     banco.falhas.set("events:select", { code: "08006", message: "conexao caiu" });
     const r = await receberFormulario(banco.cliente, envio());
     expect(r.tipo).toBe("erro");
+  });
+});
+
+describe("o e-mail autodeclarado NUNCA e marcado como verificado", () => {
+  // A revisao proibiu nominalmente "e-mail autodeclarado como verificado". Estes
+  // testes sao a varredura do caminho publico inteiro: tudo o que significa
+  // "este e-mail foi provado" tem de sair FALSO ou NULO.
+
+  it("o caminho feliz nao escreve user_id, nem qualquer coluna de verificacao", async () => {
+    const banco = bancoPadrao();
+    await receberFormulario(banco.cliente, envio());
+
+    for (const escrita of banco.escritas) {
+      expect(escrita).not.toContain("user_id");
+      expect(escrita).not.toContain("email_verificado");
+      expect(escrita).not.toContain("identidade_via");
+      expect(escrita).not.toContain("email_confirmed");
+    }
+    expect(banco.tabelas.participants[0].user_id).toBeNull();
+  });
+
+  it("a procedencia do caminho feliz diz que o e-mail foi DIGITADO, nao verificado", async () => {
+    const banco = bancoPadrao();
+    const r = await receberFormulario(banco.cliente, envio());
+    expect(r.tipo).toBe("ok");
+
+    const log = banco.tabelas.event_logs.find(
+      (l) => l.action === "formulario_publico_recebido",
+    )!;
+    expect(log).toBeDefined();
+    const payload = log.payload as Record<string, unknown>;
+    expect(payload.email_verificado).toBe(false);
+    expect(payload.identidade).toBe("email_digitado_nao_verificado");
+    expect(payload.identidade_via).toBeNull();
+    expect(payload.formulario).toBe("formulario-publico");
+  });
+
+  it("a linha da mesa nasce com email_verificado FALSE e identidade_via NULA", async () => {
+    const banco = bancoPadrao();
+    await receberFormulario(banco.cliente, envio());
+    await receberFormulario(banco.cliente, envio({ fullName: "Joana Outra" }));
+
+    const s = banco.tabelas.external_submissions[0];
+    expect(s.email_verificado).toBe(false);
+    expect(s.identidade_via).toBeNull();
+    expect(s.email_reconciliado).toBeNull();
+    expect(s.participant_id).toBeNull();
+    // E a proveniencia diz de onde veio, para quem olhar depois.
+    expect(s.formulario_id).toBe("formulario-publico");
+  });
+
+  it("a procedencia nao pode derrubar o envio: log que falha nao perde resposta", async () => {
+    // Se o log falhasse o envio, a pessoa reenviaria -- e o reenvio agora cai na
+    // mesa de decisao. Perder procedencia e ruim; empurrar a pessoa para a mesa
+    // por causa de um log e pior.
+    const banco = bancoPadrao();
+    banco.falhas.set("event_logs:insert", { code: "42P01", message: "sem tabela" });
+    const r = await receberFormulario(banco.cliente, envio());
+    expect(r.tipo).toBe("ok");
+    expect(banco.tabelas.quiz_responses).toHaveLength(2);
+    expect(banco.tabelas.participants[0].completed_at).not.toBeNull();
   });
 });

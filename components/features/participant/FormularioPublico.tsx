@@ -76,6 +76,40 @@ function chaveDoRascunho(eventCode: string) {
   return `fort_formulario_${eventCode}`;
 }
 
+/**
+ * OS ROTULOS DAS DUAS PONTAS DE UMA ESCALA, POR FAIXA.
+ *
+ * POR QUE POR FAIXA, e nao por etapa: num celular, a etapa 3 tem 24 perguntas de
+ * 1 a 5 seguidas. Quem esta na pergunta 20 ja rolou a legenda do topo para fora
+ * da tela, e um "3" sem ponta nomeada nao quer dizer nada -- se a pessoa inverter
+ * o sentido no meio, o perfil sai invertido e o documento de segunda-feira
+ * tambem. Amarrar o rotulo ao NUMERO DA ETAPA quebraria no dia em que a ordem
+ * das etapas mudasse; amarrar a FAIXA da pergunta (min/max) nao quebra.
+ *
+ * Os textos sao os do documento original do dono, palavra por palavra.
+ *
+ * Isto e so a RESERVA: quando a propria pergunta traz `min_label`/`max_label`
+ * (como traz hoje no questionario v2), sao os dela que aparecem. A reserva
+ * garante que a ponta esteja nomeada mesmo numa pergunta cadastrada sem rotulo,
+ * em vez de a tela mostrar numeros nus.
+ */
+const ROTULOS_POR_FAIXA: Record<string, readonly [string, string]> = {
+  "1-5": ["Discordo totalmente", "Concordo totalmente"],
+  "0-10": ["Totalmente insatisfeito", "Plenamente satisfeito"],
+};
+
+function rotulosDaEscala(
+  question: QuizQuestion,
+  menor: number,
+  maior: number,
+): [string | null, string | null] {
+  const reserva = ROTULOS_POR_FAIXA[`${menor}-${maior}`];
+  return [
+    question.min_label ?? reserva?.[0] ?? null,
+    question.max_label ?? reserva?.[1] ?? null,
+  ];
+}
+
 export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }: Props) {
   // Passo 0 = identificacao; 1..N = etapas do questionario.
   const [passo, setPasso] = useState(0);
@@ -86,6 +120,14 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
   const [enviando, setEnviando] = useState(false);
   const [erroDeEnvio, setErroDeEnvio] = useState<string | null>(null);
   const [concluido, setConcluido] = useState(false);
+  /**
+   * O envio foi RECEBIDO E GUARDADO, mas nao virou a resposta oficial: ja havia
+   * resposta gravada para este e-mail, e a primeira nao se sobrescreve. A tela
+   * final e outra, porque o que aconteceu e outro -- dizer "prontinho" aqui
+   * seria a tela mentindo.
+   */
+  const [segundaResposta, setSegundaResposta] = useState(false);
+  const [naMesaDeDecisao, setNaMesaDeDecisao] = useState(true);
   const [rascunhoLido, setRascunhoLido] = useState(false);
 
   const topo = useRef<HTMLDivElement>(null);
@@ -119,7 +161,10 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
   }, [eventCode, totalDePassos]);
 
   useEffect(() => {
-    if (!rascunhoLido || concluido) return;
+    // `segundaResposta` entra no guarda junto com `concluido` pelo mesmo motivo:
+    // o envio chegou ao servidor e esta guardado. Sem isto, o efeito gravaria o
+    // rascunho de volta depois de a tela final apaga-lo.
+    if (!rascunhoLido || concluido || segundaResposta) return;
     try {
       localStorage.setItem(
         chaveDoRascunho(eventCode),
@@ -128,7 +173,7 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
     } catch {
       // Sem rascunho: o formulario continua funcionando nesta sessao.
     }
-  }, [rascunhoLido, concluido, eventCode, identificacao, respostas, passo]);
+  }, [rascunhoLido, concluido, segundaResposta, eventCode, identificacao, respostas, passo]);
 
   const subir = useCallback(() => {
     topo.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -236,6 +281,7 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
       const corpo = (await res.json().catch(() => null)) as {
         error?: string;
         codigo?: string;
+        na_mesa_de_decisao?: boolean;
         faltando?: { etapa: number; titulo: string; faltando: PerguntaEmFalta[] }[];
       } | null;
 
@@ -266,6 +312,12 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
       } catch {
         // Nao impede nada: a tela de recebimento ja e a verdade.
       }
+      if (corpo?.codigo === "segunda_resposta_guardada") {
+        setNaMesaDeDecisao(corpo.na_mesa_de_decisao !== false);
+        setSegundaResposta(true);
+        subir();
+        return;
+      }
       setConcluido(true);
       subir();
     } catch {
@@ -276,6 +328,52 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
     } finally {
       setEnviando(false);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Recebemos, E JA HAVIA RESPOSTA COM ESTE E-MAIL
+  // ---------------------------------------------------------------------------
+  // O TEXTO TEM DE SERVIR PARA OS DOIS CASOS, porque a tela nao sabe qual e: a
+  // mesma pessoa corrigindo o proprio envio, ou alguem que digitou o e-mail de
+  // outra pessoa. Entao ele nao acusa ninguem, nao diz "este e-mail nao e seu",
+  // nao mostra o nome de quem respondeu antes, e nao deixa duvida sobre o que
+  // aconteceu com o que a pessoa acabou de escrever.
+  if (segundaResposta) {
+    return (
+      <div ref={topo} className="px-6 py-16 max-w-md mx-auto space-y-6 text-center">
+        <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">Recebemos</p>
+        <h2 className="font-display text-3xl font-bold text-foreground leading-tight">
+          Seu envio está guardado, {primeiroNome(identificacao.nome)}.
+        </h2>
+        <div className="space-y-4 text-[15px] leading-relaxed text-muted-foreground text-left">
+          <p>
+            Já existe um questionário respondido com este e-mail neste evento. Guardamos inteiro
+            o que você respondeu agora —{" "}
+            <span className="text-foreground font-medium">nada do que você escreveu se perdeu</span>{" "}
+            — e não colocamos nada por cima do que já estava aqui.
+          </p>
+          <p>
+            <span className="text-foreground font-medium">Por que não substituímos:</span> pode ser
+            você corrigindo o que respondeu antes, e pode ser que este e-mail seja de outra pessoa
+            e tenha vindo com uma letra trocada. Pela tela não há como saber qual dos dois é, e
+            apagar as respostas de alguém por engano não tem volta. Então nenhuma das duas é
+            apagada.
+          </p>
+          <p>
+            <span className="text-foreground font-medium">O que acontece agora:</span>{" "}
+            {naMesaDeDecisao
+              ? "alguém da equipe vê os dois envios e confirma qual é o seu antes do encontro."
+              : "a equipe do evento foi avisada de que houve dois envios com este e-mail e confirma qual é o seu antes do encontro."}{" "}
+            Você não precisa responder tudo de novo.
+          </p>
+          <p>
+            Se o e-mail que você digitou tem algum erro de letra, ou se quiser contar qual dos
+            envios é o certo, fale com a equipe do {eventName}: é o caminho mais rápido para o seu
+            envio ser reconhecido como seu.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -309,9 +407,16 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
             Depois do encontro, você recebe um documento feito a partir das suas próprias
             respostas — seu, individual, não um relatório de turma.
           </p>
+          {/* A promessa ANTIGA desta tela era "o novo envio substitui o
+              anterior". Ela saiu porque deixou de ser verdade, e por um bom
+              motivo: substituir por e-mail digitado deixava qualquer pessoa
+              apagar as respostas de outra errando uma letra. O que se promete
+              agora e o que o sistema faz. */}
           <p>
-            Se precisar corrigir alguma coisa, basta abrir este mesmo link e responder de novo
-            com o mesmo e-mail: o novo envio substitui o anterior.
+            Se precisar corrigir alguma coisa, você pode responder de novo neste mesmo link, com
+            o mesmo e-mail. O novo envio{" "}
+            <span className="text-foreground font-medium">não apaga este</span>: ele fica guardado
+            ao lado, e a equipe confirma qual vale antes do encontro.
           </p>
         </div>
       </div>
@@ -609,6 +714,7 @@ function Pergunta({
   const menor = question.min ?? 0;
   const maior = question.max ?? 10;
   const passos = Array.from({ length: Math.max(maior - menor + 1, 0) }, (_, i) => menor + i);
+  const [rotuloMenor, rotuloMaior] = rotulosDaEscala(question, menor, maior);
 
   return (
     <div
@@ -733,10 +839,15 @@ function Pergunta({
                 </button>
               ))}
             </div>
-            {(question.min_label || question.max_label) && (
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>{question.min_label}</span>
-                <span>{question.max_label}</span>
+            {/* As duas pontas, nomeadas, EM CADA pergunta de escala -- nao so
+                uma vez no topo da etapa. `gap-3` e `text-right` existem para o
+                celular: a 375px os dois rotulos cabem lado a lado, e se um dia
+                um texto maior nao couber ele quebra AQUI, sem empurrar a linha
+                dos numeros. */}
+            {(rotuloMenor || rotuloMaior) && (
+              <div className="flex justify-between gap-3 text-xs text-muted-foreground">
+                <span>{rotuloMenor}</span>
+                <span className="text-right">{rotuloMaior}</span>
               </div>
             )}
           </div>
