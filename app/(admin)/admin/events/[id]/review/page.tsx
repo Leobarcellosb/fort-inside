@@ -38,7 +38,7 @@ export default async function ReviewPage({ params }: Props) {
         <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Revisão de prognósticos</p>
         <h1 className="font-display text-2xl text-foreground">{event.name}</h1>
         <p className="text-muted-foreground text-sm">
-          {prognostics?.filter((p) => p.status === "delivered").length ?? 0} de {prognostics?.length ?? 0} entregues
+          {prognostics?.filter((p) => p.status === "delivered").length ?? 0} de {prognostics?.length ?? 0} com link liberado
         </p>
       </div>
 

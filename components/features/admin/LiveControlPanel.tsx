@@ -641,7 +641,17 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
               evento não possa ser processado, mas porque esta tela não sabe
               dizer que ele terminou. O caminho que funciona é a seção
               Prognósticos acima, que não depende de etapa. */}
-          {coletaDeEtapasConcluida(leitura, currentStage) && eventStatus !== "processing" && eventStatus !== "completed" && (
+          {/* QUANDO ESTA TELA NAO LE AS ETAPAS (o questionario v2, ids 101..105,
+              que e o do Marco Zero), o botao aparece mesmo assim: sem ele nao
+              havia caminho nenhum para gerar os documentos de um evento
+              assincrono -- a secao Prognosticos acompanha a fila, mas nao a
+              inicia. Quem decide se pode e o SERVIDOR (/api/jobs/enfileirar):
+              no assincrono ele recusa enquanto a coleta nao fechou
+              (COLLECTION_OPEN), e a recusa chega aqui com o texto do
+              vocabulario. A tela so oferece; a garantia continua do servidor. */}
+          {(coletaDeEtapasConcluida(leitura, currentStage) || !leitura.suportado) &&
+            eventStatus !== "processing" &&
+            eventStatus !== "completed" && (
             <div className="space-y-2">
               <AlertDialog open={confirmProcessOpen} onOpenChange={setConfirmProcessOpen}>
                 <AlertDialogTrigger

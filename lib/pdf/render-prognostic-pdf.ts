@@ -59,7 +59,7 @@ export async function renderAndStorePdf(prognosticId: string): Promise<PdfResult
   const pdfBuffer = await renderToBuffer(
     createElement(PrognosticPdfDocument, {
       participantName: participant?.full_name ?? "",
-      eventName: event?.name ?? "Fort Inside",
+      eventName: event?.name ?? "Marco Zero",
       eventDate: event?.event_date ?? "",
       hostName: event?.host_name ?? "Yuri Fortes",
       content,

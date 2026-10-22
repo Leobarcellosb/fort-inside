@@ -45,8 +45,10 @@ const roboto = Roboto({
 });
 
 export const metadata: Metadata = {
-  title: "Fort Inside — Yuri Fortes",
-  description: "Mapa da Sua Próxima Construção",
+  // O nome que o participante ve na aba e na previa do WhatsApp. "Fort Inside"
+  // era o produto antigo (pedido do dono: o que circula e "Marco Zero").
+  title: "Marco Zero · Geração Preparada",
+  description: "Movimento Geração Preparada",
   icons: { icon: "/icon.png" },
 };
 

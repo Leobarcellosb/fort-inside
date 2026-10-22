@@ -413,7 +413,7 @@ export function PrognosticPdfDocument({
     <Document
       title={`Mapa da Próxima Construção — ${participantName}`}
       author={hostName}
-      subject="Fort Inside — Prognóstico Inicial de Direção"
+      subject="Marco Zero · Direcionamento individual"
     >
       {/* PAGE 1 — COVER */}
       <Page size="A4" orientation="portrait" style={styles.coverPage}>

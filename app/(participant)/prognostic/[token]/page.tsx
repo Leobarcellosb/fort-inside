@@ -1,8 +1,16 @@
+import type { Metadata } from "next";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notFound } from "next/navigation";
 import type { PrognosticContent, Prognostic, Event } from "@/types/database";
 import { PrognosticView } from "@/components/features/prognostic/PrognosticView";
 import { DocumentoSuspensoView } from "@/components/features/prognostic/DocumentoSuspensoView";
+
+// Sem o nome da pessoa no titulo: o link vai por WhatsApp, onde o titulo vira a
+// previa da conversa. E documento pessoal nao entra em buscador.
+export const metadata: Metadata = {
+  title: "Seu direcionamento individual | Marco Zero",
+  robots: { index: false, follow: false },
+};
 
 interface Props {
   params: Promise<{ token: string }>;
@@ -61,7 +69,7 @@ export default async function PrognosticPage({ params }: Props) {
   return (
     <PrognosticView
       participantName={participant?.full_name ?? ""}
-      eventName={event?.name ?? "Fort Inside"}
+      eventName={event?.name ?? "Marco Zero"}
       eventDate={event?.event_date ?? ""}
       hostName={event?.host_name ?? "Yuri Fortes"}
       content={content}

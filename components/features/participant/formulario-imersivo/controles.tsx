@@ -136,6 +136,10 @@ export function Escolha({
             type="button"
             onClick={() => onEscolher(opcao)}
             aria-pressed={escolhida}
+            // Nome explicito, como nas escalas: o texto exato da alternativa,
+            // com a letra. Nao depende de cada leitor de tela montar o nome a
+            // partir dos spans internos.
+            aria-label={opcao}
             className={cn(
               ANEL,
               "w-full flex items-start gap-3.5 text-left rounded-2xl border px-4 py-3.5 min-h-[60px]",

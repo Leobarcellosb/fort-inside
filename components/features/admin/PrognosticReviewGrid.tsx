@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EditPrognosticDialog } from "./EditPrognosticDialog";
 import { SuspenderDocumentoDialog } from "./SuspenderDocumentoDialog";
+import { EnviarDocumentoDialog } from "./EnviarDocumentoDialog";
 import { idDaRazao, situacaoDaEntrega } from "./entrega-do-documento";
 import {
   ROTULO_SUSPENDER,
@@ -40,6 +41,7 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [suspendingId, setSuspendingId] = useState<string | null>(null);
+  const [sendingId, setSendingId] = useState<string | null>(null);
 
   // Realtime: sincroniza localPrognostics quando IA gera ou outro admin entrega.
   useEffect(() => {
@@ -94,12 +96,17 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
     };
   }, [eventId, participants]);
 
-  async function deliver(prognosticId: string) {
+  /**
+   * LIBERA o link (status `delivered`). Nao copia nem envia nada: quem chama e
+   * a janela de envio, no mesmo clique em que o operador, com o destinatario
+   * conferido, abre o WhatsApp ou copia a mensagem (Rodada 67).
+   */
+  async function liberar(prognosticId: string): Promise<boolean> {
     setSaving(true);
     try {
       const supabase = createClient();
       const prog = localPrognostics.find((p) => p.id === prognosticId);
-      if (!prog) return;
+      if (!prog) return false;
 
       const final = prog.edited_content ?? prog.raw_ai_output;
 
@@ -136,9 +143,7 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
         });
       }
 
-      const shareUrl = `${window.location.origin}/prognostic/${prog.public_share_token}`;
-      await navigator.clipboard.writeText(shareUrl).catch(() => {});
-      toast.success("Entregue! Link copiado para a área de transferência.");
+      return true;
     } catch (err) {
       // A entrega passa pelo portão do banco (migration 025): `delivered` exige
       // `final_content` com a MESMA impressão digital que a última revisão
@@ -154,6 +159,7 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
           ? "Entrega recusada: o texto deste documento não é o que foi revisado e aprovado. Abra o documento, revise o texto como ele está agora e salve a revisão; depois disso a entrega é liberada."
           : "Erro ao entregar"
       );
+      return false;
     } finally {
       setSaving(false);
     }
@@ -165,6 +171,13 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
   const editingParticipantName = editingProg
     ? participants.find((pt) => pt.id === editingProg.participant_id)?.full_name ?? ""
     : "";
+
+  const sendingProg = sendingId
+    ? localPrognostics.find((p) => p.id === sendingId) ?? null
+    : null;
+  const sendingParticipant = sendingProg
+    ? participants.find((pt) => pt.id === sendingProg.participant_id) ?? null
+    : null;
 
   const suspendingProg = suspendingId
     ? localPrognostics.find((p) => p.id === suspendingId) ?? null
@@ -216,7 +229,9 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
                   }`}
                 >
                   {prog.status === "delivered"
-                    ? "Entregue"
+                    ? // "Link liberado" e nao "Entregue": o sistema sabe que
+                      // disponibilizou, nao que a mensagem chegou (Rodada 67).
+                      "Link liberado"
                     : prog.status === "suspended"
                     ? // "Fora do ar" e nao "Suspenso": o rotulo fala do ponto de
                       // vista de quem lia o documento, que e o que o operador
@@ -257,12 +272,15 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  className="animate-spin shrink-0"
+                  className="shrink-0 opacity-60"
                   aria-hidden
                 >
                   <path d="M21 12a9 9 0 1 1-6.219-8.56" />
                 </svg>
-                <p className="text-xs">Gerando prognóstico...</p>
+                {/* Esta tela nao le a fila: "gerando" era afirmado tambem para
+                    quem ja tinha falhado 3 vezes. O estado de cada geracao
+                    (na fila, gerando, falhou) e da secao Prognosticos do painel. */}
+                <p className="text-xs">Documento ainda não existe. O andamento está no painel do evento.</p>
               </div>
             )}
             {!prog && !participant.completed_at && (
@@ -320,7 +338,7 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
                 // visível: ele é o que resolve para o operador de celular.
                 <Button
                   size="sm"
-                  onClick={() => deliver(prog.id)}
+                  onClick={() => setSendingId(prog.id)}
                   disabled={saving || !entrega.liberada}
                   aria-describedby={entrega.liberada ? undefined : idDaRazao(prog.id)}
                   className="flex-1 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
@@ -332,14 +350,11 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => {
-                    const url = `${window.location.origin}/prognostic/${prog.public_share_token}`;
-                    navigator.clipboard.writeText(url).catch(() => {});
-                    toast.success("Link copiado");
-                  }}
+                  onClick={() => setSendingId(prog.id)}
+                  disabled={saving}
                   className="flex-1 text-xs border-border text-muted-foreground hover:text-foreground"
                 >
-                  Copiar link
+                  Enviar de novo
                 </Button>
               )}
               {/* TIRAR DO AR (migration 027). Aparece SÓ no documento entregue,
@@ -363,6 +378,21 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
         );
       })}
     </div>
+
+    {sendingProg && sendingParticipant && (
+      // `key` por documento: a conferencia do destinatario nasce desmarcada a
+      // cada documento, e nada do anterior sobrevive no estado.
+      <EnviarDocumentoDialog
+        key={sendingProg.id}
+        prognosticId={sendingProg.id}
+        shareToken={sendingProg.public_share_token}
+        participantName={sendingParticipant.full_name}
+        participantEmail={sendingParticipant.email}
+        jaEntregue={sendingProg.status === "delivered"}
+        onLiberar={() => liberar(sendingProg.id)}
+        onClose={() => setSendingId(null)}
+      />
+    )}
 
     {suspendingProg && (
       <SuspenderDocumentoDialog
@@ -395,11 +425,25 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
         initialYuriNote={editingProg.yuri_note}
         onClose={() => setEditingId(null)}
         onSaved={() => {
-          // Realtime subscription propaga, mas atualiza localmente também
-          // pra UX imediata caso a subscription demore.
+          const id = editingProg.id;
           setLocalPrognostics((prev) =>
-            prev.map((p) => (p.id === editingProg.id ? { ...p, status: "reviewed", pdf_url: null } : p))
+            prev.map((p) => (p.id === id ? { ...p, status: "reviewed", pdf_url: null } : p))
           );
+          // RELE O DOCUMENTO DO BANCO depois de salvar. O selo da aprovacao
+          // (`conteudo_aprovado_hash`, migration 025) e escrito pelo GATILHO, nao
+          // por esta tela; sem reler, o cartao continuava dizendo "ainda nao tem
+          // revisao salva" com o botao Entregar desligado ate alguem recarregar
+          // a pagina. O realtime cobria isso quando ligado; no ensaio local ele
+          // estava desligado e o laco apareceu. A tela nao pode depender dele.
+          void (async () => {
+            const { data } = (await (createClient().from("prognostics") as unknown as {
+              select(c: string): { eq(c: string, v: string): { maybeSingle(): Promise<{ data: Prognostic | null }> } };
+            })
+              .select("*")
+              .eq("id", id)
+              .maybeSingle());
+            if (data) setLocalPrognostics((prev) => prev.map((p) => (p.id === id ? data : p)));
+          })();
         }}
       />
     )}
