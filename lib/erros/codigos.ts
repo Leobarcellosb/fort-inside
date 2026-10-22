@@ -219,7 +219,7 @@ export const DEFINICOES_DE_ERRO = {
 
   /** A consulta oficial de cobertura do Marco Zero não respondeu. Sem ela não há denominador nem veredito de volume. */
   COVERAGE_UNAVAILABLE: { status: 503, error: "A cobertura oficial do evento não respondeu" },
-  /** Verificado: o banco não tem fotografia de convite utilizável, então o total de convidados não é conhecido. */
+  /** Verificado: a fotografia de convite existe e não é utilizável (inconsistente ou ilegível). Lista AUSENTE não usa este código: o Guia sai neutro. */
   INVITE_COUNT_UNDETERMINED: { status: 503, error: "O total de convidados do evento não está determinado" },
 
   // --- a LIBERAÇÃO DE ETAPA pelo painel ao vivo (migration 028)

@@ -321,7 +321,7 @@ const MENSAGENS: Record<TodoCodigoDeErro, Mensagem> = {
   COVERAGE_UNAVAILABLE:
     "A cobertura oficial deste evento não respondeu agora, e sem ela não há população verificada para o guia nem veredito do volume mínimo. Nada foi gerado. Aguarde alguns instantes e tente de novo; se persistir, avise a equipe técnica informando o número da ocorrência.",
   INVITE_COUNT_UNDETERMINED:
-    "O total de convidados deste evento não está determinado: não há fotografia da lista de convites, ou ela não fecha com as pessoas registradas nela. O guia não foi gerado porque as contagens de participação sairiam sobre um total estimado, e estimativa não é população verificada. Encerre a lista de convites do evento e tente de novo.",
+    "O total de convidados deste evento não está determinado: a lista de convites foi encerrada, mas não fecha com as pessoas registradas nela, ou veio em forma que não dá para ler. O guia não foi gerado porque as contagens de participação sairiam sobre um total que o próprio registro desmente. Confira a lista de convites do evento e tente de novo.",
 
   // --- a liberação de etapa, recusada pelo banco (migration 028) ------------
   //

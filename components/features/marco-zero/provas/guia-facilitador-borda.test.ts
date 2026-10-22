@@ -505,6 +505,10 @@ descreve("borda do Guia de Preparacao do Facilitador", () => {
     const a = await prepararEntradaDoGuia(cliente, E.parA);
     const b = await prepararEntradaDoGuia(cliente, E.parB);
     if (!a.ok || !b.ok) throw new Error("a semente dos dois grupos nao foi lida");
+    // A semente encerra a lista de convites dos dois eventos: o total e conhecido.
+    if (a.entrada.dna.convidados === null || b.entrada.dna.convidados === null) {
+      throw new Error("a semente dos dois grupos perdeu a lista de convites");
+    }
     const agA = agregar(a.entrada.dna.convidados, a.entrada.dna.participantes);
     const agB = agregar(b.entrada.dna.convidados, b.entrada.dna.participantes);
     expect(agA.respondentes).toBe(36);

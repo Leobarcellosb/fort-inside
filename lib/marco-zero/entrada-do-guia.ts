@@ -54,6 +54,22 @@
 // O que NAO e usado para decidir: o `payload` dessas linhas. Linha de log e
 // dado, nao instrucao -- so o nome da acao, comparado contra o conjunto fechado
 // acima, entra na decisao.
+//
+// A POPULACAO DE CONVIDADOS (decisao do CTO, Rodada 69). As mesmas tres
+// categorias, aplicadas ao total de convidados da linha oficial de cobertura:
+//
+//   - verifiquei e o total e X: `convidados` inteiro, sem motivo -> X;
+//   - verifiquei e NAO ha lista: `convidados` nulo com o motivo
+//     `sem_snapshot_de_convites` (a lista de convites nunca foi encerrada) ->
+//     `null`, populacao NAO VERIFICADA, e o guia sai NEUTRO;
+//   - nao consegui verificar: a consulta de cobertura falhou -> recusa por
+//     indisponibilidade (COVERAGE_UNAVAILABLE), ANTES de olhar para os
+//     convidados. Falha de leitura nunca vira "lista ausente".
+//
+// O resto continua recusando com INVITE_COUNT_UNDETERMINED: fotografia de
+// convites que o proprio banco desmente (`snapshot_inconsistente`), motivo fora
+// da lista, total invalido, ou a linha que se contradiz (motivo de ausencia COM
+// um total ao lado). Lista que existe e nao fecha nao e lista ausente.
 
 import { calcularMarcoZero } from "../scoring/marco-zero";
 import { achatarRespostas, type LinhaDeRespostas } from "../scoring/achatar-respostas";
@@ -172,6 +188,8 @@ export async function lerPublicacaoDoDna(
 export interface LinhaDeCobertura extends LinhaCoberturaOficial {
   checkin_fechado: boolean | null;
   convidados: number | null;
+  /** Por que `convidados` veio nulo (migration 020). `null` quando ha total. */
+  motivo_convidados?: string | null;
   aprovacao_invalidada: boolean | null;
   invalidacoes_pendentes: number | null;
 }
@@ -193,6 +211,37 @@ export async function lerCobertura(
     return { linha: null, erro: "a consulta de cobertura devolveu linha em forma inesperada" };
   }
   return { linha: bruto as LinhaDeCobertura, erro: null };
+}
+
+// ---------------------------------------------------------------------------
+// A populacao de convidados
+// ---------------------------------------------------------------------------
+
+/** `motivo_convidados` do banco para "a lista de convites nao foi encerrada". */
+export const MOTIVO_SEM_LISTA_DE_CONVIDADOS = "sem_snapshot_de_convites";
+
+/**
+ * Traduz o total de convidados da linha oficial. `convidados: null` e a lista
+ * AUSENTE (populacao nao verificada); qualquer outra forma fora do total
+ * consolidado e recusa. A linha so chega aqui depois de a consulta ter
+ * respondido: falha de leitura ja foi recusada antes.
+ */
+export function convidadosDaCobertura(
+  cobertura: LinhaDeCobertura,
+): { ok: true; convidados: number | null } | { ok: false; causa: string } {
+  const total: unknown = cobertura.convidados;
+  const motivo: unknown = cobertura.motivo_convidados;
+  const semMotivo = motivo === null || motivo === undefined;
+  if (Number.isInteger(total) && (total as number) >= 0 && semMotivo) {
+    return { ok: true, convidados: total as number };
+  }
+  if (total === null && motivo === MOTIVO_SEM_LISTA_DE_CONVIDADOS) {
+    return { ok: true, convidados: null };
+  }
+  return {
+    ok: false,
+    causa: `convidados=${String(total)} motivo_convidados=${String(motivo)}`,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -365,15 +414,13 @@ export async function prepararEntradaDoGuia(
       causa: "a linha de cobertura veio sem o estado do check-in",
     };
   }
-  // O total de convidados e a fotografia versionada do banco. Sem ela, as oito
-  // contagens nao fecham -- e estimar o denominador e justamente o que o guia
-  // existe para nao fazer.
-  if (!Number.isInteger(cobertura.convidados) || (cobertura.convidados as number) < 0) {
-    return {
-      ok: false,
-      codigo: "INVITE_COUNT_UNDETERMINED",
-      causa: `motivo_convidados=${String((cobertura as { motivo_convidados?: unknown }).motivo_convidados)}`,
-    };
+  // O total de convidados e a fotografia versionada do banco. Sem lista
+  // encerrada, ele chega como `null` e o guia sai NEUTRO, sem total e sem nada
+  // derivado dele: estimar o denominador e justamente o que o guia existe para
+  // nao fazer. Lista que existe e nao fecha continua recusando.
+  const convidados = convidadosDaCobertura(cobertura);
+  if (!convidados.ok) {
+    return { ok: false, codigo: "INVITE_COUNT_UNDETERMINED", causa: convidados.causa };
   }
 
   const publicacao = await lerPublicacaoDoDna(supabase, eventId, cobertura);
@@ -397,7 +444,7 @@ export async function prepararEntradaDoGuia(
           dataEvento:
             typeof evento.event_date === "string" ? evento.event_date.slice(0, 10) : null,
         },
-        convidados: cobertura.convidados as number,
+        convidados: convidados.convidados,
         checkinFechado: cobertura.checkin_fechado,
         participantes: participantes.participantes,
         gateDeVolume: gateDeVolumeDaCoberturaOficial(cobertura),

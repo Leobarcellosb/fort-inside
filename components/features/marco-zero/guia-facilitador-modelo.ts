@@ -82,6 +82,21 @@
 // saber o estado do DNA" NAO e "nao ha DNA publicado". O primeiro e
 // indisponibilidade e RECUSA o guia (`estado_do_dna_indeterminado`); so o
 // segundo o libera. Falha de consulta nunca vira ausencia.
+//
+// O GUIA SEM LISTA DE CONVIDADOS (decisao do CTO, Rodada 69). Sem lista de
+// convidados consolidada, o guia era recusado. Agora ele sai NEUTRO: o total de
+// convidados chega como `null` (populacao NAO VERIFICADA, nunca estimativa) e o
+// texto diz isso. Sem denominador valido nao ha "sem resposta" derivado de
+// total, nao ha cobertura e nao ha proporcao alguma; ficam as contagens que de
+// fato existem (respostas completas e iniciadas, presenca so com o check-in
+// fechado, liberacoes). O canal continua com as MESMAS oito chaves: o que mudou
+// e que duas delas (`convidados` e `semRespostaRegistrada`) passam a admitir
+// `null`, do mesmo jeito que `presentes` ja admitia.
+//
+// "Lista ausente" e informacao desconhecida e e decidida por quem le o banco
+// (`lib/marco-zero/entrada-do-guia.ts`); "nao consegui ler o banco" continua
+// sendo indisponibilidade e nunca chega aqui como `null`. Com a lista
+// consolidada, nada muda: mesmo texto e mesmo hash para a mesma entrada.
 
 import { createHash } from "node:crypto";
 import { ELEMENTOS } from "../../../lib/scoring/marco-zero";
@@ -139,14 +154,21 @@ export const TEXTOS_GUIA = {
  * o check-in fechado) e respondentes (quem entregou a leitura completa).
  */
 export interface ParticipacaoVerificada {
-  /** Convidados: quem foi chamado. Informado por quem organiza. */
-  convidados: number;
+  /**
+   * Convidados: quem foi chamado. Informado por quem organiza. `null` quer dizer
+   * populacao de convidados NAO VERIFICADA (nao ha lista consolidada): o guia
+   * diz isso em vez de imprimir um total, e nada e derivado dele.
+   */
+  convidados: number | null;
   /** Respostas completas recebidas, de convidados, independente de presença. */
   respostasCompletas: number;
   /** Respostas iniciadas e não concluídas. */
   respostasIncompletas: number;
-  /** Convidados menos as respostas recebidas (completas e incompletas). */
-  semRespostaRegistrada: number;
+  /**
+   * Convidados menos as respostas recebidas (completas e incompletas). `null`
+   * quando `convidados` e `null`: sem denominador nao ha subtracao.
+   */
+  semRespostaRegistrada: number | null;
   /**
    * Presentes: só existe depois do check-in fechado. `null` quer dizer
    * população ainda não verificada, e o guia diz isso em vez de imprimir um
@@ -256,9 +278,20 @@ export function publicacaoDoDnaDoRegistro(
   return { estado: "verificado", publicado: !caducou };
 }
 
+/**
+ * A entrada do DNA Coletivo como o guia a recebe: igual a `EntradaDna`, com uma
+ * diferenca so. `convidados` pode ser `null`, que quer dizer populacao de
+ * convidados NAO VERIFICADA (o evento nao tem lista consolidada). `null` e
+ * desconhecido, e nao zero nem estimativa; falha de leitura do banco NAO chega
+ * aqui como `null` (quem le o banco recusa antes).
+ */
+export type EntradaDnaDoGuia = Omit<EntradaDna, "convidados"> & {
+  convidados: number | null;
+};
+
 export interface EntradaGuia {
   /** A mesma entrada do DNA Coletivo: quem decide o limiar é o módulo do DNA. */
-  dna: EntradaDna;
+  dna: EntradaDnaDoGuia;
   /**
    * Veredito do estado de publicacao do DNA Coletivo deste conjunto de dados.
    *
@@ -304,7 +337,16 @@ export interface GuiaDoFacilitador {
  * Todos sao strings de enum, sem numero: e por isso que este tipo pode atravessar
  * o canal estreito ate `montarGuia`.
  */
-export type MotivoSemDnaPublicado = MotivoRelatorio | "dna_nao_publicado";
+export type MotivoSemDnaPublicado =
+  | MotivoRelatorio
+  | "dna_nao_publicado"
+  /**
+   * Os limiares nao recusariam o DNA, e a populacao de convidados nao foi
+   * verificada: sem ela o DNA Coletivo nao tem a participacao sobre quem foi
+   * chamado, e por isso nao e gerado. Nao se diz "DNA gerado" sobre um
+   * documento cujo denominador nao existe.
+   */
+  | "convidados_nao_verificados";
 
 export type MotivoSemGuia =
   /** Ha DNA valido, revisado e disponibilizado para este conjunto de dados. */
@@ -502,6 +544,9 @@ const NAO_VERIFICADO = "população ainda não verificada: o check-in não foi f
 const SO_COM_CHECKIN = "só existe depois do check-in fechado";
 
 function blocoParticipacao(p: ParticipacaoVerificada): BlocoDna {
+  // Sem populacao de convidados verificada, a secao e outra (ver abaixo). Com
+  // ela, o texto e exatamente o de antes da Rodada 69, e o hash tambem.
+  if (p.convidados === null) return blocoParticipacaoSemConvidados(p);
   const b = novoBloco("participacao", TEXTOS_GUIA.tituloParticipacao);
   b.p(
     "Os números desta seção são de participação, e cada linha diz qual população está sendo contada. Convidados, presentes e respondentes são populações diferentes: uma proporção calculada sobre a população errada diz outra coisa.",
@@ -548,6 +593,65 @@ function blocoParticipacao(p: ParticipacaoVerificada): BlocoDna {
   return b.fim();
 }
 
+const CONVIDADOS_NAO_VERIFICADOS =
+  "população não verificada: não há lista de convidados consolidada";
+const SEM_DENOMINADOR =
+  "não calculado: depende da população de convidados, que não foi verificada";
+
+/**
+ * A secao de participacao do GUIA NEUTRO: a populacao de convidados nao foi
+ * verificada. As linhas sao as mesmas oito, na mesma ordem, para que a falta
+ * fique a vista em vez de sumir; as duas que dependem do total de convidados
+ * dizem por que estao sem numero. Nenhum numero desta secao sai do total de
+ * convidados, e nenhuma proporcao e escrita.
+ */
+function blocoParticipacaoSemConvidados(p: ParticipacaoVerificada): BlocoDna {
+  const b = novoBloco("participacao", TEXTOS_GUIA.tituloParticipacao);
+  b.p(
+    "Os números desta seção são de participação, e cada linha diz qual população está sendo contada. A população de convidados deste evento não foi verificada: não há lista de convidados consolidada. Por isso esta seção não traz total de convidados, não traz quem ficou sem resposta entre eles e não traz proporção alguma.",
+  );
+  b.l([
+    { rotulo: "Convidados, quem foi chamado", valor: CONVIDADOS_NAO_VERIFICADOS },
+    { rotulo: "Respostas completas recebidas", valor: String(p.respostasCompletas) },
+    {
+      rotulo: "Respostas iniciadas e não concluídas",
+      valor: String(p.respostasIncompletas),
+    },
+    { rotulo: "Convidados sem resposta registrada", valor: SEM_DENOMINADOR },
+    {
+      rotulo: "Presentes, com o check-in fechado",
+      valor: p.presentes === null ? NAO_VERIFICADO : String(p.presentes),
+    },
+    {
+      rotulo: "Respostas completas de quem esteve presente",
+      valor:
+        p.respostasCompletasDePresentes === null
+          ? SO_COM_CHECKIN
+          : String(p.respostasCompletasDePresentes),
+    },
+    {
+      rotulo: "Leituras individuais liberadas pela própria pessoa",
+      valor: String(p.leiturasIndividuaisLiberadas),
+    },
+    {
+      rotulo: "Liberações de leitura sem resposta registrada",
+      valor: String(p.liberacoesSemRespostaRegistrada),
+    },
+  ]);
+  b.p(
+    "As respostas contadas acima são de participantes registrados neste evento, na versão de questionário do evento: completa é a leitura com o questionário inteiro respondido, e iniciada é a que tem resposta registrada e ficou incompleta. Elas dizem quem respondeu, e não quem foi chamado.",
+  );
+  b.p(
+    "Sem a lista de convidados, não se sabe quantas pessoas foram chamadas e não responderam. Este guia deixa essas linhas sem número em vez de estimar, porque um total estimado não é população verificada.",
+  );
+  b.p(
+    p.presentes === null
+      ? "Enquanto o check-in não é fechado, a população de presentes não existe verificada. Este guia deixa a linha em branco em vez de imprimir estimativa, porque uma proporção sobre presentes estimados não é uma proporção verificada."
+      : "Presentes é a população do dia, depois do check-in fechado, e respondentes é quem entregou a leitura completa. A primeira não vira a segunda por aproximação, e a diferença entre as duas é o que este guia mantém à vista.",
+  );
+  return b.fim();
+}
+
 // ---------------------------------------------------------------------------
 // Secao POR QUE NAO HA DNA: o motivo vem do modulo do DNA, sem numero
 // ---------------------------------------------------------------------------
@@ -573,6 +677,8 @@ const PROSA_SEM_DNA: Record<
     "O check-in ainda não foi fechado, e sem a população de presentes não existe cobertura oficial para calcular.",
   sem_presentes:
     "Não há presença registrada para este evento, e sem população não existe cobertura.",
+  convidados_nao_verificados:
+    "A população de convidados deste evento não foi verificada, porque não há lista de convidados consolidada. O DNA Coletivo traz a participação sobre quem foi chamado, e sem essa população ele não é gerado. As respostas recebidas não substituem a lista: elas dizem quem respondeu, e não quem foi chamado.",
 };
 
 function blocoSemDna(motivo: MotivoSemDnaPublicado): BlocoDna {
@@ -790,6 +896,30 @@ function blocoLimites(): BlocoDna {
 
 const LIMITES = blocoLimites();
 
+/**
+ * Os limites do guia NEUTRO. Muda uma frase so: o guia sem lista de convidados
+ * nao diz quantos foram chamados, e o texto fixo de `LIMITES` afirmaria isso.
+ * `LIMITES` continua intocado para o evento com lista, e o hash dele tambem.
+ */
+function blocoLimitesSemConvidados(): BlocoDna {
+  const b = novoBloco("limites", TEXTOS_GUIA.tituloLimites);
+  b.p(
+    "Este guia não traz contagem nem taxa sobre como as pessoas responderam, e não cruza as respostas de pessoas diferentes.",
+  );
+  b.p(
+    "Os números deste guia são de participação. Eles dizem quantas respostas chegaram e em que estado, e não dizem o que as respostas contêm. Quantos foram chamados este guia não diz, porque a lista de convidados não foi consolidada.",
+  );
+  b.p(
+    "Quando o limiar recusa o DNA Coletivo, o que falta é base para afirmar algo sobre quem está presente. Isso não se resolve escrevendo a mesma afirmação com outras palavras, nem chamando a afirmação de síntese da sala.",
+  );
+  b.p(
+    "Se durante o dia você quiser mais detalhe sobre quem está ali, pergunte ali mesmo: quem quiser responde em voz alta, por escolha própria.",
+  );
+  return b.fim();
+}
+
+const LIMITES_SEM_CONVIDADOS = blocoLimitesSemConvidados();
+
 // ---------------------------------------------------------------------------
 // Projecao: do que entrou para as oito contagens
 // ---------------------------------------------------------------------------
@@ -823,7 +953,9 @@ export function projetarParticipacao(
   entrada: EntradaGuia,
 ): Projecao {
   const { convidados, checkinFechado, participantes } = entrada.dna;
-  if (!Number.isInteger(convidados) || convidados < 0) {
+  // `null` e populacao NAO VERIFICADA, e so `null`: qualquer outro valor que
+  // nao seja inteiro nao negativo continua sendo dado invalido.
+  if (convidados !== null && (!Number.isInteger(convidados) || convidados < 0)) {
     throw new ParticipacaoInconsistente("o total de convidados é inválido");
   }
 
@@ -845,13 +977,16 @@ export function projetarParticipacao(
       if (c === "completo") completasDePresentes += 1;
     }
   }
-  const semResposta = convidados - respostasCompletas - respostasIncompletas;
-  if (semResposta < 0) {
+  // Sem populacao de convidados verificada nao ha subtracao, e as duas
+  // conferencias contra o total nao tem contra o que conferir.
+  const semResposta =
+    convidados === null ? null : convidados - respostasCompletas - respostasIncompletas;
+  if (convidados !== null && (semResposta as number) < 0) {
     throw new ParticipacaoInconsistente(
       "chegaram mais respostas do que o total de convidados informado",
     );
   }
-  if (checkinFechado && presentes > convidados) {
+  if (convidados !== null && checkinFechado && presentes > convidados) {
     throw new ParticipacaoInconsistente(
       "há mais pessoas presentes do que convidados informados",
     );
@@ -923,7 +1058,7 @@ export function montarGuia(
     semDna: blocoSemDna(motivoSemDna),
     preparacao: PREPARACAO,
     leituras: LEITURAS,
-    limites: LIMITES,
+    limites: participacao.convidados === null ? LIMITES_SEM_CONVIDADOS : LIMITES,
     notaDeLeitura: TEXTOS_GUIA.notaDeLeitura,
     populacoes: participacao,
     acessoIndividual: { idsLiberados },
@@ -961,6 +1096,29 @@ const PROSA_PUBLICACAO_INDETERMINADA: Record<MotivoPublicacaoIndeterminada, stri
   invalidacao_indeterminada:
     "há disponibilização registrada e não foi possível saber se a aprovação daquele fechamento continua valendo",
 };
+
+/**
+ * O que o modulo do DNA recebe para decidir os LIMIARES. Com a populacao de
+ * convidados verificada, e a propria entrada, intocada.
+ *
+ * Sem ela (`convidados === null`), `gerarDnaColetivo` continua sendo quem decide
+ * presenca, cobertura, piso e volume, e nao e reimplementado aqui. Ele exige um
+ * inteiro em `convidados`, e nesses limiares so o usa numa porta: "ha mais
+ * presentes do que convidados". O parametro passado e o numero de participantes
+ * REGISTRADOS na entrada, que por construcao e teto dos presentes (todo presente
+ * e um participante da lista), e por isso deixa essa porta sem efeito.
+ *
+ * Esse numero NAO e total de convidados e nao e tratado como tal: ele nao chega
+ * a `projetarParticipacao` nem a `montarGuia`, nao entra no texto nem no hash, e
+ * o documento que o modulo do DNA montar com ele e descartado (o motivo vira
+ * `convidados_nao_verificados`). A independencia da decisao em relacao a esse
+ * parametro e testada.
+ */
+function entradaDoLimiar(dna: EntradaDnaDoGuia): EntradaDna {
+  if (dna.convidados !== null) return dna as EntradaDna;
+  const registrados = Array.isArray(dna.participantes) ? dna.participantes.length : 0;
+  return { ...dna, convidados: registrados };
+}
 
 /**
  * Ponto de entrada. O guia existe para o evento que NAO tem DNA Coletivo
@@ -1002,9 +1160,12 @@ export function gerarGuiaDoFacilitador(entrada: EntradaGuia): ResultadoGuia {
     );
   }
 
+  const dnaDoLimiar = entradaDoLimiar(entrada.dna);
+  const convidadosNaoVerificados = entrada.dna.convidados === null;
+
   let dna;
   try {
-    dna = gerarDnaColetivo(entrada.dna);
+    dna = gerarDnaColetivo(dnaDoLimiar);
   } catch {
     return naoGerado(
       "dados_inconsistentes",
@@ -1045,9 +1206,15 @@ export function gerarGuiaDoFacilitador(entrada: EntradaGuia): ResultadoGuia {
   }
 
   // Daqui para baixo: VERIFICADO que nao ha DNA disponibilizado. O guia sai
-  // mesmo que o DNA seja geravel -- rascunho nao e publicacao.
+  // mesmo que o DNA seja geravel -- rascunho nao e publicacao. Sem populacao de
+  // convidados verificada, o "rascunho" saiu sobre o parametro neutro de
+  // `entradaDoLimiar` e NAO e um DNA: o motivo e a populacao nao verificada.
   const motivoSemDna: MotivoSemDnaPublicado =
-    dna.tipo === "relatorio_operacional" ? dna.motivo : "dna_nao_publicado";
+    dna.tipo === "relatorio_operacional"
+      ? dna.motivo
+      : convidadosNaoVerificados
+        ? "convidados_nao_verificados"
+        : "dna_nao_publicado";
 
   if (motivoSemDna === "dados_inconsistentes") {
     return naoGerado(
@@ -1061,7 +1228,7 @@ export function gerarGuiaDoFacilitador(entrada: EntradaGuia): ResultadoGuia {
 
   let projecao: Projecao;
   try {
-    agregar(entrada.dna.convidados, entrada.dna.participantes);
+    agregar(dnaDoLimiar.convidados, entrada.dna.participantes);
     projecao = projetarParticipacao(entrada);
   } catch (e) {
     if (e instanceof DadosInconsistentesDna || e instanceof ParticipacaoInconsistente) {
