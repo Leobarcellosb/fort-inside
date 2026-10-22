@@ -127,7 +127,17 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
    * seria a tela mentindo.
    */
   const [segundaResposta, setSegundaResposta] = useState(false);
-  const [naMesaDeDecisao, setNaMesaDeDecisao] = useState(true);
+  /**
+   * O envio NAO foi confirmado pelo servidor: ou ele respondeu que nao conseguiu
+   * gravar (503 PUBLIC_FORM_WRITE_UNAVAILABLE, ou 500), ou a resposta nao chegou
+   * (`rede`), ou chegou num formato que nao confirma nada. Em TODOS esses casos o
+   * rascunho fica, nada e apagado, e a tela NAO diz que recebeu: ela pede para
+   * tentar de novo, e o botao reenvia exatamente o mesmo conteudo.
+   */
+  const [falhaNoEnvio, setFalhaNoEnvio] = useState<
+    { tipo: "servidor" | "rede"; ocorrencia: string | null } | null
+  >(null);
+  const falhaRef = useRef<HTMLDivElement>(null);
   const [rascunhoLido, setRascunhoLido] = useState(false);
 
   const topo = useRef<HTMLDivElement>(null);
@@ -242,9 +252,16 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
 
   function voltar() {
     setErroDeEnvio(null);
+    setFalhaNoEnvio(null);
     setFaltando([]);
     setPasso((p) => Math.max(0, p - 1));
     subir();
+  }
+
+  function mostrarFalha(tipo: "servidor" | "rede", ocorrencia: string | null) {
+    setErroDeEnvio(null);
+    setFalhaNoEnvio({ tipo, ocorrencia });
+    requestAnimationFrame(() => falhaRef.current?.focus());
   }
 
   async function enviar() {
@@ -265,6 +282,7 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
 
     setEnviando(true);
     setErroDeEnvio(null);
+    setFalhaNoEnvio(null);
     try {
       const res = await fetch("/api/formulario-publico", {
         method: "POST",
@@ -279,7 +297,10 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
       });
 
       const corpo = (await res.json().catch(() => null)) as {
+        success?: boolean;
         error?: string;
+        code?: string;
+        ocorrencia?: string;
         codigo?: string;
         na_mesa_de_decisao?: boolean;
         faltando?: { etapa: number; titulo: string; faltando: PerguntaEmFalta[] }[];
@@ -297,6 +318,17 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
           requestAnimationFrame(() => avisoRef.current?.focus());
           return;
         }
+        // NAO CONSEGUI GRAVAR (503 com o codigo proprio), erro interno (500) ou
+        // uma resposta que nem e JSON (gateway, tempo esgotado): o servidor nao
+        // confirmou nada. Rascunho fica, e a tela pede para tentar de novo.
+        if (
+          corpo?.code === "PUBLIC_FORM_WRITE_UNAVAILABLE" ||
+          res.status === 500 ||
+          corpo === null
+        ) {
+          mostrarFalha("servidor", corpo?.ocorrencia ?? null);
+          return;
+        }
         setErroDeEnvio(
           corpo?.error ??
             "Não conseguimos enviar agora. Suas respostas continuam aqui na tela: tente de novo em alguns segundos.",
@@ -305,15 +337,30 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
         return;
       }
 
-      // Recebido. O rascunho sai do navegador: ele existe para não perder o
-      // preenchimento, e o preenchimento já chegou.
+      // O QUE CONTA COMO "RECEBIDO", e nada alem disso:
+      //   - segunda resposta: `codigo` da mesa E `na_mesa_de_decisao === true`.
+      //     So entao a tela pode dizer "Guardamos inteiro o que voce respondeu";
+      //   - resposta oficial: `success === true` sem codigo.
+      // Qualquer outro 200 (corpo ilegivel, formato inesperado) NAO e
+      // confirmacao, e a tela trata como falha: rascunho fica, sem "salvamos".
+      const naMesa =
+        corpo?.success === true &&
+        corpo.codigo === "segunda_resposta_guardada" &&
+        corpo.na_mesa_de_decisao === true;
+      const oficial = corpo?.success === true && corpo.codigo === undefined;
+      if (!naMesa && !oficial) {
+        mostrarFalha("servidor", null);
+        return;
+      }
+
+      // Recebido E confirmado. So agora o rascunho sai do navegador: ele existe
+      // para não perder o preenchimento, e o preenchimento já chegou.
       try {
         localStorage.removeItem(chaveDoRascunho(eventCode));
       } catch {
         // Nao impede nada: a tela de recebimento ja e a verdade.
       }
-      if (corpo?.codigo === "segunda_resposta_guardada") {
-        setNaMesaDeDecisao(corpo.na_mesa_de_decisao !== false);
+      if (naMesa) {
         setSegundaResposta(true);
         subir();
         return;
@@ -321,10 +368,10 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
       setConcluido(true);
       subir();
     } catch {
-      setErroDeEnvio(
-        "Parece que a internet caiu no meio do envio. Suas respostas continuam aqui na tela: confira a conexão e toque em enviar de novo."
-      );
-      subir();
+      // A resposta nao voltou. Pode ter gravado ou nao -- a tela nao sabe, e
+      // nao afirma nenhum dos dois. Reenviar e seguro: o mesmo conteudo, do
+      // mesmo nome, e reconhecido pelo servidor como o mesmo envio.
+      mostrarFalha("rede", null);
     } finally {
       setEnviando(false);
     }
@@ -338,6 +385,9 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
   // outra pessoa. Entao ele nao acusa ninguem, nao diz "este e-mail nao e seu",
   // nao mostra o nome de quem respondeu antes, e nao deixa duvida sobre o que
   // aconteceu com o que a pessoa acabou de escrever.
+  // ESTA TELA SO APARECE DEPOIS DE O SERVIDOR CONFIRMAR a gravacao na mesa de
+  // decisao (`na_mesa_de_decisao === true`, ver `enviar`). "Guardamos inteiro"
+  // e uma afirmacao sobre o banco, e so pode ser dita com a confirmacao dele.
   if (segundaResposta) {
     return (
       <div ref={topo} className="px-6 py-16 max-w-md mx-auto space-y-6 text-center">
@@ -360,11 +410,9 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
             apagada.
           </p>
           <p>
-            <span className="text-foreground font-medium">O que acontece agora:</span>{" "}
-            {naMesaDeDecisao
-              ? "alguém da equipe vê os dois envios e confirma qual é o seu antes do encontro."
-              : "a equipe do evento foi avisada de que houve dois envios com este e-mail e confirma qual é o seu antes do encontro."}{" "}
-            Você não precisa responder tudo de novo.
+            <span className="text-foreground font-medium">O que acontece agora:</span> alguém da
+            equipe vê os dois envios e confirma qual é o seu antes do encontro. Você não precisa
+            responder tudo de novo.
           </p>
           <p>
             Se o e-mail que você digitou tem algum erro de letra, ou se quiser contar qual dos
@@ -463,6 +511,53 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
       <div className="px-6 py-8 max-w-xl mx-auto space-y-10">
         {/* O aviso do que falta. CONTEUDO da tela, com foco programatico e
             role=alert: nao e tooltip, nao e cor de borda, nao e hover. */}
+        {/* O ENVIO NAO FOI CONFIRMADO. Quem le e um adolescente: sem jargao,
+            sem culpa, sem dizer que salvou. O que ele precisa saber e que nada
+            do que escreveu sumiu da tela e o que fazer -- e o botao daqui reenvia
+            exatamente o mesmo conteudo. */}
+        {falhaNoEnvio && (
+          <div
+            ref={falhaRef}
+            tabIndex={-1}
+            role="alert"
+            aria-live="assertive"
+            className="rounded-md border border-primary/40 bg-card px-4 py-5 space-y-3 outline-none"
+          >
+            <p className="text-base font-medium text-foreground">
+              {falhaNoEnvio.tipo === "rede"
+                ? "Não tivemos confirmação de que suas respostas chegaram."
+                : "Suas respostas ainda não chegaram até nós."}
+            </p>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {falhaNoEnvio.tipo === "rede"
+                ? "A conexão parece ter caído no meio do envio. Confira se a internet está funcionando."
+                : "Tivemos um problema do nosso lado na hora de receber. Não foi nada que você fez."}
+            </p>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Tudo o que você escreveu continua aqui, nesta tela, e você não precisa responder nada
+              de novo. Espere alguns segundos e toque no botão abaixo para enviar outra vez.
+            </p>
+            <Button
+              type="button"
+              onClick={() => void enviar()}
+              disabled={enviando}
+              className="w-full h-12 bg-primary text-primary-foreground hover:bg-primary/90 uppercase tracking-[0.08em] text-xs"
+            >
+              {enviando ? "Enviando..." : "Tentar enviar de novo"}
+            </Button>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Se não der certo depois de algumas tentativas, avise a equipe do {eventName}
+              {falhaNoEnvio.ocorrencia ? (
+                <>
+                  {" "}e mostre este código:{" "}
+                  <span className="font-mono text-foreground">{falhaNoEnvio.ocorrencia}</span>
+                </>
+              ) : null}
+              .
+            </p>
+          </div>
+        )}
+
         {(faltando.length > 0 || erroDeEnvio) && (
           <div
             ref={avisoRef}
@@ -602,7 +697,9 @@ export function FormularioPublico({ eventCode, eventName, dataDoEvento, etapas }
               : passo === 0
                 ? "Começar"
                 : ultimoPasso
-                  ? "Enviar respostas"
+                  ? falhaNoEnvio
+                    ? "Tentar enviar de novo"
+                    : "Enviar respostas"
                   : "Continuar"}
           </Button>
         </div>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { novaOcorrencia } from "@/lib/erros/codigos";
+import { DEFINICOES_DE_ERRO, novaOcorrencia } from "@/lib/erros/codigos";
 import {
   receberFormulario,
   type ClienteDeRecepcao,
@@ -102,8 +102,11 @@ export async function POST(req: NextRequest) {
       return json(200, { success: true, participant_id: r.participantId });
 
     case "segunda_resposta_guardada":
-      // 200, e nao erro: NADA falhou. O envio foi recebido e esta guardado -- o
-      // que ele nao fez foi apagar a resposta que ja existia, que e o ponto.
+      // 200, e nao erro: NADA falhou. O envio foi GRAVADO na mesa de decisao --
+      // este desfecho so existe depois de o insert em `external_submissions`
+      // voltar sem erro (ver receber-formulario.ts). O que ele nao fez foi apagar
+      // a resposta que ja existia, que e o ponto. `na_mesa_de_decisao` e sempre
+      // `true` aqui; a tela so diz "guardamos" quando le esse `true`.
       //
       // O QUE ESTA RESPOSTA REVELA, declarado: ela diz a quem enviou que aquele
       // e-mail ja tinha resposta neste evento. Isso e mais do que o silencio
@@ -116,7 +119,7 @@ export async function POST(req: NextRequest) {
       return json(200, {
         success: true,
         codigo: "segunda_resposta_guardada",
-        na_mesa_de_decisao: r.naMesa,
+        na_mesa_de_decisao: true,
       });
 
     case "evento_nao_encontrado":
@@ -164,6 +167,26 @@ export async function POST(req: NextRequest) {
         codigo: "resposta_invalida",
       });
 
+    case "gravacao_indisponivel": {
+      // NAO CONSEGUI GRAVAR. Nem "gravei" (200) nem "recusei" (4xx): o
+      // armazenamento proprio nao confirmou, e nada foi guardado em outro lugar.
+      // A frase que o adolescente le mora na tela, traduzida pelo `code`; o
+      // `error` e o texto curto e estavel do vocabulario (lib/erros/codigos.ts).
+      const codigo = "PUBLIC_FORM_WRITE_UNAVAILABLE" as const;
+      const ocorrencia = novaOcorrencia();
+      console.error("[formulario-publico] gravacao nao confirmada", {
+        ocorrencia,
+        codigo,
+        fase: r.fase,
+        causa: r.causa,
+      });
+      return json(DEFINICOES_DE_ERRO[codigo].status, {
+        error: DEFINICOES_DE_ERRO[codigo].error,
+        code: codigo,
+        ocorrencia,
+      });
+    }
+
     case "erro":
     default: {
       const ocorrencia = novaOcorrencia();
@@ -171,7 +194,7 @@ export async function POST(req: NextRequest) {
         ocorrencia,
         causa: r.tipo === "erro" ? r.causa : r,
       });
-      return json(500, { error: ERRO_INTERNO, ocorrencia });
+      return json(500, { error: ERRO_INTERNO, code: "INTERNAL_ERROR", ocorrencia });
     }
   }
 }

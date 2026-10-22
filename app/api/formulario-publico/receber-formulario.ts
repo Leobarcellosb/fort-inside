@@ -86,6 +86,27 @@
 // registrada em `event_logs`, para que quem olhar na segunda saiba a qualidade
 // do dado: 'email_digitado_nao_verificado', nunca "pessoa confirmada".
 //
+// ===========================================================================
+// `event_logs` RECEBE METADADOS, NUNCA CONTEUDO PESSOAL -- E NAO E RESERVA
+// ===========================================================================
+// Decisao da revisao, literal: "logs operacionais nao podem ser utilizados como
+// deposito alternativo de respostas pessoais completas." `event_logs` e um
+// registro operacional generico, lido por sete partes do sistema (batch-process,
+// jobs/enfileirar, generate-prognostic, entrada-do-guia, a pagina do evento e o
+// painel ao vivo, que carrega a linha do tempo no navegador do host). Entao:
+//
+//   - o que vai para la e `MetadadosDoEnvio` (tipo fechado, abaixo): formulario,
+//     qualidade da identidade, contagens, ids internos, fase de uma falha.
+//     NUNCA nome, e-mail, telefone ou conteudo de resposta;
+//   - ele NAO e reserva de nada. Esta rota ja teve um caminho em que, se a mesa
+//     de decisao falhasse, o envio INTEIRO ia para `event_logs` e a tela dizia
+//     "guardamos inteiro". Esse caminho foi REMOVIDO. Se o armazenamento proprio
+//     (participants/quiz_responses, ou `external_submissions`) nao confirma a
+//     gravacao, o desfecho e `gravacao_indisponivel` -- a rota responde 503
+//     PUBLIC_FORM_WRITE_UNAVAILABLE, a tela mantem o rascunho e pede para tentar
+//     de novo. "Nao consegui gravar" e um fato diferente de "gravei" e de
+//     "recusei", e nenhum dos dois pode ser dito no lugar dele.
+//
 // `quiz_responses.origem` continua 'app', e nao por descuido: o CHECK da 022
 // aceita so 'app' e 'externo', e 'externo' EXIGE `external_submission_id`. Dizer
 // 'externo' num envio que a pessoa fez nesta aplicacao seria falso, e criar um
@@ -190,26 +211,41 @@ export type ResultadoDaRecepcao =
   /**
    * Ja havia resposta gravada para este e-mail neste evento. A PRIMEIRA ficou
    * intacta (nada foi escrito em `quiz_responses` nem em `participants`) e esta
-   * SEGUNDA foi guardada para decisao humana.
-   *
-   * `naMesa` diz onde ela caiu: `true` = linha em `external_submissions`, que a
-   * mesa de decisao do operador lista; `false` = a mesa nao estava disponivel
-   * (ex.: a 022 nao aplicada neste banco) e o envio inteiro foi preservado em
-   * `event_logs`. Nos dois casos a resposta existe; no segundo ela exige SQL
-   * para ser lida, e quem responde precisa saber que isso e diferente.
+   * SEGUNDA foi GRAVADA em `external_submissions`, que a mesa de decisao do
+   * operador lista. Este desfecho so existe DEPOIS de o insert na mesa voltar
+   * sem erro: `naMesa` e `true` no tipo, porque nao ha outro lugar onde a
+   * segunda resposta possa estar. Mesa que falhou e `gravacao_indisponivel`.
    */
   | {
       tipo: "segunda_resposta_guardada";
       etapasJaRespondidas: number;
-      naMesa: boolean;
+      naMesa: true;
       submissaoId: string;
     }
+  /**
+   * O ARMAZENAMENTO PROPRIO NAO CONFIRMOU A GRAVACAO. Nada foi dado como
+   * recebido; a pessoa reenvia o mesmo conteudo. `fase` diz onde parou, para o
+   * log -- nunca para a tela.
+   */
+  | { tipo: "gravacao_indisponivel"; fase: FaseDaGravacao; causa: unknown }
   | { tipo: "evento_nao_encontrado" }
   | { tipo: "evento_encerrado" }
   | { tipo: "questionario_indisponivel"; detalhe: string }
   | { tipo: "faltam_obrigatorias"; etapas: FaltaNaEtapa[]; resumo: string }
   | { tipo: "resposta_invalida"; perguntaId: string; etapa: number }
   | { tipo: "erro"; causa: unknown };
+
+/**
+ * Onde a gravacao duravel parou. `conferencia` e a releitura de
+ * `quiz_responses` depois do upsert: sem ela confirmada nao se pode dizer
+ * "gravei", entao ela e fase de gravacao, nao de leitura.
+ */
+export type FaseDaGravacao =
+  | "participante"
+  | "respostas"
+  | "conferencia"
+  | "conclusao"
+  | "mesa_de_decisao";
 
 interface LinhaDeEvento {
   id: string;
@@ -289,12 +325,37 @@ const FORMULARIO_PUBLICO_NOME = "Formulário público (link sem login, e-mail au
 const PROCEDENCIA = "email_digitado_nao_verificado";
 
 /**
- * A procedencia de UM envio publico, em `event_logs`.
+ * O QUE PODE IR PARA `event_logs`. Tipo FECHADO, de proposito: um literal com
+ * qualquer outra chave (nome, e-mail, telefone, respostas) nao compila. So
+ * contagens, booleanos, ids internos e nomes fechados de fase/codigo.
+ */
+export interface MetadadosDoEnvio {
+  etapas_gravadas?: number;
+  primeira_resposta?: boolean;
+  /** Reenvio do MESMO conteudo de quem ja respondeu: nada foi reescrito. */
+  reenvio_identico?: boolean;
+  /** Id da linha em `external_submissions` (`publico:<uuid>`), nao conteudo. */
+  submissao_id?: string;
+  etapas_ja_respondidas?: number;
+  /** Uuid interno do participante que ja tinha resposta. Nao e nome nem e-mail. */
+  participante_com_resposta?: string;
+  primeira_resposta_preservada?: boolean;
+  na_mesa_de_decisao?: boolean;
+  /** Texto FIXO desta rota, igual para todo envio. */
+  motivo?: string;
+  /** Onde a gravacao parou, quando nao foi confirmada. */
+  fase?: FaseDaGravacao;
+  /** SQLSTATE/codigo do PostgREST, quando houver. Nunca a mensagem do banco. */
+  codigo_do_banco?: string | null;
+}
+
+/**
+ * A procedencia de UM envio publico, em `event_logs`. SO METADADOS.
  *
  * NAO FALHA O ENVIO. Se o log nao entrar, as respostas ja estao gravadas e
- * devolver erro faria a pessoa reenviar -- e o reenvio agora cai na mesa de
- * decisao, o que e muito pior do que um log faltando. O que se perde e
- * procedencia; o que se protege e a resposta.
+ * devolver erro faria a pessoa reenviar. O que se perde e procedencia; o que se
+ * protege e a resposta. E o inverso tambem vale: o log ENTRAR nao faz de nada
+ * um envio recebido -- ele nao guarda resposta nenhuma.
  */
 async function registrarProcedencia(
   supabase: ClienteDeRecepcao,
@@ -302,7 +363,7 @@ async function registrarProcedencia(
     eventId: string;
     participantId: string | null;
     acao: string;
-    payload: Record<string, unknown>;
+    payload: MetadadosDoEnvio;
   },
 ): Promise<{ error: ErroDoBanco | null }> {
   try {
@@ -324,6 +385,105 @@ async function registrarProcedencia(
   } catch (causa) {
     return { error: { message: String(causa) } };
   }
+}
+
+/** O codigo do erro do banco, se houver. NUNCA a mensagem: ela pode citar valores. */
+function codigoDoBanco(causa: unknown): string | null {
+  if (causa && typeof causa === "object" && "code" in causa) {
+    const c = (causa as { code?: unknown }).code;
+    return typeof c === "string" ? c : null;
+  }
+  return null;
+}
+
+/**
+ * NAO CONSEGUI GRAVAR. Registra o FATO em `event_logs` -- fase e codigo, sem
+ * nada da pessoa -- para que um envio perdido nao seja invisivel para a equipe,
+ * e devolve o desfecho que a rota traduz em 503. Se ate o log falhar, o desfecho
+ * e o mesmo: o log nunca muda o que a pessoa ouve.
+ */
+async function falhaDeGravacao(
+  supabase: ClienteDeRecepcao,
+  eventId: string,
+  fase: FaseDaGravacao,
+  causa: unknown,
+  extra: MetadadosDoEnvio = {},
+): Promise<ResultadoDaRecepcao> {
+  const log = await registrarProcedencia(supabase, {
+    eventId,
+    participantId: null,
+    acao: "formulario_publico_envio_nao_gravado",
+    payload: { ...extra, fase, codigo_do_banco: codigoDoBanco(causa) },
+  });
+  if (log.error) {
+    console.error("[formulario-publico] falha de gravacao sem registro em event_logs", {
+      fase,
+      causa: log.error,
+    });
+  }
+  return { tipo: "gravacao_indisponivel", fase, causa };
+}
+
+/** Igualdade de valor JSON, sem depender da ordem das chaves de objeto. */
+function mesmoJson(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((v, i) => mesmoJson(v, b[i]));
+  }
+  if (a && b && typeof a === "object" && typeof b === "object") {
+    const ka = Object.keys(a as object).sort();
+    const kb = Object.keys(b as object).sort();
+    if (ka.join("\u0000") !== kb.join("\u0000")) return false;
+    return ka.every((k) =>
+      mesmoJson((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]),
+    );
+  }
+  return false;
+}
+
+/**
+ * CONFERE NO BANCO E MARCA A CONCLUSAO. Usada pelo caminho feliz e pelo reenvio
+ * identico. Conferida NO BANCO, nunca presumida do que acabou de ser enviado:
+ * se uma linha nao entrou, a pessoa NAO e marcada como concluida (melhor
+ * aparecer como pendente do que entrar na geracao sem respostas).
+ */
+async function conferirEConcluir(
+  supabase: ClienteDeRecepcao,
+  eventId: string,
+  participantId: string,
+  etapas: LinhaDeEtapa[],
+): Promise<ResultadoDaRecepcao | null> {
+  const lidas = (await supabase
+    .from("quiz_responses")
+    .select("stage_id")
+    .eq("participant_id", participantId)) as {
+    data: { stage_id: number }[] | null;
+    error: ErroDoBanco | null;
+  };
+  if (lidas.error) return falhaDeGravacao(supabase, eventId, "conferencia", lidas.error);
+  const respondidas = new Set((lidas.data ?? []).map((r) => r.stage_id));
+  const todas = etapas.every((e) => respondidas.has(e.id));
+
+  if (!todas) {
+    return falhaDeGravacao(
+      supabase,
+      eventId,
+      "conferencia",
+      `respostas gravadas (${respondidas.size}) nao cobrem as ${etapas.length} etapas do evento`,
+    );
+  }
+
+  // `.is("completed_at", null)` torna o UPDATE condicional: reenviar nao
+  // reescreve o instante da primeira conclusao, e dois envios simultaneos nao
+  // se atropelam. Mesma disciplina de /api/complete-quiz.
+  const fim = await supabase
+    .from("participants")
+    .update({ completed_at: new Date().toISOString() })
+    .eq("id", participantId)
+    .is("completed_at", null);
+  if (fim.error) return falhaDeGravacao(supabase, eventId, "conclusao", fim.error);
+  return null;
 }
 
 export async function receberFormulario(
@@ -414,25 +574,69 @@ export async function receberFormulario(
     //      respondesse, sem proteger resposta nenhuma.
     const ja = (await supabase
       .from("participants")
-      .select("id")
+      .select("id, full_name")
       .eq("event_id", evento.id)
       .eq("email", email)
-      .maybeSingle()) as { data: { id: string } | null; error: ErroDoBanco | null };
+      .maybeSingle()) as {
+      data: { id: string; full_name: string | null } | null;
+      error: ErroDoBanco | null;
+    };
     if (ja.error) return { tipo: "erro", causa: ja.error };
 
     if (ja.data?.id) {
       const anteriores = (await supabase
         .from("quiz_responses")
-        .select("stage_id")
+        .select("stage_id, answers")
         .eq("participant_id", ja.data.id)) as {
-        data: { stage_id: number }[] | null;
+        data: { stage_id: number; answers: unknown }[] | null;
         error: ErroDoBanco | null;
       };
       // Um erro de LEITURA aqui nao autoriza seguir: sem saber se ha resposta
       // anterior, gravar seria apostar as 52 respostas de alguem numa consulta
       // que falhou. Recusa, a pessoa reenvia, a tela continua preenchida.
       if (anteriores.error) return { tipo: "erro", causa: anteriores.error };
-      const etapasJaRespondidas = (anteriores.data ?? []).length;
+      const gravadas = anteriores.data ?? [];
+      const etapasJaRespondidas = gravadas.length;
+
+      // 3.6. E O MESMO ENVIO, DE NOVO? O botao "tentar de novo" da tela reenvia
+      //      EXATAMENTE o mesmo conteudo. Se a primeira tentativa chegou a gravar
+      //      as respostas e caiu depois (na conferencia, na conclusao, ou na
+      //      volta pela rede), o reenvio encontraria "ja ha resposta" e iria para
+      //      a mesa como se fosse outra pessoa -- e a pessoa ficaria sem
+      //      conclusao. O criterio e estrito: mesmo nome E as mesmas respostas em
+      //      TODAS as etapas, nenhuma a mais nem a menos. Nesse caso nada e
+      //      reescrito (nem `participants`, nem `quiz_responses`): so se confere
+      //      e se conclui, com o UPDATE condicional de sempre.
+      const mesmoNome =
+        (ja.data.full_name ?? "").trim().toLowerCase() === fullName.toLowerCase();
+      const mesmasRespostas =
+        etapasJaRespondidas === porEtapa.length &&
+        porEtapa.every(({ etapa, answers }) => {
+          const linha = gravadas.find((g) => g.stage_id === etapa.id);
+          return linha !== undefined && mesmoJson(linha.answers, answers);
+        });
+      if (etapasJaRespondidas > 0 && mesmoNome && mesmasRespostas) {
+        const participantId = ja.data.id;
+        const falha = await conferirEConcluir(supabase, evento.id, participantId, etapas);
+        if (falha) return falha;
+        const log = await registrarProcedencia(supabase, {
+          eventId: evento.id,
+          participantId,
+          acao: "formulario_publico_recebido",
+          payload: {
+            etapas_gravadas: 0,
+            primeira_resposta: false,
+            reenvio_identico: true,
+          },
+        });
+        if (log.error) {
+          console.error("[formulario-publico] procedencia nao registrada", {
+            participantId,
+            causa: log.error,
+          });
+        }
+        return { tipo: "ok", participantId, etapasGravadas: 0, concluido: true };
+      }
 
       if (etapasJaRespondidas > 0) {
         return await guardarSegundaResposta(supabase, {
@@ -464,8 +668,10 @@ export async function receberFormulario(
       )
       .select("id")
       .single()) as { data: { id: string } | null; error: ErroDoBanco | null };
-    if (up.error) return { tipo: "erro", causa: up.error };
-    if (!up.data?.id) return { tipo: "erro", causa: "upsert de participante sem id" };
+    if (up.error) return falhaDeGravacao(supabase, evento.id, "participante", up.error);
+    if (!up.data?.id) {
+      return falhaDeGravacao(supabase, evento.id, "participante", "upsert de participante sem id");
+    }
     const participantId = up.data.id;
 
     // 5. AS RESPOSTAS. Uma linha por etapa, com `onConflict` na chave unica
@@ -480,38 +686,11 @@ export async function receberFormulario(
     const resp = await supabase
       .from("quiz_responses")
       .upsert(linhas, { onConflict: "participant_id,stage_id" });
-    if (resp.error) return { tipo: "erro", causa: resp.error };
+    if (resp.error) return falhaDeGravacao(supabase, evento.id, "respostas", resp.error);
 
-    // 6. A CONCLUSAO. Conferida NO BANCO, nunca presumida do que acabou de ser
-    //    enviado: se uma linha nao entrou, a pessoa NAO e marcada como concluida
-    //    (melhor aparecer como pendente do que entrar na geracao sem respostas).
-    const lidas = (await supabase
-      .from("quiz_responses")
-      .select("stage_id")
-      .eq("participant_id", participantId)) as {
-      data: { stage_id: number }[] | null;
-      error: ErroDoBanco | null;
-    };
-    if (lidas.error) return { tipo: "erro", causa: lidas.error };
-    const respondidas = new Set((lidas.data ?? []).map((r) => r.stage_id));
-    const todas = etapas.every((e) => respondidas.has(e.id));
-
-    if (!todas) {
-      return {
-        tipo: "erro",
-        causa: `respostas gravadas (${respondidas.size}) nao cobrem as ${etapas.length} etapas do evento`,
-      };
-    }
-
-    // `.is("completed_at", null)` torna o UPDATE condicional: reenviar nao
-    // reescreve o instante da primeira conclusao, e dois envios simultaneos nao
-    // se atropelam. Mesma disciplina de /api/complete-quiz.
-    const fim = await supabase
-      .from("participants")
-      .update({ completed_at: new Date().toISOString() })
-      .eq("id", participantId)
-      .is("completed_at", null);
-    if (fim.error) return { tipo: "erro", causa: fim.error };
+    // 6. A CONCLUSAO, conferida no banco (ver `conferirEConcluir`).
+    const falha = await conferirEConcluir(supabase, evento.id, participantId, etapas);
+    if (falha) return falha;
 
     // 7. A PROCEDENCIA. Nao muda uma virgula do que foi gravado acima -- so
     //    escreve, ao lado, a qualidade do dado: este e-mail foi DIGITADO. Quem
@@ -521,10 +700,11 @@ export async function receberFormulario(
       eventId: evento.id,
       participantId,
       acao: "formulario_publico_recebido",
+      // SO METADADOS: nome e e-mail ja estao em `participants`, que e o lugar
+      // deles. Repeti-los aqui os espalharia por uma tabela que sete partes do
+      // sistema leem.
       payload: {
         etapas_gravadas: linhas.length,
-        email_coletado: email,
-        nome_declarado: fullName,
         primeira_resposta: true,
       },
     });
@@ -553,16 +733,16 @@ export async function receberFormulario(
  * `participants`: ela so ACRESCENTA. A ordem e deliberada:
  *
  *   1. `external_submissions` com `estado = 'conflito'` e `participant_id` nulo
- *      -- a linha que a MESA DE DECISAO lista como "espera humano";
- *   2. `event_logs`, sempre, para que o fato ("houve dois envios com este
- *      e-mail") esteja numa tabela que existe desde a 001 e que o painel do
- *      evento le, mesmo que a 022 nao esteja aplicada neste banco.
+ *      -- a linha que a MESA DE DECISAO lista como "espera humano". E o UNICO
+ *      lugar onde a segunda resposta e gravada;
+ *   2. `event_logs`, so METADADOS (id da submissao, contagens), para que o fato
+ *      ("houve dois envios com este e-mail") apareca na linha do tempo.
  *
- * Se a (1) falhar -- tabela ausente, impressao do questionario nao montavel --,
- * a (2) carrega o ENVIO INTEIRO (as 52 respostas, o nome, o e-mail) no payload.
- * Perder a mesa e ruim; perder a resposta de uma adolescente nao e aceitavel. So
- * se as DUAS falharem e que esta funcao devolve erro -- e ai a tela diz que nao
- * deu, com as respostas ainda preenchidas, que e a verdade.
+ * Se a (1) falhar -- tabela ausente, impressao do questionario nao montavel,
+ * banco fora --, o desfecho e `gravacao_indisponivel`: a rota responde 503, a
+ * tela mantem o rascunho e pede para tentar de novo. NAO ha reserva em
+ * `event_logs` para o conteudo (ver o topo do arquivo): o log de falha diz so a
+ * fase e o codigo, e nunca faz a tela dizer "guardamos".
  */
 async function guardarSegundaResposta(
   supabase: ClienteDeRecepcao,
@@ -577,6 +757,11 @@ async function guardarSegundaResposta(
   },
 ): Promise<ResultadoDaRecepcao> {
   const { evento, etapas, email, fullName, respostas, etapasJaRespondidas } = dados;
+  const metadados: MetadadosDoEnvio = {
+    etapas_ja_respondidas: etapasJaRespondidas,
+    participante_com_resposta: dados.participantIdExistente,
+    primeira_resposta_preservada: true,
+  };
 
   // O identificador desta submissao na proveniencia. A chave natural da 022 e
   // (event_id, formulario_id, submissao_id): um id novo por envio e o que faz
@@ -600,50 +785,55 @@ async function guardarSegundaResposta(
     participante_com_resposta: dados.participantIdExistente,
   };
 
-  let naMesa = false;
-  let erroDaMesa: unknown = null;
-
   // A impressao digital do questionario respondido. Sem ela a linha nao entra
   // (o CHECK exige SHA-256), e com ela a mesa consegue dizer, daqui a um mes, a
   // que versao do questionario esta pessoa respondeu.
   const manifesto = montarManifesto(etapas, evento.quiz_version);
-
   if (!manifesto.ok) {
-    erroDaMesa = `${manifesto.codigo}: ${manifesto.motivo}`;
-  } else {
-    try {
-      const ins = await supabase.from("external_submissions").insert({
-        event_id: evento.id,
-        formulario_id: FORMULARIO_PUBLICO,
-        formulario_nome: FORMULARIO_PUBLICO_NOME,
-        submissao_id: submissaoId,
-        quiz_version: evento.quiz_version,
-        questionario_impressao: manifesto.manifesto.impressao,
-        email_coletado: email,
-        // O FATO, nao a conveniencia: ninguem verificou este e-mail.
-        email_verificado: false,
-        nome_declarado: fullName,
-        respostas_brutas: respostas,
-        participant_id: null,
-        identidade_via: null,
-        email_reconciliado: null,
-        estado: "conflito",
-        apto_para_pontuar: false,
-        bloqueio,
-        importado_por: SEM_OPERADOR,
-        importado_por_email: SEM_OPERADOR_EMAIL,
-      });
-      if (ins.error) erroDaMesa = ins.error;
-      else naMesa = true;
-    } catch (causa) {
-      erroDaMesa = causa;
-    }
+    return falhaDeGravacao(
+      supabase,
+      evento.id,
+      "mesa_de_decisao",
+      `${manifesto.codigo}: ${manifesto.motivo}`,
+      { ...metadados, submissao_id: submissaoId, na_mesa_de_decisao: false },
+    );
   }
 
-  if (!naMesa) {
-    console.error("[formulario-publico] segunda resposta nao entrou na mesa de decisao", {
-      submissaoId,
-      causa: erroDaMesa,
+  let erroDaMesa: unknown = null;
+  try {
+    const ins = await supabase.from("external_submissions").insert({
+      event_id: evento.id,
+      formulario_id: FORMULARIO_PUBLICO,
+      formulario_nome: FORMULARIO_PUBLICO_NOME,
+      submissao_id: submissaoId,
+      quiz_version: evento.quiz_version,
+      questionario_impressao: manifesto.manifesto.impressao,
+      email_coletado: email,
+      // O FATO, nao a conveniencia: ninguem verificou este e-mail.
+      email_verificado: false,
+      nome_declarado: fullName,
+      respostas_brutas: respostas,
+      participant_id: null,
+      identidade_via: null,
+      email_reconciliado: null,
+      estado: "conflito",
+      apto_para_pontuar: false,
+      bloqueio,
+      importado_por: SEM_OPERADOR,
+      importado_por_email: SEM_OPERADOR_EMAIL,
+    });
+    if (ins.error) erroDaMesa = ins.error;
+  } catch (causa) {
+    erroDaMesa = causa ?? "insert na mesa lancou";
+  }
+
+  if (erroDaMesa !== null) {
+    // A mesa nao confirmou. Nao ha outro lugar onde esta resposta possa ficar:
+    // a primeira continua intacta (nada foi escrito), e a pessoa reenvia.
+    return falhaDeGravacao(supabase, evento.id, "mesa_de_decisao", erroDaMesa, {
+      ...metadados,
+      submissao_id: submissaoId,
+      na_mesa_de_decisao: false,
     });
   }
 
@@ -653,33 +843,14 @@ async function guardarSegundaResposta(
     // e o dono da PRIMEIRA resposta, e dizer que esta e dele seria afirmar a
     // identidade que ninguem verificou.
     participantId: null,
-    acao: naMesa
-      ? "formulario_publico_segunda_resposta"
-      : "formulario_publico_segunda_resposta_fora_da_mesa",
+    acao: "formulario_publico_segunda_resposta",
     payload: {
+      ...metadados,
       submissao_id: submissaoId,
-      email_coletado: email,
-      nome_declarado: fullName,
-      etapas_ja_respondidas: etapasJaRespondidas,
-      participante_com_resposta: dados.participantIdExistente,
-      primeira_resposta_preservada: true,
-      na_mesa_de_decisao: naMesa,
+      na_mesa_de_decisao: true,
       motivo,
-      // O ENVIO INTEIRO vai para o log quando a mesa nao recebeu: e o unico
-      // lugar onde essas respostas passariam a existir.
-      ...(naMesa ? {} : { respostas, falha_da_mesa: String(erroDaMesa) }),
     },
   });
-
-  if (!naMesa && log.error) {
-    // As duas tentativas falharam: nao ha onde esta resposta esteja guardada, e
-    // dizer "guardamos" seria mentira. A primeira continua intacta de qualquer
-    // forma -- nada foi escrito.
-    return {
-      tipo: "erro",
-      causa: `segunda resposta nao guardada em lugar nenhum (mesa: ${String(erroDaMesa)}; log: ${String(log.error.message ?? log.error)})`,
-    };
-  }
   if (log.error) {
     console.error("[formulario-publico] segunda resposta sem registro em event_logs", {
       submissaoId,
@@ -687,5 +858,5 @@ async function guardarSegundaResposta(
     });
   }
 
-  return { tipo: "segunda_resposta_guardada", etapasJaRespondidas, naMesa, submissaoId };
+  return { tipo: "segunda_resposta_guardada", etapasJaRespondidas, naMesa: true, submissaoId };
 }

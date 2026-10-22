@@ -350,6 +350,13 @@ const MENSAGENS: Record<TodoCodigoDeErro, Mensagem> = {
   STAGE_RELEASE_UNAVAILABLE:
     "Não foi possível liberar a etapa agora, porque o banco não respondeu. Isso NÃO quer dizer que a liberação foi recusada, e também não quer dizer que ela passou: quer dizer que não deu para saber. Recarregue a página para ver em que etapa o evento está antes de tentar de novo; se persistir, avise a equipe técnica informando o número da ocorrência.",
 
+  // --- o formulário público -------------------------------------------------
+  // Quem lê ESTE código na tela é o adolescente, e a frase dele mora na própria
+  // tela (FormularioPublico.tsx). Esta entrada existe porque o mapa é exaustivo
+  // e para quem olhar o código num log ou num painel da equipe.
+  PUBLIC_FORM_WRITE_UNAVAILABLE:
+    "Um envio do formulário público NÃO foi gravado: o armazenamento próprio do formulário não confirmou a gravação, e a pessoa recebeu a instrução de tentar de novo, com o rascunho preservado no aparelho dela. Nada deste envio foi guardado em outro lugar. Se persistir, avise a equipe técnica informando o número da ocorrência.",
+
   INTERNAL_ERROR: MENSAGEM_GENERICA,
 };
 

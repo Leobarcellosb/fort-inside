@@ -266,6 +266,26 @@ export const DEFINICOES_DE_ERRO = {
   /** NÃO DEU PARA GRAVAR: o banco não respondeu ou falhou por causa não prevista. Nem recusa nem ausência. */
   STAGE_RELEASE_UNAVAILABLE: { status: 503, error: "Não foi possível liberar a etapa" },
 
+  // --- o FORMULÁRIO PÚBLICO (link sem login, /api/formulario-publico)
+  //
+  // Família própria, fora de `CodigoDeErro`, pela mesma razão das outras duas:
+  // quem a recebe é a tela pública do formulário, e as telas de processamento e
+  // de importação nunca veem este código.
+  //
+  //   gravei                     200 (resposta oficial, ou segunda resposta
+  //                              CONFIRMADA na mesa de decisão)
+  //   recusei                    404/409/422/400 (evento, prazo, obrigatória)
+  //   não consegui gravar        PUBLIC_FORM_WRITE_UNAVAILABLE -- o armazenamento
+  //                              próprio (participants/quiz_responses, ou a mesa
+  //                              `external_submissions`) não confirmou a gravação.
+  //                              NÃO é recusa e NÃO é "guardado em outro lugar":
+  //                              não existe reserva em `event_logs` para conteúdo
+  //                              de resposta. A pessoa ainda tem o rascunho e
+  //                              reenvia o mesmo conteúdo.
+
+  /** NÃO DEU PARA GRAVAR: o armazenamento próprio do formulário não confirmou a gravação. Nada foi dado como recebido. */
+  PUBLIC_FORM_WRITE_UNAVAILABLE: { status: 503, error: "Não foi possível gravar o envio do formulário" },
+
   // --- o que ninguém previu -------------------------------------------------
   INTERNAL_ERROR: { status: 500, error: "Erro interno" },
 } as const satisfies Record<string, { status: number; error: string }>;
@@ -300,20 +320,32 @@ export type CodigoDeLiberacaoDeEtapa = Extract<
   keyof typeof DEFINICOES_DE_ERRO,
   `STAGE_RELEASE_${string}`
 >;
+/**
+ * A FAMÍLIA DO FORMULÁRIO PÚBLICO (prefixo `PUBLIC_FORM_`), fora de
+ * `CodigoDeErro` pela mesma razão das duas acima: só a tela pública do
+ * formulário recebe estes códigos.
+ */
+export type CodigoDoFormularioPublico = Extract<
+  keyof typeof DEFINICOES_DE_ERRO,
+  `PUBLIC_FORM_${string}`
+>;
 export type CodigoDeErro = Exclude<
   keyof typeof DEFINICOES_DE_ERRO,
-  CodigoDeErroDocumento | CodigoDeLiberacaoDeEtapa
+  CodigoDeErroDocumento | CodigoDeLiberacaoDeEtapa | CodigoDoFormularioPublico
 >;
-/** Qualquer código do vocabulário, das três famílias. É o que `erroHttp` aceita. */
+/** Qualquer código do vocabulário, de todas as famílias. É o que `erroHttp` aceita. */
 export type TodoCodigoDeErro =
   | CodigoDeErro
   | CodigoDeErroDocumento
-  | CodigoDeLiberacaoDeEtapa;
+  | CodigoDeLiberacaoDeEtapa
+  | CodigoDoFormularioPublico;
 
 const EH_DOCUMENTO = (k: string) => k.startsWith("PROGNOSTIC_");
 const EH_LIBERACAO_DE_ETAPA = (k: string) => k.startsWith("STAGE_RELEASE_");
+const EH_FORMULARIO_PUBLICO = (k: string) => k.startsWith("PUBLIC_FORM_");
 /** Tem família própria, ou seja, está FORA do tipo `CodigoDeErro`. */
-const EH_FAMILIA_PROPRIA = (k: string) => EH_DOCUMENTO(k) || EH_LIBERACAO_DE_ETAPA(k);
+const EH_FAMILIA_PROPRIA = (k: string) =>
+  EH_DOCUMENTO(k) || EH_LIBERACAO_DE_ETAPA(k) || EH_FORMULARIO_PUBLICO(k);
 
 export const CODIGOS_DE_ERRO = Object.keys(DEFINICOES_DE_ERRO).filter(
   (k) => !EH_FAMILIA_PROPRIA(k),
@@ -326,6 +358,10 @@ export const CODIGOS_DE_ERRO_DOCUMENTO = Object.keys(DEFINICOES_DE_ERRO).filter(
 export const CODIGOS_DE_LIBERACAO_DE_ETAPA = Object.keys(DEFINICOES_DE_ERRO).filter(
   EH_LIBERACAO_DE_ETAPA,
 ) as CodigoDeLiberacaoDeEtapa[];
+
+export const CODIGOS_DO_FORMULARIO_PUBLICO = Object.keys(DEFINICOES_DE_ERRO).filter(
+  EH_FORMULARIO_PUBLICO,
+) as CodigoDoFormularioPublico[];
 
 /**
  * Reconhece um código das telas de processamento/importação. NÃO reconhece a

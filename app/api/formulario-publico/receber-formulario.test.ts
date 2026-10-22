@@ -544,9 +544,10 @@ describe("o MESMO e-mail no MESMO evento, duas vezes", () => {
     expect(payload.email_verificado).toBe(false);
   });
 
-  it("se a mesa nao estiver disponivel, a segunda vai INTEIRA para event_logs em vez de se perder", async () => {
-    // O caso real: a 022 nao aplicada neste banco. Perder a mesa e ruim; perder
-    // a resposta de quem preencheu 52 perguntas nao e aceitavel.
+  it("se a mesa NAO confirmar, o desfecho e FALHA de gravacao -- e event_logs NAO vira reserva", async () => {
+    // A revisao derrubou a reserva antiga ("o envio inteiro vai para
+    // event_logs"): log operacional nao e deposito de resposta pessoal, e
+    // "guardamos" so pode ser dito com o armazenamento proprio confirmando.
     const banco = bancoPadrao();
     await receberFormulario(banco.cliente, envio());
     banco.falhas.set("external_submissions:insert", {
@@ -555,26 +556,37 @@ describe("o MESMO e-mail no MESMO evento, duas vezes", () => {
     });
 
     const r = await receberFormulario(banco.cliente, envio({ fullName: "Joana Outra" }));
-    expect(r.tipo).toBe("segunda_resposta_guardada");
-    if (r.tipo === "segunda_resposta_guardada") expect(r.naMesa).toBe(false);
+    expect(r.tipo).toBe("gravacao_indisponivel");
+    if (r.tipo === "gravacao_indisponivel") expect(r.fase).toBe("mesa_de_decisao");
 
+    // O FATO fica registrado, sem nada da pessoa.
     const log = banco.tabelas.event_logs.find(
-      (l) => l.action === "formulario_publico_segunda_resposta_fora_da_mesa",
+      (l) => l.action === "formulario_publico_envio_nao_gravado",
     )!;
     expect(log).toBeDefined();
-    expect((log.payload as Record<string, unknown>).respostas).toEqual(RESPOSTAS_COMPLETAS);
+    const payload = log.payload as Record<string, unknown>;
+    expect(payload.fase).toBe("mesa_de_decisao");
+    expect(payload.codigo_do_banco).toBe("42P01");
+    expect(payload.na_mesa_de_decisao).toBe(false);
+    expect(payload).not.toHaveProperty("respostas");
+    expect(payload).not.toHaveProperty("nome_declarado");
+    expect(payload).not.toHaveProperty("email_coletado");
+    // Nenhuma linha de "segunda resposta guardada" foi escrita.
+    expect(
+      banco.tabelas.event_logs.some((l) => String(l.action).startsWith("formulario_publico_segunda")),
+    ).toBe(false);
     // E a primeira continua lá, intacta.
     expect(banco.tabelas.quiz_responses).toHaveLength(2);
   });
 
-  it("se NEM a mesa NEM o log receberem, recusa em vez de dizer que guardou", async () => {
+  it("se NEM a mesa NEM o log receberem, o desfecho continua FALHA, nunca 'guardado'", async () => {
     const banco = bancoPadrao();
     await receberFormulario(banco.cliente, envio());
     banco.falhas.set("external_submissions:insert", { code: "42P01", message: "sem tabela" });
     banco.falhas.set("event_logs:insert", { code: "42P01", message: "sem tabela" });
 
     const r = await receberFormulario(banco.cliente, envio({ fullName: "Joana Outra" }));
-    expect(r.tipo).toBe("erro");
+    expect(r.tipo).toBe("gravacao_indisponivel");
     // E mesmo assim: a primeira nao foi tocada.
     expect(banco.tabelas.quiz_responses).toHaveLength(2);
     const etapa1 = banco.tabelas.quiz_responses.find((l) => l.stage_id === 101)!;
@@ -613,6 +625,29 @@ describe("o MESMO e-mail no MESMO evento, duas vezes", () => {
     expect(r.tipo).toBe("ok");
     expect(banco.tabelas.quiz_responses).toHaveLength(2);
     expect(banco.tabelas.external_submissions).toHaveLength(0);
+  });
+
+  it("o MESMO envio de novo (mesmo nome, mesmas respostas) nao vai para a mesa: e reconhecido", async () => {
+    // O botao "tentar de novo" reenvia o mesmo conteudo. Se a primeira tentativa
+    // chegou a gravar e caiu depois, o reenvio nao pode virar "outra pessoa".
+    const banco = bancoPadrao();
+    await receberFormulario(banco.cliente, envio());
+    banco.escritas.length = 0;
+
+    const r = await receberFormulario(banco.cliente, envio());
+    expect(r.tipo).toBe("ok");
+    expect(banco.tabelas.external_submissions).toHaveLength(0);
+    // Nada reescrito: nem respostas, nem participante (so o UPDATE condicional).
+    expect(banco.escritas.filter((e) => e.startsWith("quiz_responses"))).toEqual([]);
+    expect(banco.escritas.filter((e) => e.startsWith("participants:upsert"))).toEqual([]);
+  });
+
+  it("mesmas respostas com OUTRO nome continua sendo segunda resposta (vai para a mesa)", async () => {
+    const banco = bancoPadrao();
+    await receberFormulario(banco.cliente, envio());
+    const r = await receberFormulario(banco.cliente, envio({ fullName: "Joana Outra" }));
+    expect(r.tipo).toBe("segunda_resposta_guardada");
+    expect(banco.tabelas.external_submissions).toHaveLength(1);
   });
 
   it("o instante da conclusao e o da PRIMEIRA vez -- reenviar nao o reescreve", async () => {
@@ -829,8 +864,33 @@ describe("quando o banco recusa", () => {
     const banco = bancoPadrao();
     banco.falhas.set("quiz_responses:upsert", { code: "42501", message: "recusado" });
     const r = await receberFormulario(banco.cliente, envio());
-    expect(r.tipo).toBe("erro");
+    expect(r.tipo).toBe("gravacao_indisponivel");
+    if (r.tipo === "gravacao_indisponivel") expect(r.fase).toBe("respostas");
     expect(banco.escritas.some((e) => e.startsWith("participants:update"))).toBe(false);
+  });
+
+  it("falha ao gravar o participante: FALHA de gravacao, nada de respostas", async () => {
+    const banco = bancoPadrao();
+    banco.falhas.set("participants:upsert", { code: "08006", message: "conexao caiu" });
+    const r = await receberFormulario(banco.cliente, envio());
+    expect(r.tipo).toBe("gravacao_indisponivel");
+    if (r.tipo === "gravacao_indisponivel") expect(r.fase).toBe("participante");
+    expect(banco.tabelas.quiz_responses).toHaveLength(0);
+  });
+
+  it("falha na conclusao, e o MESMO envio reenviado conclui -- sem cair na mesa", async () => {
+    const banco = bancoPadrao();
+    banco.falhas.set("participants:update", { code: "08006", message: "conexao caiu" });
+    const r1 = await receberFormulario(banco.cliente, envio());
+    expect(r1.tipo).toBe("gravacao_indisponivel");
+    if (r1.tipo === "gravacao_indisponivel") expect(r1.fase).toBe("conclusao");
+    expect(banco.tabelas.participants[0].completed_at).toBeNull();
+
+    banco.falhas.delete("participants:update");
+    const r2 = await receberFormulario(banco.cliente, envio());
+    expect(r2.tipo).toBe("ok");
+    expect(banco.tabelas.participants[0].completed_at).not.toBeNull();
+    expect(banco.tabelas.external_submissions).toHaveLength(0);
   });
 
   it("respostas gravadas que nao cobrem todas as etapas: NAO marca a conclusao", async () => {
@@ -856,7 +916,8 @@ describe("quando o banco recusa", () => {
       },
     };
     const r = await receberFormulario(espiao, envio());
-    expect(r.tipo).toBe("erro");
+    expect(r.tipo).toBe("gravacao_indisponivel");
+    if (r.tipo === "gravacao_indisponivel") expect(r.fase).toBe("conferencia");
     expect(banco.escritas.some((e) => e.startsWith("participants:update"))).toBe(false);
   });
 
@@ -929,4 +990,125 @@ describe("o e-mail autodeclarado NUNCA e marcado como verificado", () => {
     expect(banco.tabelas.quiz_responses).toHaveLength(2);
     expect(banco.tabelas.participants[0].completed_at).not.toBeNull();
   });
+});
+
+describe("VARREDURA: event_logs nunca recebe nome, e-mail, telefone ou resposta", () => {
+  // Decisao da revisao: "logs operacionais nao podem ser utilizados como
+  // deposito alternativo de respostas pessoais completas." Os valores abaixo
+  // sao unicos de proposito: se qualquer um aparecer em QUALQUER linha de
+  // `event_logs`, em qualquer profundidade do payload, o teste quebra.
+  const PESSOAL = {
+    nome: "Nomeunico Sobrenomeunico",
+    email: "emailunico.varredura@exemplo.com",
+    telefone: "11987654329",
+    respostas: {
+      p1: "respostaunica-p1",
+      p2: "A. Sim",
+      p3: "respostaunica-p3-opcional",
+      p4: 7,
+      p5: ["c", "b", "a"],
+    },
+  };
+  const SEGUNDO = {
+    nome: "Outronomeunico Diferente",
+    respostas: { ...PESSOAL.respostas, p1: "respostaunica-segunda-p1" },
+  };
+  const proibidos = [
+    PESSOAL.nome,
+    PESSOAL.email,
+    PESSOAL.telefone,
+    PESSOAL.respostas.p1,
+    PESSOAL.respostas.p3,
+    SEGUNDO.nome,
+    SEGUNDO.respostas.p1,
+  ];
+  const envioPessoal = (o: Partial<EntradaDoFormulario> = {}) =>
+    envio({
+      fullName: PESSOAL.nome,
+      email: PESSOAL.email,
+      phone: PESSOAL.telefone,
+      respostas: PESSOAL.respostas,
+      ...o,
+    });
+  const segundoEnvio = () =>
+    envioPessoal({ fullName: SEGUNDO.nome, respostas: SEGUNDO.respostas });
+
+  function varrer(banco: BancoFalso) {
+    const texto = JSON.stringify(banco.tabelas.event_logs).toLowerCase();
+    for (const p of proibidos) expect(texto).not.toContain(p.toLowerCase());
+    // E a forma: nenhuma chave que carregue conteudo pessoal.
+    for (const l of banco.tabelas.event_logs) {
+      const payload = l.payload as Record<string, unknown>;
+      for (const chave of [
+        "respostas",
+        "answers",
+        "email",
+        "email_coletado",
+        "nome",
+        "nome_declarado",
+        "full_name",
+        "phone",
+        "telefone",
+      ]) {
+        expect(payload).not.toHaveProperty(chave);
+      }
+    }
+  }
+
+  const cenarios: [string, (b: BancoFalso) => Promise<unknown>][] = [
+    ["caminho feliz", async (b) => receberFormulario(b.cliente, envioPessoal())],
+    [
+      "segunda resposta na mesa",
+      async (b) => {
+        await receberFormulario(b.cliente, envioPessoal());
+        return receberFormulario(b.cliente, segundoEnvio());
+      },
+    ],
+    [
+      "reenvio identico",
+      async (b) => {
+        await receberFormulario(b.cliente, envioPessoal());
+        return receberFormulario(b.cliente, envioPessoal());
+      },
+    ],
+    [
+      "mesa falhou",
+      async (b) => {
+        await receberFormulario(b.cliente, envioPessoal());
+        b.falhas.set("external_submissions:insert", { code: "42501", message: "permission denied" });
+        return receberFormulario(b.cliente, segundoEnvio());
+      },
+    ],
+    [
+      "participante falhou",
+      async (b) => {
+        b.falhas.set("participants:upsert", { code: "42501", message: "permission denied" });
+        return receberFormulario(b.cliente, envioPessoal());
+      },
+    ],
+    [
+      "respostas falharam",
+      async (b) => {
+        b.falhas.set("quiz_responses:upsert", { code: "42501", message: "permission denied" });
+        return receberFormulario(b.cliente, envioPessoal());
+      },
+    ],
+    [
+      "conclusao falhou",
+      async (b) => {
+        b.falhas.set("participants:update", { code: "42501", message: "permission denied" });
+        return receberFormulario(b.cliente, envioPessoal());
+      },
+    ],
+  ];
+
+  for (const [nome, rodar] of cenarios) {
+    it(`${nome}: nenhum dado pessoal em event_logs`, async () => {
+      const banco = bancoPadrao();
+      await rodar(banco);
+      // O cenario de fato registrou algo -- senao a varredura seria vazia.
+      expect(banco.tabelas.event_logs.length).toBeGreaterThan(0);
+      varrer(banco);
+    });
+  }
 });
