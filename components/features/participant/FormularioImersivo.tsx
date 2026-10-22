@@ -1576,9 +1576,6 @@ function TelaFinal({ nome, dataDoEvento }: { nome: string; eventName: string; da
         <h1 tabIndex={-1} className="text-[44px] sm:text-[56px] leading-[1.02] font-semibold tracking-[-0.02em] outline-none">
           {n ? `Obrigado, ${n}.` : "Obrigado."}
         </h1>
-        <p className="text-[17px] leading-relaxed text-white/80">
-          Suas respostas chegaram inteiras. Você não precisa fazer mais nada.
-        </p>
       </div>
 
       <blockquote className="border-l-2 border-[#D9C291]/70 pl-4 space-y-2">
