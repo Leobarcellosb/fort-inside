@@ -23,6 +23,12 @@ Isso é do site, não do app — eu não tenho acesso para corrigir. Quem public
 pôr as cinco fichas atrás de senha, tirar do ar até sábado, ou trocar as URLs por algo não
 listado. **É a correção mais barata e mais urgente desta lista.**
 
+**E tirar do ar não resolve sozinho.** As fichas estiveram públicas por tempo que ninguém
+mediu, linkadas na home. Não dá para saber quem olhou — e não dá para perguntar sem plantar
+a ideia. Então há uma segunda decisão, e ela é pedagógica, não técnica: a Missão 03 vai ser
+conduzida como está, sabendo que alguns podem ter lido a solução, ou os casos vão ser
+trocados antes de sábado? Quem planejou as missões decide. Eu registro que a pergunta existe.
+
 ## 2. A gráfica fecha e falta conteúdo para dois materiais
 
 O roteiro oficial do evento tem uma lista chamada **"Produzir até sexta, 23/10"**. Dois

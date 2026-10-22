@@ -236,9 +236,16 @@ begin
       'retida_incompativel',       -- gravada e MARCADA: dado incompativel
       'retida_pendente',           -- identidade nao casou: espera humano
       'retida_conflito',           -- mais de um candidato: espera humano
-      'lote_recusado_na_revalidacao', -- 024: o plano envelheceu entre a previa e
-                                   -- a aplicacao. O LOTE INTEIRO foi recusado e
-                                   -- NADA dele foi gravado.
+      'recusada_na_revalidacao',   -- 024: o plano envelheceu entre a previa e a
+                                   -- aplicacao. O LOTE INTEIRO foi recusado e
+                                   -- NADA dele foi gravado. O nome e o que a
+                                   -- borda da decisao do operador
+                                   -- (lib/importacao/decisao-do-operador.ts) ja
+                                   -- le: a linha e por submissao, e dizer que
+                                   -- ESTA submissao foi recusada na revalidacao
+                                   -- e exato. Que o lote inteiro caiu esta em
+                                   -- `detalhes.lote_impressao` e na tabela de
+                                   -- recusas.
       'reconciliada_pelo_operador',
       'revogada'
     ));
@@ -249,7 +256,7 @@ begin
   alter table public.external_submission_events
     add constraint external_submission_events_justificativa_check
     check (
-      acao not in ('reconciliada_pelo_operador', 'revogada', 'lote_recusado_na_revalidacao')
+      acao not in ('reconciliada_pelo_operador', 'revogada', 'recusada_na_revalidacao')
       or (justificativa is not null and length(btrim(justificativa)) >= 3)
     );
 end $$;
@@ -423,6 +430,7 @@ declare
   v_sub_versao int;
   v_sub_impressao text;
   v_sub_participant uuid;
+  v_sub_estado text;
   v_r jsonb;
 begin
   if plano is null or coalesce((plano ->> 'ok')::boolean, false) is not true then
@@ -508,8 +516,8 @@ begin
       -- `external_submission_id` igual a este id. Submissao nova (id nulo) nao
       -- escreveu nada antes -- logo QUALQUER linha existente do participante e
       -- de outra procedencia.
-      select es.id, es.quiz_version, es.questionario_impressao, es.participant_id
-        into v_sub_existente, v_sub_versao, v_sub_impressao, v_sub_participant
+      select es.id, es.quiz_version, es.questionario_impressao, es.participant_id, es.estado
+        into v_sub_existente, v_sub_versao, v_sub_impressao, v_sub_participant, v_sub_estado
         from public.external_submissions es
        where es.event_id = v_event_id
          and es.formulario_id = v_form_id
@@ -633,6 +641,11 @@ begin
           'codigo', v_recusa_codigo,
           'motivo', v_recusa_motivo,
           'estado_do_plano', v_estado,
+          -- `estado` = o estado REAL da submissao no banco depois da recusa. Como
+          -- NADA foi gravado, e o estado que ela ja tinha -- ou nulo, quando ela
+          -- nunca foi gravada. Inventar 'conflito' aqui seria afirmar uma escrita
+          -- que o lote atomico nao fez.
+          'estado', v_sub_estado,
           'participante_pretendido', v_participant,
           'identidade_via', s -> 'proveniencia' ->> 'identidade_via',
           'etapas_em_conflito', coalesce(to_jsonb(v_etapas_conflito), '[]'::jsonb),
@@ -685,11 +698,14 @@ begin
           submission_id, acao, operador, operador_email, justificativa, detalhes
         ) values (
           (v_r ->> 'submissao_existente')::uuid,
-          'lote_recusado_na_revalidacao',
+          'recusada_na_revalidacao',
           v_operador, v_operador_email,
-          format('LOTE RECUSADO NA REVALIDACAO: %s. NADA do lote foi gravado.', v_r ->> 'motivo'),
+          format('RECUSADA NA REVALIDACAO (LOTE INTEIRO): %s. NADA do lote foi gravado.',
+                 v_r ->> 'motivo'),
           jsonb_build_object(
             'codigo', v_r ->> 'codigo',
+            -- Zero, escrito: nenhuma etapa desta submissao entrou.
+            'etapas_gravadas', 0,
             'lote_impressao', v_lote,
             'etapas_em_conflito', v_r -> 'etapas_em_conflito',
             'etapas_nao_gravadas', v_r -> 'etapas_nao_gravadas',

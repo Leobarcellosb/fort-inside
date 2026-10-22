@@ -697,8 +697,9 @@ descreve("PROVA: a janela entre a previa e a aplicacao da importacao externa", (
     expect(razao.map((l) => l.acao)).toEqual([
       "importada",
       "importada",
-      "lote_recusado_na_revalidacao",
+      "recusada_na_revalidacao",
     ]);
+    expect(razao[2].justificativa).toContain("RECUSADA NA REVALIDACAO (LOTE INTEIRO)");
     expect(razao[2].justificativa).toContain("NADA do lote foi gravado");
 
     // Devolve o estado para os cenarios seguintes.

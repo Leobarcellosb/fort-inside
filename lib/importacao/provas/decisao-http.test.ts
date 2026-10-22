@@ -37,7 +37,9 @@
 //   9. ALVO OCUPADO e recusado (e o alvo livre, no mesmo ato, e aceito);
 //  10. ficha VENCIDA e recusada, e nada e escrito (e a ficha nova e aceita);
 //  11. O CASO QUE MAIS MACHUCA, medido: sem o portao do alvo ocupado, a gravacao
-//      sobrescreve a resposta que a pessoa tinha e a revogacao NAO a devolve;
+//      sobrescreve a resposta que a pessoa tinha e a revogacao NAO a devolve. E,
+//      na corrida que so o banco pega, o LOTE e recusado inteiro: a submissao
+//      fica como estava e o motivo vai para os registros duraveis da 024;
 //  12. o recurso ausente no banco -> "nao esta instalado", nunca "nao respondeu";
 //  13. o CONTRATO DE REVERSIBILIDADE: os tres estados se comportam diferente, a
 //      tela os informa PREVIAMENTE e por submissao, a titularidade dos registros
@@ -925,9 +927,9 @@ descreve("PROVA: a borda da DECISAO DO OPERADOR, contra Postgres real", () => {
     //     fazer. Nada e escrito: nem resposta, nem ato no historico.
     //   CAMADA 2 -- a revalidacao DENTRO da transacao (migration 024), que pega a
     //     CORRIDA que a camada 1 nao tem como pegar: a pessoa responde pelo
-    //     aplicativo DEPOIS da ficha ter sido gerada e ANTES da confirmacao. A
-    //     submissao e retida como conflito, nada dela e gravado, e a resposta que
-    //     ja existia fica INTACTA.
+    //     aplicativo DEPOIS da ficha ter sido gerada e ANTES da confirmacao. O
+    //     LOTE e recusado inteiro, NADA e gravado, e a resposta que ja existia
+    //     fica INTACTA.
     //
     // As duas sao provadas abaixo, uma por vez.
 
@@ -998,17 +1000,62 @@ descreve("PROVA: a borda da DECISAO DO OPERADOR, contra Postgres real", () => {
     // Nenhuma etapa da submissao entrou: nao e "gravei 4 de 5".
     expect(sobreviveu.n).toBe(1);
 
-    // A SUBMISSAO fica retida como CONFLITO, com o codigo da recusa, e rastreavel.
-    const retida = json<{ estado: string; participante: string | null; codigo: string; pretendido: string }>(`
+    // A SUBMISSAO FICA COMO ESTAVA -- 'pendente', sem participante ligado.
+    //
+    // ATENCAO, porque esta expectativa MUDOU e a mudanca e deliberada: antes, a
+    // revalidacao RETINHA a submissao e a MARCAVA como 'conflito'. A revisao de
+    // atomicidade decidiu contra isso: "aplicar exatamente aquele conjunto
+    // elegivel ou recusar a operacao inteira [...] nao autorizo uma importacao
+    // parcial inesperada". Sob LOTE ATOMICO, marcar a submissao TAMBEM seria
+    // escrever -- e o lote nao escreve nada. Entao ela continua exatamente no
+    // estado em que a importacao a deixou, e o participante pretendido continua
+    // desligado dela.
+    //
+    // O estado deixou de carregar o motivo. Por isso a expectativa nova aponta
+    // para onde o motivo PASSOU a morar -- e sao tres lugares, nenhum deles
+    // dependendo de a submissao ter sido alterada:
+    //   (a) `external_import_rejections`, o registro DURAVEL da 024, gravado numa
+    //       transacao cujo conjunto de escrita e SO auditoria (por isso ele nao
+    //       precisa sobreviver a rollback: nao ha rollback);
+    //   (b) o livro-razao da propria submissao, com acao propria
+    //       ('recusada_na_revalidacao'), conferido logo abaixo;
+    //   (c) a resposta da rota ao operador, IMPORT_REVALIDATION_REFUSED com o
+    //       codigo da recusa, conferida acima.
+    const retida = json<{ estado: string; participante: string | null }>(`
       select to_json(t)::text from (
-        select estado, participant_id as participante, bloqueio ->> 'codigo' as codigo,
-               bloqueio -> 'revalidacao' ->> 'participante_pretendido' as pretendido
+        select estado, participant_id as participante
           from external_submissions where submissao_id = 'resp-machuca') t`);
-    expect(retida.estado).toBe("conflito");
+    expect(retida.estado).toBe("pendente");
     expect(retida.participante).toBeNull();
-    expect(retida.codigo).toBe("resposta_do_aplicativo");
-    // O participante pretendido nao se perde: fica nomeado dentro do bloqueio.
-    expect(retida.pretendido).toBe(P.machuca);
+
+    // (a) O REGISTRO DURAVEL: o que foi recusado, por que, de quem era, e quantas
+    // etapas NAO entraram. E aqui que o operador le a historia inteira depois.
+    const registro = json<{
+      codigo: string;
+      motivo: string;
+      pretendido: string;
+      etapas: string[];
+      nao_gravadas: number;
+      estado_do_plano: string;
+    }>(`
+      select to_json(t)::text from (
+        select codigo, motivo, participante_pretendido as pretendido,
+               etapas_em_conflito as etapas, etapas_nao_gravadas as nao_gravadas,
+               estado_do_plano
+          from external_import_rejections
+         where submissao_id = 'resp-machuca'
+         order by criado_em desc limit 1) t`);
+    expect(registro.codigo).toBe("resposta_do_aplicativo");
+    expect(registro.motivo).toMatch(/respondeu PELO APLICATIVO/);
+    expect(registro.motivo).toMatch(/NADA do lote foi gravado/);
+    // O participante pretendido nao se perde: fica nomeado no registro da recusa.
+    expect(registro.pretendido).toBe(P.machuca);
+    expect(registro.etapas).toEqual(["101"]);
+    expect(registro.nao_gravadas).toBe(5);
+    // E fica escrito o que o plano AFIRMAVA quando foi aprovado -- 'importavel' --
+    // ao lado do estado real da submissao, que nao mudou. As duas coisas juntas
+    // sao a frase "isto ia entrar e nao entrou".
+    expect(registro.estado_do_plano).toBe("importavel");
 
     // O HISTORICO guarda o ATO e a RECUSA, os dois. A decisao do operador nao e
     // apagada por nao ter pego, e fica escrito que nao pegou.
