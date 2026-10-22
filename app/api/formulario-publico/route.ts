@@ -134,6 +134,22 @@ export async function POST(req: NextRequest) {
           "Esta imersão já foi concluída, então o questionário não recebe mais respostas. Fale com a equipe do evento.",
       });
 
+    case "prazo_encerrado":
+      // Nada foi gravado. O formulario mostra esta frase e mantem o rascunho no
+      // aparelho (so 200 confirmado apaga o rascunho).
+      return json(409, {
+        error:
+          "O prazo para responder o questionário terminou. Suas respostas continuam salvas neste aparelho. Se ainda precisa enviar, fale com a equipe do evento.",
+      });
+
+    case "prazo_indeterminado":
+      // Configuracao do evento, nao da pessoa: nao se diz que o prazo passou,
+      // porque isso nao foi verificado. Nada foi gravado.
+      return json(503, {
+        error:
+          "O questionário está indisponível no momento. Suas respostas continuam salvas neste aparelho. Fale com a equipe do evento.",
+      });
+
     case "questionario_indisponivel": {
       // Problema de CONFIGURACAO do questionario, nao da pessoa, e tentar de novo
       // nao resolve. O detalhe tecnico fica no log; a tela recebe o fato.

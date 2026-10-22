@@ -230,6 +230,13 @@ export type ResultadoDaRecepcao =
   | { tipo: "gravacao_indisponivel"; fase: FaseDaGravacao; causa: unknown }
   | { tipo: "evento_nao_encontrado" }
   | { tipo: "evento_encerrado" }
+  /** Passou de `events.form_closes_at` (prazo rigido, relogio do servidor). */
+  | { tipo: "prazo_encerrado" }
+  /**
+   * Evento assincrono sem prazo legivel. Nao se sabe se o prazo passou, entao
+   * nao se recebe e nao se diz que terminou (Rodada 78).
+   */
+  | { tipo: "prazo_indeterminado" }
   | { tipo: "questionario_indisponivel"; detalhe: string }
   | { tipo: "faltam_obrigatorias"; etapas: FaltaNaEtapa[]; resumo: string }
   | { tipo: "resposta_invalida"; perguntaId: string; etapa: number }
@@ -251,6 +258,58 @@ interface LinhaDeEvento {
   id: string;
   status: string;
   quiz_version: number;
+  mode?: string | null;
+  form_closes_at?: string | null;
+}
+
+/**
+ * O formulario ainda recebe? Decidido pelo SERVIDOR com o relogio do servidor
+ * (Rodada 68 do CTO: "servidor recusa novos envios apos o prazo aprovado").
+ * Antes disto so `status = completed` fechava, e isso dependia de alguem
+ * lembrar de encerrar o evento no painel a meia-noite de sexta.
+ *
+ * PRAZO RIGIDO, sem tolerancia (Rodada 69). A tolerancia da migration 010 vale
+ * para quem ABRIU uma etapa antes do prazo, e o banco sabe quando abriu. No
+ * formulario publico o servidor nao tem prova nenhuma de quando a pessoa
+ * comecou -- so o que o navegador dissesse -- e uma tolerancia sem prova seria
+ * uma janela aberta para qualquer um comecar depois do prazo. Quem nao enviou a
+ * tempo le o motivo, e o rascunho continua no aparelho.
+ *
+ * `form_closes_at` e o PRIMEIRO instante recusado (Rodada 78). "Aberto ate
+ * sexta, 23h59" com o minuto 23h59 inteiro e 2026-10-24T03:00:00Z (meia-noite
+ * em Sao Paulo); com 02:59:00Z o minuto 23h59 fica de fora. A escolha do valor
+ * e do proprietario; a regra e uma so.
+ *
+ * Decidido UMA vez, no recebimento: um envio aceito antes do prazo termina de
+ * gravar mesmo que a gravacao atravesse o limite. O relogio e o do servidor;
+ * o corpo do pedido nao traz horario nenhum.
+ *
+ * Sem prazo, ou prazo ilegivel: "indeterminado". Quem chama decide: evento
+ * assincrono (o Marco Zero) recusa; evento ao vivo segue aberto como antes.
+ */
+export function prazoDoFormulario(
+  fechaEm: string | null | undefined,
+  agora: Date,
+): "aberto" | "encerrado" | "indeterminado" {
+  if (!fechaEm) return "indeterminado";
+  const limite = new Date(fechaEm).getTime();
+  if (Number.isNaN(limite)) return "indeterminado";
+  return agora.getTime() >= limite ? "encerrado" : "aberto";
+}
+
+/** Estados em que a coleta acabou por decisao administrativa, prazo a parte. */
+const ESTADOS_SEM_COLETA = new Set(["completed", "processing"]);
+
+/** O formulario publico recebe agora? Uma regra so, para a rota e para a pagina. */
+export function situacaoDoFormulario(
+  evento: { status: string; mode?: string | null; form_closes_at?: string | null },
+  agora: Date,
+): "aberto" | "evento_encerrado" | "prazo_encerrado" | "prazo_indeterminado" {
+  if (ESTADOS_SEM_COLETA.has(evento.status)) return "evento_encerrado";
+  const prazo = prazoDoFormulario(evento.form_closes_at, agora);
+  if (prazo === "encerrado") return "prazo_encerrado";
+  if (prazo === "indeterminado" && evento.mode === "async") return "prazo_indeterminado";
+  return "aberto";
 }
 
 type LinhaDeEtapa = Pick<QuizStage, "id" | "stage_number" | "title" | "questions">;
@@ -489,6 +548,7 @@ async function conferirEConcluir(
 export async function receberFormulario(
   supabase: ClienteDeRecepcao,
   entrada: EntradaDoFormulario,
+  agora: () => Date = () => new Date(),
 ): Promise<ResultadoDaRecepcao> {
   try {
     // O GoTrue guarda e-mail em minusculas; a mesma forma aqui mantem
@@ -502,7 +562,7 @@ export async function receberFormulario(
     // 1. O EVENTO. Lido pelo codigo, que e o que vem na URL do link.
     const ev = (await supabase
       .from("events")
-      .select("id, status, quiz_version")
+      .select("id, status, quiz_version, mode, form_closes_at")
       .eq("event_code", eventCode)
       .maybeSingle()) as { data: LinhaDeEvento | null; error: ErroDoBanco | null };
     if (ev.error) return { tipo: "erro", causa: ev.error };
@@ -512,7 +572,9 @@ export async function receberFormulario(
     // Imersao concluida nao recebe mais resposta -- mesma decisao da pagina
     // /join. `max_participants` NAO e verificado aqui, e isso e deliberado: ver
     // o comentario no topo de route.ts.
-    if (evento.status === "completed") return { tipo: "evento_encerrado" };
+    // O relogio e lido UMA vez, aqui, antes de qualquer escrita.
+    const situacao = situacaoDoFormulario(evento, agora());
+    if (situacao !== "aberto") return { tipo: situacao };
 
     // 2. AS ETAPAS DA VERSAO DO EVENTO. Nunca uma constante: a v2 tem 5 etapas
     //    com ids 101..105, a v1 tem 6 com ids 1..6.

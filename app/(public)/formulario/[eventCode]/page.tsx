@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { situacaoDoFormulario } from "@/app/api/formulario-publico/receber-formulario";
 import { CinematicHero } from "@/components/features/participant/CinematicHero";
 import { FormularioImersivo } from "@/components/features/participant/FormularioImersivo";
 import type { EtapaImersiva } from "@/components/features/participant/formulario-imersivo/roteiro";
@@ -38,7 +39,15 @@ interface Props {
 
 type LinhaDeEvento = Pick<
   Event,
-  "id" | "name" | "event_date" | "status" | "quiz_version" | "location_name" | "host_name"
+  | "id"
+  | "name"
+  | "event_date"
+  | "status"
+  | "quiz_version"
+  | "location_name"
+  | "host_name"
+  | "form_closes_at"
+  | "mode"
 >;
 
 type LinhaDeEtapa = Pick<
@@ -51,7 +60,7 @@ export const viewport: Viewport = {
 };
 
 const COLUNAS_DO_EVENTO =
-  "id, name, event_date, status, quiz_version, location_name, host_name";
+  "id, name, event_date, status, quiz_version, location_name, host_name, form_closes_at, mode";
 
 async function lerEvento(eventCode: string) {
   const supabase = await createClient();
@@ -140,13 +149,38 @@ export default async function FormularioPage({ params }: Props) {
   // sim" -- a pagina nao e um oraculo de quais codigos valem.
   if (!evento) notFound();
 
-  if (evento.status === "completed") {
+  // A MESMA regra do servidor (receber-formulario.ts), sem tolerancia: a pagina
+  // so deixa de oferecer o que o servidor ja recusaria.
+  const situacao = situacaoDoFormulario(evento, new Date());
+
+  if (situacao === "evento_encerrado") {
     return (
       <Recado
         quizVersion={evento.quiz_version}
         titulo="Imersão encerrada"
         subtitulo={evento.name}
         texto="Esta imersão já foi concluída, então o questionário não recebe mais respostas. Se você acha que isso está errado, fale com a equipe do evento."
+      />
+    );
+  }
+
+  if (situacao === "prazo_indeterminado") {
+    return (
+      <Recado
+        quizVersion={evento.quiz_version}
+        titulo="Questionário indisponível"
+        subtitulo={evento.name}
+        texto="O questionário está indisponível no momento. Fale com a equipe do evento."
+      />
+    );
+  }
+  if (situacao === "prazo_encerrado") {
+    return (
+      <Recado
+        quizVersion={evento.quiz_version}
+        titulo="Prazo encerrado"
+        subtitulo={evento.name}
+        texto="O prazo para responder o questionário terminou. Se você ainda precisa responder, fale com a equipe do evento."
       />
     );
   }

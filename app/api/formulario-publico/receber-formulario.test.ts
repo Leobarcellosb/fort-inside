@@ -10,6 +10,8 @@
 import { describe, expect, it } from "vitest";
 import type { QuizQuestion } from "../../../types/database";
 import {
+  prazoDoFormulario,
+  situacaoDoFormulario,
   receberFormulario,
   type ClienteDeRecepcao,
   type EntradaDoFormulario,
@@ -810,6 +812,125 @@ describe("o evento", () => {
     const r = await receberFormulario(banco.cliente, envio());
     expect(r.tipo).toBe("evento_encerrado");
     expect(banco.escritas).toEqual([]);
+  });
+
+  it("um segundo depois do prazo o servidor recusa, e nada e escrito", async () => {
+    const fecha = "2026-10-24T02:59:00.000Z"; // sexta 23h59 em Sao Paulo
+    const banco = new BancoFalso({
+      events: [{ id: EVENTO_ID, event_code: "MZTESTE", status: "live", quiz_version: 2, form_closes_at: fecha }],
+      quiz_stages: [ETAPA_1, ETAPA_2],
+    });
+    const depois = () => new Date(new Date(fecha).getTime() + 1000);
+    const r = await receberFormulario(banco.cliente, envio(), depois);
+    expect(r.tipo).toBe("prazo_encerrado");
+    expect(banco.escritas).toEqual([]);
+  });
+
+  it("prazo rigido: seis minutos depois tambem recusa (nao ha tolerancia sem prova de inicio)", async () => {
+    const fecha = "2026-10-24T02:59:00.000Z";
+    const banco = new BancoFalso({
+      events: [{ id: EVENTO_ID, event_code: "MZTESTE", status: "live", quiz_version: 2, form_closes_at: fecha }],
+      quiz_stages: [ETAPA_1, ETAPA_2],
+    });
+    const seisMinutosDepois = () => new Date(new Date(fecha).getTime() + 6 * 60 * 1000);
+    expect((await receberFormulario(banco.cliente, envio(), seisMinutosDepois)).tipo).toBe("prazo_encerrado");
+  });
+
+  it("um instante antes do prazo recebe; no instante do prazo ja recusa", async () => {
+    const fecha = "2026-10-24T03:00:00.000Z"; // meia-noite em Sao Paulo: o minuto 23h59 inteiro aberto
+    const banco = new BancoFalso({
+      events: [{ id: EVENTO_ID, event_code: "MZTESTE", status: "live", quiz_version: 2, form_closes_at: fecha }],
+      quiz_stages: [ETAPA_1, ETAPA_2],
+    });
+    const antes = () => new Date(new Date(fecha).getTime() - 1);
+    expect((await receberFormulario(banco.cliente, envio(), antes)).tipo).toBe("ok");
+    const outro = new BancoFalso({
+      events: [{ id: EVENTO_ID, event_code: "MZTESTE", status: "live", quiz_version: 2, form_closes_at: fecha }],
+      quiz_stages: [ETAPA_1, ETAPA_2],
+    });
+    expect((await receberFormulario(outro.cliente, envio(), () => new Date(fecha))).tipo).toBe("prazo_encerrado");
+    expect(outro.escritas).toEqual([]);
+  });
+
+  it("prazo: sem data ou ilegivel e indeterminado, nunca 'aberto' nem 'encerrado'", () => {
+    const t = new Date("2026-10-24T03:00:00.000Z").getTime();
+    expect(prazoDoFormulario(null, new Date(t + 9e9))).toBe("indeterminado");
+    expect(prazoDoFormulario(undefined, new Date(t))).toBe("indeterminado");
+    expect(prazoDoFormulario("nao e data", new Date(t + 9e9))).toBe("indeterminado");
+    expect(prazoDoFormulario("2026-10-24T03:00:00.000Z", new Date(t - 1))).toBe("aberto");
+    expect(prazoDoFormulario("2026-10-24T03:00:00.000Z", new Date(t))).toBe("encerrado");
+  });
+
+  it("prazo: a tabela da Rodada 78, em horario de Sao Paulo (UTC-3), sem tolerancia", () => {
+    type Linha = [string, string, "aberto" | "encerrado"];
+    // Valor recomendado: 03:00:00Z, aberto ate 23h59min59s.
+    const recomendado: Linha[] = [
+      ["23/10 23h58min59s", "2026-10-24T02:58:59.000Z", "aberto"],
+      ["23/10 23h59min00s", "2026-10-24T02:59:00.000Z", "aberto"],
+      ["23/10 23h59min30s", "2026-10-24T02:59:30.000Z", "aberto"],
+      ["23/10 23h59min59s", "2026-10-24T02:59:59.000Z", "aberto"],
+      ["23/10 23h59min59.999s", "2026-10-24T02:59:59.999Z", "aberto"],
+      ["24/10 00h00min00s", "2026-10-24T03:00:00.000Z", "encerrado"],
+      ["24/10 00h05", "2026-10-24T03:05:00.000Z", "encerrado"],
+      ["24/10 00h15min01s (fim da antiga tolerancia)", "2026-10-24T03:15:01.000Z", "encerrado"],
+    ];
+    for (const [rotulo, quando, esperado] of recomendado) {
+      expect(prazoDoFormulario("2026-10-24T03:00:00.000Z", new Date(quando)), rotulo).toBe(esperado);
+    }
+    // Valor antigo: 02:59:00Z fecha no INICIO do minuto 23h59.
+    const antigo: Linha[] = [
+      ["23/10 23h58min59.999s", "2026-10-24T02:58:59.999Z", "aberto"],
+      ["23/10 23h59min00s", "2026-10-24T02:59:00.000Z", "encerrado"],
+      ["23/10 23h59min30s", "2026-10-24T02:59:30.000Z", "encerrado"],
+    ];
+    for (const [rotulo, quando, esperado] of antigo) {
+      expect(prazoDoFormulario("2026-10-24T02:59:00.000Z", new Date(quando)), rotulo).toBe(esperado);
+    }
+  });
+
+  it("situacao: assincrono sem prazo legivel recusa; ao vivo sem prazo segue aberto", () => {
+    const agora = new Date("2026-10-23T12:00:00.000Z");
+    expect(situacaoDoFormulario({ status: "live", mode: "async", form_closes_at: null }, agora)).toBe("prazo_indeterminado");
+    expect(situacaoDoFormulario({ status: "live", mode: "async", form_closes_at: "nao e data" }, agora)).toBe("prazo_indeterminado");
+    expect(situacaoDoFormulario({ status: "live", mode: "live", form_closes_at: null }, agora)).toBe("aberto");
+    expect(situacaoDoFormulario({ status: "live", mode: null, form_closes_at: null }, agora)).toBe("aberto");
+    expect(situacaoDoFormulario({ status: "live", mode: "async", form_closes_at: "2026-10-24T03:00:00.000Z" }, agora)).toBe("aberto");
+  });
+
+  it("situacao: estado encerrado pela administracao recusa mesmo dentro do prazo", () => {
+    const agora = new Date("2026-10-23T12:00:00.000Z");
+    const prazo = "2026-10-24T03:00:00.000Z";
+    for (const status of ["completed", "processing"]) {
+      expect(situacaoDoFormulario({ status, mode: "async", form_closes_at: prazo }, agora), status).toBe("evento_encerrado");
+    }
+    for (const status of ["draft", "live"]) {
+      expect(situacaoDoFormulario({ status, mode: "async", form_closes_at: prazo }, agora), status).toBe("aberto");
+    }
+  });
+
+  it("evento assincrono sem prazo: recusa sem escrever e sem dizer que o prazo terminou", async () => {
+    const banco = new BancoFalso({
+      events: [{ id: EVENTO_ID, event_code: "MZTESTE", status: "live", mode: "async", quiz_version: 2, form_closes_at: null }],
+      quiz_stages: [ETAPA_1, ETAPA_2],
+    });
+    const r = await receberFormulario(banco.cliente, envio());
+    expect(r.tipo).toBe("prazo_indeterminado");
+    expect(banco.escritas).toEqual([]);
+  });
+
+  it("o prazo e decidido UMA vez, no recebimento: gravacao que atravessa o limite termina", async () => {
+    const fecha = new Date("2026-10-24T03:00:00.000Z").getTime();
+    const banco = new BancoFalso({
+      events: [{ id: EVENTO_ID, event_code: "MZTESTE", status: "live", mode: "async", quiz_version: 2, form_closes_at: new Date(fecha).toISOString() }],
+      quiz_stages: [ETAPA_1, ETAPA_2],
+    });
+    // O relogio diz "antes" na primeira leitura e "depois" em qualquer outra.
+    let leituras = 0;
+    const relogio = () => new Date(leituras++ === 0 ? fecha - 1 : fecha + 60_000);
+    const r = await receberFormulario(banco.cliente, envio(), relogio);
+    expect(r.tipo).toBe("ok");
+    expect(leituras).toBe(1);
+    expect(banco.escritas.length).toBeGreaterThan(0);
   });
 
   it("as etapas vem da VERSAO do evento, nunca de um numero fixo", async () => {

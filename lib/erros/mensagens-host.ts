@@ -85,7 +85,7 @@ const MENSAGENS: Record<TodoCodigoDeErro, Mensagem> = {
     return (
       "A coleta deste evento ainda não encerrou" +
       (quando ? `: o prazo para responder termina em ${quando}` : "") +
-      ", mais 15 minutos de tolerância para quem já começou. O processamento coletivo só é liberado depois do prazo, para ninguém ficar de fora. Não há etapa para liberar neste modo."
+      ". O processamento coletivo só é liberado 15 minutos depois do prazo. Esse intervalo deixa terminar de gravar o que já estava sendo enviado e, pelo desenho antigo, ainda pode receber respostas de quem entrou com login antes do prazo. Não é prazo extra para responder pelo formulário. Não há etapa para liberar neste modo."
     );
   },
   EVENT_MODE_UNDETERMINED:
