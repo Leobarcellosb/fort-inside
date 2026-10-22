@@ -109,9 +109,9 @@ select concat_ws(E'\n',
     || case when ev.form_closes_at = timestamptz '2026-10-24 02:59:00+00' then ' (confere com sexta 23h59)'
             when ev.form_closes_at is null then ''
             else '  << DIFERENTE DE SEXTA 23h59' end,
-  'Estado cadastral do formulário: ' || case when ev.status in ('closed', 'completed') then 'fechado'
-                         when ev.form_closes_at is not null and now() >= ev.form_closes_at then 'prazo encerrado'
-                         else 'aberto' end,
+  'Estado cadastral do formulário: ' || case when ev.status = 'completed' then 'evento concluído (o formulário recusa envios)'
+                         when ev.form_closes_at is not null and now() >= ev.form_closes_at then 'prazo cadastrado já passou'
+                         else 'dentro do prazo cadastrado' end,
   'Prazo cadastrado e prazo aplicado pelo servidor são verificações distintas: este boletim só confere o cadastrado.'
 ) as boletim
 from m, ev;
