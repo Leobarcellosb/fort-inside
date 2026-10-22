@@ -1,3 +1,25 @@
+-- =========================================================================
+-- ATENCAO -- LEIA ANTES DE APLICAR
+-- =========================================================================
+-- Este arquivo consolidado vai ate a migration 023, e PARA ALI.
+--
+-- Ele NAO contem as migrations 024 a 028, que sao as desta serie:
+--   024  impede a importacao de sobrescrever resposta de quem respondeu no app
+--   025  amarra a aprovacao ao texto aprovado (entrega so do que foi revisado)
+--   026  guarda o historico do que cada participante leu, e quando
+--   027  permite tirar do ar e corrigir um documento ja entregue
+--   028  impede gravar etapa que nao existe no evento
+--
+-- Quem aplicar SO este arquivo fica sem essas cinco protecoes, acreditando ter
+-- aplicado tudo -- e e exatamente por isso que este aviso existe. O arquivo nao
+-- tinha marcacao nenhuma de ate onde ia.
+--
+-- O caminho correto para um banco que ja tem ate a 023 e aplicar os arquivos de
+-- supabase/migrations/ de 024 a 028, em ordem crescente.
+--
+-- Ver docs/RELEASE-23-OUT.md para o que cada uma muda e o risco de cada uma.
+-- =========================================================================
+
 -- Fort Inside — schema principal
 
 create table events (

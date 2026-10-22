@@ -81,6 +81,22 @@ ninguém quer fazer.
 
 ---
 
+## Uma armadilha que eu encontrei e fechei
+
+O arquivo que documenta como aplicar o banco — `docs/aplicar/marco-zero-banco-completo.sql`
+— **vai até a 023 e para ali**. Ele não inclui nenhuma das cinco alterações desta
+madrugada, e não tinha marcação nenhuma dizendo até onde ia.
+
+Quem seguisse o procedimento documentado aplicaria aquele arquivo e ficaria **sem as cinco
+proteções, acreditando ter aplicado tudo**. Pus um aviso no topo do arquivo listando o que
+falta nele e apontando para o caminho certo: aplicar `supabase/migrations/024` a `028`, em
+ordem crescente.
+
+Registro como isso apareceu, porque é instrutivo: duas unidades diferentes declararam, como
+limitação menor, "não atualizei o arquivo consolidado". Cada declaração estava certa e era
+pequena. Somadas ao fato de que aquele arquivo é o caminho documentado, viravam uma
+armadilha. Ninguém estava lendo as limitações declaradas **juntas**.
+
 ## Três coisas que eu não consegui provar, e declaro
 
 **1. Nenhuma tela nova foi vista em navegador, exceto as que eu olhei.** Eu abri o
