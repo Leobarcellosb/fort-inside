@@ -9,6 +9,7 @@ import {
   respondida,
   rotulosDaEscala,
   separarLetra,
+  separarPerguntaDoNome,
   type EtapaImersiva,
 } from "./roteiro";
 import {
@@ -110,6 +111,38 @@ describe("roteiro", () => {
 
   it("estimativa honesta de tempo para o v2", () => {
     expect(estimarMinutos(ETAPAS)).toEqual({ de: 15, ate: 20 });
+  });
+});
+
+describe("pergunta que repete o nome", () => {
+  const comNome: EtapaImersiva[] = ETAPAS.map((e, i) =>
+    i === 0
+      ? { ...e, questions: e.questions.map((x, j) => (j === 0 ? { ...x, text: "Qual é seu nome completo?" } : x)) }
+      : e,
+  );
+
+  it("sai da tela, e so ela", () => {
+    const { etapas, idDoNome } = separarPerguntaDoNome(comNome);
+    expect(idDoNome).toBe("q1");
+    expect(etapas[0].questions.map((x) => x.id)).not.toContain("q1");
+    expect(etapas[0].questions).toHaveLength(comNome[0].questions.length - 1);
+    expect(etapas.slice(1)).toEqual(comNome.slice(1));
+    expect(montarRoteiro(etapas).some((t) => t.id === "perguntas:q1")).toBe(false);
+  });
+
+  it("nao mexe em nada quando o questionario nao pergunta o nome", () => {
+    const { etapas, idDoNome } = separarPerguntaDoNome(ETAPAS);
+    expect(idDoNome).toBeNull();
+    expect(etapas).toEqual(ETAPAS);
+  });
+
+  it("nao esvazia etapa nem tira pergunta que nao e de texto", () => {
+    const soNome: EtapaImersiva[] = [{ ...ETAPAS[0], questions: [q("q1", { text: "Seu nome completo" })] }];
+    expect(separarPerguntaDoNome(soNome).idDoNome).toBeNull();
+    const escala: EtapaImersiva[] = [
+      { ...ETAPAS[0], questions: [q("q1", { type: "scale", min: 0, max: 10, text: "Gosta do seu nome completo?" }), q("q2", {})] },
+    ];
+    expect(separarPerguntaDoNome(escala).idDoNome).toBeNull();
   });
 });
 

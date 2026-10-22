@@ -120,6 +120,32 @@ export function avancaAoTocar(q: QuizQuestion): boolean {
   return q.type === "scale" && !ehLikert(q);
 }
 
+/**
+ * A pergunta do questionario que repete a tela "Seus dados" ("Qual é seu nome
+ * completo?"). Ela sai da tela, e no envio a resposta dela e o nome ja
+ * informado: ninguem digita o proprio nome duas vezes, e o banco continua
+ * recebendo resposta para todas as perguntas, inclusive a obrigatoria do nome.
+ * So sai pergunta de TEXTO, e nunca a ultima de uma etapa (etapa vazia nao abre).
+ */
+const PERGUNTA_DO_NOME = /\bnome completo\b/i;
+
+export function separarPerguntaDoNome(etapas: readonly EtapaImersiva[]): {
+  etapas: EtapaImersiva[];
+  idDoNome: string | null;
+} {
+  for (const etapa of etapas) {
+    const q = etapa.questions.find(
+      (x) => (x.type === "short_text" || x.type === "text") && PERGUNTA_DO_NOME.test(x.text),
+    );
+    if (!q || etapa.questions.length < 2) continue;
+    return {
+      etapas: etapas.map((e) => (e === etapa ? { ...e, questions: e.questions.filter((x) => x !== q) } : e)),
+      idDoNome: q.id,
+    };
+  }
+  return { etapas: [...etapas], idDoNome: null };
+}
+
 export function montarRoteiro(etapas: readonly EtapaImersiva[]): Tela[] {
   const telas: Tela[] = [
     { id: "boas-vindas", tipo: "boas-vindas" },

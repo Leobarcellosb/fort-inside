@@ -19,6 +19,7 @@ import {
   primeiraTelaIncompleta,
   primeiroNome,
   respondida,
+  separarPerguntaDoNome,
   telaCompleta,
   type EtapaImersiva,
   type Identificacao,
@@ -87,7 +88,10 @@ interface EstadoDoHistorico {
 
 const TEMPO_LIMITE_DO_ENVIO_MS = 30_000;
 
-export function FormularioImersivo({ eventCode, eventName, dataDoEvento, etapas }: Props) {
+export function FormularioImersivo({ eventCode, eventName, dataDoEvento, etapas: etapasDoBanco }: Props) {
+  // Daqui para baixo, `etapas` e o que a TELA mostra: sem a pergunta que repete o
+  // nome de "Seus dados". A resposta dela entra no envio (ver `enviar`).
+  const { etapas, idDoNome } = useMemo(() => separarPerguntaDoNome(etapasDoBanco), [etapasDoBanco]);
   const roteiro = useMemo(() => montarRoteiro(etapas), [etapas]);
   const minutos = useMemo(() => estimarMinutos(etapas), [etapas]);
   const indiceDaRevisao = roteiro.length - 1;
@@ -458,7 +462,7 @@ export function FormularioImersivo({ eventCode, eventName, dataDoEvento, etapas 
           full_name: id.nome,
           email: id.email,
           phone: id.telefone || undefined,
-          respostas: respostasDoEnvio,
+          respostas: idDoNome ? { ...respostasDoEnvio, [idDoNome]: id.nome.trim() } : respostasDoEnvio,
         }),
       });
 
@@ -1238,8 +1242,7 @@ function BoasVindas(p: {
           rascunho fica logo abaixo dela, para o rosto nao sumir atras do texto. */}
       <div className="relative min-h-[100dvh] flex flex-col">
         <div className="w-full max-w-6xl mx-auto px-6 pt-6 flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.28em] text-white/85">
-          <span>Marco Zero</span>
-          {p.dataDoEvento && <span className="tracking-[0.18em] text-white/60">{dataCurta(p.dataDoEvento)}</span>}
+          {p.dataDoEvento && <span className="tracking-[0.18em] text-white/70">{dataCurta(p.dataDoEvento)}</span>}
         </div>
 
         <div className="flex-1 min-h-[22svh] lg:min-h-0" />
