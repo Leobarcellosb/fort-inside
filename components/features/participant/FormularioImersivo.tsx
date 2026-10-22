@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import type { MapaDeRespostas, ValorDeResposta } from "@/lib/quiz/obrigatorias";
 import type { QuizQuestion } from "@/types/database";
@@ -645,7 +646,10 @@ export function FormularioImersivo({ eventCode, eventName, dataDoEvento, etapas 
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
-  const casca = (conteudo: React.ReactNode, opcoes?: { cabecalho?: boolean; rodape?: React.ReactNode }) => (
+  const casca = (
+    conteudo: React.ReactNode,
+    opcoes?: { cabecalho?: boolean; rodape?: React.ReactNode; cheia?: boolean },
+  ) => (
     <div
       ref={cascaRef}
       className="fixed inset-x-0 top-0 flex flex-col bg-background text-foreground overscroll-none"
@@ -657,9 +661,14 @@ export function FormularioImersivo({ eventCode, eventName, dataDoEvento, etapas 
     >
       {opcoes?.cabecalho && <Cabecalho tela={tela} totalDeEtapas={etapas.length} respondidas={respondidas} total={total} />}
       <div ref={palco} className="flex-1 overflow-y-auto overscroll-contain">
-        <div className="min-h-full w-full max-w-xl mx-auto px-6 flex flex-col justify-center py-10">
-          {conteudo}
-        </div>
+        {/* `cheia`: a capa ocupa o palco de borda a borda, sem a coluna de leitura. */}
+        {opcoes?.cheia ? (
+          conteudo
+        ) : (
+          <div className="min-h-full w-full max-w-xl mx-auto px-6 flex flex-col justify-center py-10">
+            {conteudo}
+          </div>
+        )}
       </div>
       {opcoes?.rodape}
     </div>
@@ -708,6 +717,7 @@ export function FormularioImersivo({ eventCode, eventName, dataDoEvento, etapas 
         onCancelarApagar={() => setConfirmandoApagar(false)}
         onApagar={apagarTudo}
       />,
+      { cheia: true },
     );
   }
 
@@ -1199,114 +1209,159 @@ function BoasVindas(p: {
   onApagar: () => void;
 }) {
   const botao =
-    "h-14 w-full sm:w-auto px-8 rounded-xl text-[16px] font-semibold inline-flex items-center justify-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-[background-color,transform] duration-150 motion-reduce:transition-none active:scale-[0.98]";
+    "h-14 w-full sm:w-auto px-8 rounded-xl text-[16px] font-semibold inline-flex items-center justify-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#0D0C0A] transition-[background-color,transform] duration-150 motion-reduce:transition-none active:scale-[0.98]";
   const nome = p.rascunho ? primeiroNome(p.rascunho.identificacao.nome) : "";
 
+  // A CAPA. Escura e de borda a borda, so nesta tela: as perguntas continuam
+  // claras, no fundo de leitura. No celular a foto ocupa a tela e o texto sobe
+  // por cima da parte de baixo dela; a partir de lg a foto vai para a direita e
+  // o texto fica numa coluna a esquerda.
   return (
-    <section className="space-y-10 animate-in fade-in-0 duration-500 motion-reduce:animate-none">
-      <div className="space-y-5">
-        <p className="text-[13px] font-medium tracking-wide text-primary">Questionário de preparação</p>
-        <h1
-          ref={p.tituloRef}
-          tabIndex={-1}
-          className="text-[34px] sm:text-[44px] leading-[1.08] font-semibold tracking-tight outline-none"
-        >
-          {p.eventName}
-        </h1>
-        <p className="text-[18px] leading-relaxed text-foreground/80">
-          Algumas perguntas para o encontro ser sobre a sua vida, e não sobre um roteiro genérico.
-        </p>
+    <section className="relative min-h-full overflow-hidden bg-[#0D0C0A] text-white">
+      <div className="absolute inset-x-0 top-0 h-[74dvh] lg:bottom-0 lg:left-auto lg:h-auto lg:w-[58%]">
+        <Image
+          src="/marco-zero/capa-yuri.jpg"
+          alt="Yuri Fortes"
+          fill
+          preload
+          sizes="(min-width: 1024px) 58vw, 100vw"
+          className="object-cover object-[50%_32%] animate-[capa-entra_2.4s_cubic-bezier(0.2,0.7,0.2,1)_both] motion-reduce:animate-none"
+        />
+        {/* Escurece de baixo para cima (celular) e da esquerda (lg), para o texto
+            ler sobre a foto sem caixa nenhuma. */}
+        <div aria-hidden="true" className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(13,12,10,0.55)_0%,rgba(13,12,10,0)_22%,rgba(13,12,10,0)_38%,rgba(13,12,10,0.82)_68%,#0D0C0A_100%)] lg:bg-[linear-gradient(to_right,#0D0C0A_0%,rgba(13,12,10,0.55)_30%,rgba(13,12,10,0)_60%)]" />
       </div>
 
-      <dl className="grid grid-cols-3 gap-4 border-y border-foreground/[0.08] py-5">
-        <div>
-          <dt className="text-[12px] text-muted-foreground">Perguntas</dt>
-          <dd className="text-[20px] font-semibold tabular-nums">{p.totalDePerguntas}</dd>
-        </div>
-        <div>
-          <dt className="text-[12px] text-muted-foreground">Etapas</dt>
-          <dd className="text-[20px] font-semibold tabular-nums">{p.totalDeEtapas}</dd>
-        </div>
-        <div>
-          <dt className="text-[12px] text-muted-foreground">Minutos</dt>
-          <dd className="text-[20px] font-semibold tabular-nums">
-            {p.minutos.de} a {p.minutos.ate}
-          </dd>
-        </div>
-      </dl>
+      <style>{`@keyframes capa-entra{from{transform:scale(1.08);opacity:0}to{transform:scale(1);opacity:1}}`}</style>
 
-      {p.dataDoEvento && (
-        <p className="text-[15px] text-muted-foreground -mt-4">
-          O encontro é <span className="text-foreground font-medium">{p.dataDoEvento}</span>.
-        </p>
-      )}
+      {/* Primeira dobra: canto, foto e o bloco que leva ao botao. O aviso do
+          rascunho fica logo abaixo dela, para o rosto nao sumir atras do texto. */}
+      <div className="relative min-h-[100dvh] flex flex-col">
+        <div className="w-full max-w-6xl mx-auto px-6 pt-6 flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.28em] text-white/85">
+          <span>Marco Zero</span>
+          {p.dataDoEvento && <span className="tracking-[0.18em] text-white/60">{dataCurta(p.dataDoEvento)}</span>}
+        </div>
 
-      {p.rascunho ? (
-        <div className="space-y-5">
-          <div className="space-y-1.5">
-            <p className="text-[18px] font-semibold">
-              {nome ? `Que bom te ver de volta, ${nome}.` : "Que bom te ver de volta."}
-            </p>
-            <p className="text-[15px] leading-relaxed text-muted-foreground">
-              Você já respondeu <span className="text-foreground font-medium tabular-nums">{p.respondidas} de {p.totalDePerguntas}</span>{" "}
-              perguntas neste aparelho. Dá para continuar exatamente de onde parou.
-            </p>
-          </div>
-          <button type="button" onClick={p.onRetomar} className={cn(botao, "bg-primary text-primary-foreground hover:bg-primary/90")}>
-            Continuar de onde parei
-          </button>
-          {p.confirmandoApagar ? (
-            <div role="alert" className="rounded-xl border border-foreground/15 bg-card p-4 space-y-3">
-              <p className="text-[15px] leading-relaxed">
-                Apagar as {p.respondidas} respostas salvas neste aparelho? Isso não tem volta, e você
-                começa do zero.
+        <div className="flex-1 min-h-[22svh] lg:min-h-0" />
+
+        <div className="w-full max-w-6xl mx-auto px-6 pb-8 lg:pb-16">
+          <div className="max-w-md space-y-6 animate-in fade-in-0 slide-in-from-bottom-3 duration-700 delay-300 fill-mode-both motion-reduce:animate-none">
+            <div className="space-y-3">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.22em] text-[#D9C291]">
+                Questionário de preparação
               </p>
-              <div className="flex flex-wrap gap-3">
-                <button type="button" onClick={p.onApagar} className="h-11 px-4 rounded-lg bg-[#9B2C1F] text-white text-[14px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2">
-                  Sim, apagar
+              <h1
+                ref={p.tituloRef}
+                tabIndex={-1}
+                className="text-[36px] sm:text-[52px] leading-[1.02] font-semibold tracking-[-0.02em] outline-none text-balance"
+              >
+                {p.eventName}
+              </h1>
+              <p className="text-[16px] leading-relaxed text-white/75">
+                Algumas perguntas para o encontro ser sobre a sua vida, e não sobre um roteiro genérico.
+              </p>
+            </div>
+
+            <dl className="grid grid-cols-3 gap-4 border-y border-white/15 py-4">
+              <div>
+                <dt className="text-[11px] uppercase tracking-[0.14em] text-white/50">Perguntas</dt>
+                <dd className="mt-1 text-[22px] font-semibold tabular-nums">{p.totalDePerguntas}</dd>
+              </div>
+              <div>
+                <dt className="text-[11px] uppercase tracking-[0.14em] text-white/50">Etapas</dt>
+                <dd className="mt-1 text-[22px] font-semibold tabular-nums">{p.totalDeEtapas}</dd>
+              </div>
+              <div>
+                <dt className="text-[11px] uppercase tracking-[0.14em] text-white/50">Minutos</dt>
+                <dd className="mt-1 text-[22px] font-semibold tabular-nums">
+                  {p.minutos.de} a {p.minutos.ate}
+                </dd>
+              </div>
+            </dl>
+
+            {p.rascunho ? (
+              <div className="space-y-5">
+                <div className="space-y-1.5">
+                  <p className="text-[18px] font-semibold">
+                    {nome ? `Que bom te ver de volta, ${nome}.` : "Que bom te ver de volta."}
+                  </p>
+                  <p className="text-[15px] leading-relaxed text-white/65">
+                    Você já respondeu <span className="text-white font-medium tabular-nums">{p.respondidas} de {p.totalDePerguntas}</span>{" "}
+                    perguntas neste aparelho. Dá para continuar exatamente de onde parou.
+                  </p>
+                </div>
+                <button type="button" onClick={p.onRetomar} className={cn(botao, "bg-white text-[#0D0C0A] hover:bg-white/90")}>
+                  Continuar de onde parei
                 </button>
-                <button type="button" onClick={p.onCancelarApagar} className="h-11 px-4 rounded-lg border border-foreground/20 text-[14px] outline-none focus-visible:ring-2 focus-visible:ring-primary">
-                  Manter minhas respostas
+                {p.confirmandoApagar ? (
+                  <div role="alert" className="rounded-xl border border-white/15 bg-white/[0.06] p-4 space-y-3 backdrop-blur-sm">
+                    <p className="text-[15px] leading-relaxed">
+                      Apagar as {p.respondidas} respostas salvas neste aparelho? Isso não tem volta, e você
+                      começa do zero.
+                    </p>
+                    <div className="flex flex-wrap gap-3">
+                      <button type="button" onClick={p.onApagar} className="h-11 px-4 rounded-lg bg-[#9B2C1F] text-white text-[14px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#0D0C0A]">
+                        Sim, apagar
+                      </button>
+                      <button type="button" onClick={p.onCancelarApagar} className="h-11 px-4 rounded-lg border border-white/25 text-[14px] outline-none focus-visible:ring-2 focus-visible:ring-white">
+                        Manter minhas respostas
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={p.onPedirApagar}
+                    className="block text-[14px] text-white/55 underline underline-offset-4 hover:text-white outline-none focus-visible:ring-2 focus-visible:ring-white rounded"
+                  >
+                    Não é você, ou quer recomeçar? Apagar as respostas deste aparelho
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {p.envioAnterior && (
+                  <p className="text-[15px] leading-relaxed text-white/65">
+                    Este aparelho já enviou respostas para este encontro em{" "}
+                    {new Date(p.envioAnterior).toLocaleDateString("pt-BR", { day: "numeric", month: "long" })}. Se
+                    precisar corrigir alguma coisa, pode responder de novo: o novo envio{" "}
+                    <span className="text-white font-medium">não apaga</span> o anterior, e a equipe
+                    confirma qual vale antes do encontro.
+                  </p>
+                )}
+                <button type="button" onClick={p.onComecar} className={cn(botao, "bg-white text-[#0D0C0A] hover:bg-white/90")}>
+                  Começar
+                  <svg aria-hidden="true" viewBox="0 0 20 20" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M7.5 5l5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
                 </button>
               </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={p.onPedirApagar}
-              className="block text-[14px] text-muted-foreground underline underline-offset-4 hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
-            >
-              Não é você, ou quer recomeçar? Apagar as respostas deste aparelho
-            </button>
-          )}
+            )}
+          </div>
         </div>
-      ) : (
-        <div className="space-y-5">
-          {p.envioAnterior && (
-            <p className="text-[15px] leading-relaxed text-muted-foreground">
-              Este aparelho já enviou respostas para este encontro em{" "}
-              {new Date(p.envioAnterior).toLocaleDateString("pt-BR", { day: "numeric", month: "long" })}. Se
-              precisar corrigir alguma coisa, pode responder de novo: o novo envio{" "}
-              <span className="text-foreground font-medium">não apaga</span> o anterior, e a equipe
-              confirma qual vale antes do encontro.
-            </p>
-          )}
-          <button type="button" onClick={p.onComecar} className={cn(botao, "bg-primary text-primary-foreground hover:bg-primary/90")}>
-            Começar
-            <svg aria-hidden="true" viewBox="0 0 20 20" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M7.5 5l5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        </div>
-      )}
+      </div>
 
-      <p className="text-[13px] leading-relaxed text-muted-foreground">
-        {p.salvoNoAparelho
-          ? `Enquanto você responde, o que escrever fica salvo só neste aparelho, por até ${PRAZO_DO_RASCUNHO_DIAS} dias, para você poder parar e continuar depois. Ao enviar, sai daqui. Se o aparelho for compartilhado, você pode apagar a qualquer momento.`
-          : "Este navegador não deixa guardar o rascunho (aba privativa, talvez). Dá para responder normalmente, só não feche a página antes de enviar."}
-      </p>
+      <div className="relative w-full max-w-6xl mx-auto px-6 pb-10">
+        <div className="max-w-md">
+          <p className="text-[12.5px] leading-relaxed text-white/45">
+            {p.salvoNoAparelho
+              ? `Enquanto você responde, o que escrever fica salvo só neste aparelho, por até ${PRAZO_DO_RASCUNHO_DIAS} dias, para você poder parar e continuar depois. Ao enviar, sai daqui. Se o aparelho for compartilhado, você pode apagar a qualquer momento.`
+              : "Este navegador não deixa guardar o rascunho (aba privativa, talvez). Dá para responder normalmente, só não feche a página antes de enviar."}
+          </p>
+        </div>
+      </div>
     </section>
   );
+}
+
+/** "sábado, 24 de outubro" -> "Sáb · 24.10", para o canto da capa. */
+function dataCurta(data: string): string {
+  const m = data.match(/^(\p{L}+)[^,]*, (\d{1,2}) de (\p{L}+)/u);
+  if (!m) return data;
+  const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+  const i = meses.indexOf(m[3].toLowerCase());
+  if (i < 0) return data;
+  return `${m[1].slice(0, 3)} · ${m[2].padStart(2, "0")}.${String(i + 1).padStart(2, "0")}`;
 }
 
 function Revisao(p: {

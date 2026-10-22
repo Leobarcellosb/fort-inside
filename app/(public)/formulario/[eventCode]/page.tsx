@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CinematicHero } from "@/components/features/participant/CinematicHero";
@@ -69,7 +70,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { eventCode } = await params;
   const { evento } = await lerEvento(eventCode);
   if (!evento) return { title: "Formulário não encontrado" };
+  // A imagem da previa precisa de endereco absoluto, e ele sai do proprio host
+  // que serviu a pagina: o link que circula e o marcozero-gp, nao o dominio
+  // padrao do projeto na Vercel.
+  const host = (await headers()).get("host");
   return {
+    metadataBase: host ? new URL(`${host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https"}://${host}`) : undefined,
     title: `${evento.name} | Questionário de preparação`,
     description:
       "Algumas perguntas para o encontro ser sobre a sua vida, e não sobre um roteiro genérico. Leva alguns minutos e dá para parar e voltar depois.",
@@ -77,6 +83,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       title: `${evento.name} | Questionário de preparação`,
       description:
         "Algumas perguntas antes do encontro. Leva alguns minutos e dá para parar e voltar depois.",
+      images: [{ url: "/marco-zero/og-formulario.jpg", width: 1120, height: 630, alt: evento.name }],
     },
     robots: { index: false, follow: false },
   };
