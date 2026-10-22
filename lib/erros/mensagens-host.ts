@@ -333,7 +333,7 @@ const MENSAGENS: Record<TodoCodigoDeErro, Mensagem> = {
   STAGE_RELEASE_MODE_MISMATCH: (d) =>
     d?.modo_do_evento === "desconhecido"
       ? "Liberar etapa não se aplica a este evento: o banco verificou o modo dele e recusou, e esta tela não conseguiu ler qual é o modo. Nenhuma etapa foi liberada e nada foi alterado. Isso não é defeito: liberar etapa só existe em evento presencial, conduzido ao vivo. Confira o modo do evento; se ele deveria ser presencial, avise a equipe técnica."
-      : "Liberar etapa não se aplica a este evento: ele é assíncrono — as pessoas respondem por conta própria, dentro do prazo da coleta, e não há etapa para o host liberar. Nenhuma etapa foi liberada e nada foi alterado. O que controla o acesso num evento assíncrono é o prazo da coleta, não a etapa atual. Para acompanhar este evento, use a seção Prognósticos, que não depende de etapa.",
+      : "Liberar etapa não se aplica a este evento: ele é assíncrono: as pessoas respondem por conta própria, dentro do prazo da coleta, e não há etapa para o host liberar. Nenhuma etapa foi liberada e nada foi alterado. O que controla o acesso num evento assíncrono é o prazo da coleta, não a etapa atual. Para acompanhar este evento, use a seção Prognósticos, que não depende de etapa.",
   STAGE_RELEASE_STAGE_ABSENT: (d) => {
     const pedida = d?.etapa_pedida;
     const total = d?.total_etapas;
