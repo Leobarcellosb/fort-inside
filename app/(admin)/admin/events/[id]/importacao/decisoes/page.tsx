@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ResolverIdentidadesExternas } from "@/components/features/admin/ResolverIdentidadesExternas";
+import { RegularizarSegundaResposta } from "@/components/features/admin/RegularizarSegundaResposta";
 
 // A PAGINA DA DECISAO DO OPERADOR sobre identidade.
 //
@@ -43,6 +44,8 @@ export default async function DecisoesDeIdentidadePage({
             </Link>
           </p>
         </div>
+
+        <RegularizarSegundaResposta eventId={id} />
 
         <ResolverIdentidadesExternas eventId={id} />
       </div>

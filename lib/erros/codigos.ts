@@ -443,7 +443,7 @@ export interface DetalhesDeErro {
   // nunca e-mail de terceiro (o e-mail aparece na FICHA, não na mensagem de erro).
 
   /** Estado em que a submissão está AGORA, quando é ele que impede a decisão. */
-  estado_da_submissao?: "importavel" | "incompativel" | "pendente" | "conflito" | "revogada";
+  estado_da_submissao?: "importavel" | "incompativel" | "pendente" | "conflito" | "revogada" | "desconsiderada";
   /** Por que o participante escolhido não pode receber esta submissão. */
   ocupacao?: "respostas_canonicas" | "submissao_externa_ativa" | "ambos";
   /** Quantas respostas o participante escolhido já tem. Número, não lista. */
@@ -455,7 +455,14 @@ export interface DetalhesDeErro {
    * prévia nova sem as conflitantes não é o mesmo que recarregar a mesa --, então
    * ele é DECLARADO pelo servidor e não adivinhado pela tela.
    */
-  ato?: "reconciliar" | "revogar" | "importar_lote";
+  ato?:
+    | "reconciliar"
+    | "revogar"
+    | "importar_lote"
+    // migration 029: a segunda resposta do formulario publico
+    | "regularizar"
+    | "desconsiderar"
+    | "confirmar_destinatario";
   /**
    * Em qual dos três estados do contrato de reversibilidade a decisão cai.
    * `correcao_simples` desfaz com um ato; `operacao_controlada` desfaz removendo

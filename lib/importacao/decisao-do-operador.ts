@@ -247,8 +247,12 @@ export function lerPedidoDeRevogacao(bruto: unknown): LeituraDoPedido<PedidoDeRe
 // 2. O QUE SE LE DO BANCO
 // ===========================================================================
 
-/** Os cinco estados de `external_submissions` (migration 022). */
-export type EstadoNoBanco = EstadoDaSubmissao | "revogada";
+/**
+ * Os estados de `external_submissions`: os cinco da 022 e 'desconsiderada' da
+ * 029 (segunda resposta do formulario publico encerrada pelo operador, que fica
+ * preservada e imutavel, fora da fila).
+ */
+export type EstadoNoBanco = EstadoDaSubmissao | "revogada" | "desconsiderada";
 
 export interface LinhaDeSubmissao {
   id: string;
@@ -264,7 +268,7 @@ export interface LinhaDeSubmissao {
   identidade_via: "email_verificado" | "decisao_do_operador" | null;
   quiz_version: number;
   questionario_impressao: string;
-  bloqueio: { motivo?: string } | null;
+  bloqueio: { motivo?: string; codigo?: string } | null;
 }
 
 /**
@@ -505,7 +509,7 @@ function lerLinhaDeSubmissao(r: Record<string, unknown>): LinhaDeSubmissao {
     questionario_impressao: String(r.questionario_impressao ?? ""),
     bloqueio:
       bloqueio !== null && typeof bloqueio === "object" && !Array.isArray(bloqueio)
-        ? (bloqueio as { motivo?: string })
+        ? (bloqueio as { motivo?: string; codigo?: string })
         : null,
   };
 }
@@ -563,6 +567,13 @@ export interface Impedimento {
     | "participante_ocupado"
     | "estado_nao_decidivel"
     | "participante_de_outro_evento"
+    /**
+     * Segunda resposta do formulario publico (SEGUNDA_RESPOSTA_MESMO_EMAIL): nao
+     * se resolve aqui, so com justificativa. Exige FONTE INDEPENDENTE em
+     * vocabulario fechado (lib/importacao/regularizacao.ts, migration 029) -- e o
+     * banco recusa por gatilho se alguem tentar pela reconciliacao generica.
+     */
+    | "exige_regularizacao"
     /** Estado 3 do contrato: ha documento derivado, e desfazer simples esta bloqueado. */
     | "derivado_ja_gerado";
   texto: string;
@@ -790,7 +801,9 @@ function textoDoEstado(e: EstadoNoBanco): string {
         ? "REVOGADA (uma reconciliacao anterior foi desfeita)"
         : e === "importavel"
           ? "reconciliada e apta a pontuar"
-          : "reconciliada e com DADO INCOMPATIVEL";
+          : e === "desconsiderada"
+            ? "DESCONSIDERADA (segunda resposta encerrada pelo operador, preservada como registro)"
+            : "reconciliada e com DADO INCOMPATIVEL";
 }
 
 /**
@@ -1077,7 +1090,16 @@ export function montarFichaDeReconciliacao(
         texto: `esta submissao esta ${textoDoEstado(s.estado)}: ela ja esta reconciliada e nao se reconcilia de novo por cima. Revogue primeiro`,
         detalhes: { estado_da_submissao: s.estado, ato: "reconciliar" },
       };
-  const impedimento = impedimentoDeEstado ?? impedimentoDoAlvo(p);
+  const impedimentoDeRegularizacao: Impedimento | null =
+    impedimentoDeEstado === null && s.bloqueio?.codigo === "SEGUNDA_RESPOSTA_MESMO_EMAIL"
+      ? {
+          codigo: "exige_regularizacao",
+          texto:
+            "esta e a SEGUNDA resposta do formulario publico com um e-mail que ja tinha resposta. Ela nao se resolve aqui, so com justificativa: use \"Segunda resposta com o mesmo e-mail\", que exige fonte independente (lista oficial previa, confirmacao presencial ou contato previamente conhecido) e registra a conferencia",
+          detalhes: { estado_da_submissao: "conflito", ato: "reconciliar" },
+        }
+      : null;
+  const impedimento = impedimentoDeEstado ?? impedimentoDeRegularizacao ?? impedimentoDoAlvo(p);
 
   const plano = planejarDecisaoDoOperador(
     {
@@ -1664,7 +1686,7 @@ export function recusaDaRevalidacao(
   // O estado REAL da submissao no banco depois da recusa. `null` quando ela nunca
   // foi gravada -- e "nao existe linha" nao se escreve como "conflito".
   const estado = r.estado ?? null;
-  const ESTADOS = ["importavel", "incompativel", "pendente", "conflito", "revogada"] as const;
+  const ESTADOS = ["importavel", "incompativel", "pendente", "conflito", "revogada", "desconsiderada"] as const;
   const nomeado = ESTADOS.find((e) => e === estado) ?? null;
   return {
     // Codigo desconhecido NAO vira "conferi e recusei": vira "o ato ficou
