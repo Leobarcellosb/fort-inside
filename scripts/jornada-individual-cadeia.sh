@@ -92,6 +92,9 @@ done
 [ "$pronto" = 1 ] || die "o Postgres nao aceitou conexao em 600s (saturacao, nao defeito do produto)"
 
 echo "== 2/6 migrations (cada nova tentativa e anunciada) =="
+# Conta os arquivos em vez de anunciar um numero fixo: o numero fixo ("24
+# migrations aplicadas") passou a mentir no dia em que entrou a 025.
+N_MIGRATIONS=0
 for f in $(ls "$RAIZ"/supabase/migrations/*.sql | sort); do
   n="$(basename "$f")"; ok=0
   for t in 1 2 3; do
@@ -101,8 +104,9 @@ for f in $(ls "$RAIZ"/supabase/migrations/*.sql | sort); do
     echo "   [aviso] $n nova tentativa $t/3: $(tail -2 "$TRABALHO/mig.err" | tr '\n' ' ' | cut -c1-140)"
   done
   [ "$ok" = 1 ] || die "migration falhou: $n"
+  N_MIGRATIONS=$((N_MIGRATIONS + 1))
 done
-echo "   24 migrations aplicadas"
+echo "   $N_MIGRATIONS migrations aplicadas (contadas, nao presumidas)"
 
 echo "== 3/6 PostgREST de verdade na frente do banco =="
 # O authenticator vem com statement_timeout=8s; sob saturacao a consulta do

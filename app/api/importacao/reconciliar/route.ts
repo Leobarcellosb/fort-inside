@@ -140,20 +140,39 @@ async function reconciliar(req: NextRequest) {
   // 8. O EFEITO, pelo mesmo caminho da importacao.
   const gravacao = await aplicarPlano(supabase as unknown as ClienteDeAplicacao, plano.plano);
   if (!gravacao.ok) {
+    // 8b. O BANCO pode ter CONFERIDO NA HORA DE GRAVAR e recusado (revalidacao da
+    // 024): entre a ficha e a confirmacao, aquelas etapas passaram a ter resposta
+    // de outro dono. Isso NAO e "pronto" e NAO e "nao respondeu": e conferido e
+    // recusado, com a resposta que ja existia INTACTA. O ato continua no
+    // historico, junto da recusa.
+    if (gravacao.recusa !== undefined) {
+      const recusa = recusaDaRevalidacao(gravacao.recusa, linha.submissao_id);
+      if (recusa !== null) {
+        return erroHttp(recusa.codigo, { causa: recusa.motivo, detalhes: recusa.detalhes });
+      }
+      // O lote foi recusado e a recusa nao e desta submissao (o lote da decisao
+      // tem UMA). Conferido e recusado continua sendo o fato -- nada foi gravado
+      // --, e o que nao se afirma e a causa, que nao se tem.
+      return erroHttp("IMPORT_REVALIDATION_REFUSED", {
+        causa: gravacao.motivo,
+        detalhes: { ato: "reconciliar" },
+      });
+    }
+    // A resposta da gravacao se CONTRADIZ (recusa com escrita informada, ou
+    // gravacao com recusas nomeadas): este codigo passa INTEIRO. Traduzi-lo para
+    // IMPORT_ACT_NOT_APPLIED diria ao operador "nenhuma resposta foi gravada", que
+    // e exatamente o que nao foi verificado.
+    if (gravacao.codigo === "IMPORT_WRITE_UNVERIFIABLE") {
+      return erroHttp("IMPORT_WRITE_UNVERIFIABLE", {
+        causa: gravacao.motivo,
+        detalhes: { ato: "reconciliar" },
+      });
+    }
     // O ato ESTA registrado e o efeito nao veio. Nao se diz "nada aconteceu"
     // (aconteceu: o registro) e nao se diz "pronto" (nao foi gravado).
     const codigo =
       gravacao.codigo === "IMPORT_SCHEMA_MISSING" ? "IMPORT_SCHEMA_MISSING" : "IMPORT_ACT_NOT_APPLIED";
     return erroHttp(codigo, { causa: gravacao.motivo, detalhes: { ato: "reconciliar" } });
-  }
-
-  // 8b. O BANCO pode ter recusado na hora de gravar (revalidacao da 024): entre a
-  // ficha e a confirmacao, aquelas etapas passaram a ter resposta de outro dono.
-  // Isso NAO e "pronto" e NAO e "nao respondeu": e conferido e recusado, com a
-  // resposta que ja existia INTACTA. O ato continua no historico, junto da recusa.
-  const recusa = recusaDaRevalidacao(gravacao.resumo, linha.submissao_id);
-  if (recusa !== null) {
-    return erroHttp(recusa.codigo, { causa: recusa.motivo, detalhes: recusa.detalhes });
   }
 
   return NextResponse.json({

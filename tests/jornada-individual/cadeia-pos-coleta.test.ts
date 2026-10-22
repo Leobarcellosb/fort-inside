@@ -517,19 +517,32 @@ descreve("cadeia pos-coleta do documento individual", () => {
 
   // ================================================================= ELO 4
   describe("elo 4 - REVISAO e VERSIONAMENTO", () => {
-    it("o sistema NAO exige revisao antes de entregar: generated -> delivered passa", async () => {
-      // Replica a escrita do botao "Entregar" (PrognosticReviewGrid.deliver)
-      // num participante que NUNCA passou por revisao: B.
+    it("entregar SEM revisao e recusado pelo banco (migration 025), e a revisao legitima libera: controle positivo ao lado", async () => {
+      // ASSERCAO REESCRITA. O que ela afirmava antes: "o sistema NAO exige
+      // revisao antes de entregar: generated -> delivered passa" -- e passava
+      // mesmo, com `reviewed_at` nulo. Isso e o caso EXTREMO do defeito 2
+      // (conteudo entregue que nenhuma aprovacao cobre), e a migration 025 o
+      // fecha: `delivered` exige `final_content` com a MESMA impressao digital
+      // registrada em `conteudo_aprovado_hash`, e o selo so e escrito pelo
+      // gatilho no ato de aprovacao (status `reviewed` com `reviewed_at` novo).
+      // A evidencia nova e a recusa do banco + o selo nulo; o porque esta aqui.
       await zerarCanario();
       const g = await generatePrognostic(P.B.id, eventId);
       expect(g.ok).toBe(true);
       const { data: antes } = await db
         .from("prognostics")
-        .select("id, status, raw_ai_output, edited_content")
+        .select("id, status, raw_ai_output, edited_content, conteudo_aprovado_hash, aprovado_em")
         .eq("participant_id", P.B.id)
         .single();
       const docB = antes as Record<string, any>;
       const final = docB.edited_content ?? docB.raw_ai_output;
+      anota("elo4_B_antes_da_entrega", {
+        status: docB.status,
+        selo: docB.conteudo_aprovado_hash,
+        aprovado_em: docB.aprovado_em,
+      });
+      expect(docB.conteudo_aprovado_hash).toBeNull(); // documento nasce sem aprovacao
+
       const { error } = await db
         .from("prognostics")
         .update({
@@ -538,16 +551,71 @@ descreve("cadeia pos-coleta do documento individual", () => {
           delivered_at: new Date().toISOString(),
         } as never)
         .eq("id", docB.id);
-      anota("elo4_entrega_sem_revisao_erro", error?.message ?? null);
+      anota("elo4_entrega_sem_revisao_recusa", {
+        codigo: (error as any)?.code ?? null,
+        mensagem: error?.message ?? "ACEITO",
+      });
       const { data: depois } = await db
+        .from("prognostics")
+        .select("status, reviewed_at, delivered_at, final_content")
+        .eq("participant_id", P.B.id)
+        .single();
+      anota("elo4_estado_de_B_apos_tentativa_de_entrega", {
+        status: (depois as any).status,
+        reviewed_at: (depois as any).reviewed_at,
+        delivered_at: (depois as any).delivered_at,
+        tem_final: !!(depois as any).final_content,
+      });
+      // A NEGATIVA: nada foi entregue, e o estado nao mudou.
+      expect(error).not.toBeNull();
+      expect((depois as any).status).toBe("generated");
+      expect((depois as any).delivered_at).toBeNull();
+
+      // CONTROLE POSITIVO, no mesmo ambiente: a revisao legitima (a escrita do
+      // PATCH de producao) sela, e a entrega do texto aprovado passa.
+      const revisadoB = { ...docB.raw_ai_output, analise_geral: "TEXTO REVISADO DE B (marca da prova)." };
+      const { error: eRev } = await db
+        .from("prognostics")
+        .update({
+          edited_content: revisadoB,
+          trail_recommendation: revisadoB.trilha_recomendada,
+          status: "reviewed",
+          reviewed_at: new Date().toISOString(),
+          pdf_url: null,
+        } as never)
+        .eq("id", docB.id);
+      expect(eRev).toBeNull();
+      const seloDeB = sql(
+        `select conteudo_aprovado_hash from public.prognostics where id = '${docB.id}'`,
+      );
+      const impressaoDoRevisado = sql(
+        `select encode(sha256(convert_to(coalesce(edited_content, raw_ai_output)::text, 'UTF8')), 'hex')
+           from public.prognostics where id = '${docB.id}'`,
+      );
+      anota("elo4_controle_positivo_selo_de_B", {
+        selo: seloDeB.slice(0, 12),
+        impressao_do_conteudo_em_revisao: impressaoDoRevisado.slice(0, 12),
+      });
+      expect(seloDeB).toBe(impressaoDoRevisado);
+
+      const { error: eEnt } = await db
+        .from("prognostics")
+        .update({
+          final_content: revisadoB,
+          status: "delivered",
+          delivered_at: new Date().toISOString(),
+        } as never)
+        .eq("id", docB.id);
+      anota("elo4_controle_positivo_entrega_de_B", eEnt?.message ?? "ENTREGUE");
+      expect(eEnt).toBeNull();
+      const { data: fim } = await db
         .from("prognostics")
         .select("status, reviewed_at, delivered_at")
         .eq("participant_id", P.B.id)
         .single();
-      anota("elo4_estado_de_B_apos_entrega", depois);
-      // MEDIDO: entregou sem nunca ter sido revisado, e reviewed_at segue nulo.
-      expect((depois as any).status).toBe("delivered");
-      expect((depois as any).reviewed_at).toBeNull();
+      anota("elo4_estado_de_B_apos_revisao_e_entrega", fim);
+      expect((fim as any).status).toBe("delivered");
+      expect((fim as any).reviewed_at).not.toBeNull();
     });
 
     it("revisao de A: a escrita do PATCH de producao grava edited_content e marca reviewed", async () => {
@@ -597,7 +665,7 @@ descreve("cadeia pos-coleta do documento individual", () => {
       expect(depois).toBe(antes); // nao gastou
     });
 
-    it("VERSIONAMENTO: existe UMA linha por participante, sem versao e sem historico", async () => {
+    it("VERSIONAMENTO: segue UMA linha por participante, sem historico -- o que amarra a aprovacao e a IMPRESSAO DIGITAL do conteudo", async () => {
       const linhasDeA = Number(
         sql(`select count(*) from public.prognostics where participant_id = '${P.A.id}'`),
       );
@@ -614,52 +682,183 @@ descreve("cadeia pos-coleta do documento individual", () => {
               or table_name like '%prognostic%histor%'
               or table_name like '%version%prognostic%')`,
       );
+      const travas = sql(
+        `select coalesce(string_agg(conname, ',' order by conname), '(nenhuma)')
+           from pg_constraint
+          where conrelid = 'public.prognostics'::regclass and contype = 'c'`,
+      );
+      const gatilhos = sql(
+        `select coalesce(string_agg(tgname, ',' order by tgname), '(nenhum)')
+           from pg_trigger
+          where tgrelid = 'public.prognostics'::regclass and not tgisinternal`,
+      );
       anota("elo4_linhas_de_prognostico_de_A", linhasDeA);
       anota("elo4_colunas_de_prognostics", colunas.split(","));
       anota("elo4_tabelas_de_historico_ou_versao", tabelasDeHistorico);
+      anota("elo4_checks_de_prognostics", travas.split(","));
+      anota("elo4_gatilhos_de_prognostics", gatilhos.split(","));
       expect(linhasDeA).toBe(1);
-      // MEDIDO: nenhuma coluna de versao, nenhuma tabela de historico.
+      // ASSERCAO REESCRITA. Antes ela so MEDIA a ausencia ("nenhuma coluna de
+      // versao, nenhuma tabela de historico") e parava ali, com o defeito 2
+      // aberto. O desenho escolhido para fecha-lo NAO foi versionar: foi amarrar
+      // a aprovacao a uma impressao digital do conteudo aprovado (migration
+      // 025). Entao a evidencia nova e: segue uma linha por participante e
+      // segue sem historico -- isto e a LIMITACAO declarada do desenho -- e
+      // existem as duas pecas que tornam a entrega de conteudo nao aprovado
+      // IMPOSSIVEL: a coluna do selo, o CHECK do invariante e o gatilho que e o
+      // unico que escreve o selo.
       expect(colunas.split(",")).not.toContain("version");
+      expect(tabelasDeHistorico).toBe("(nenhuma)");
+      expect(colunas.split(",")).toContain("conteudo_aprovado_hash");
+      expect(colunas.split(",")).toContain("aprovado_em");
+      expect(travas.split(",")).toContain("prognostics_entrega_cobre_aprovacao");
+      expect(gatilhos.split(",")).toContain("prognostics_selo_de_aprovacao");
+      // O gatilho da 015 continua no lugar: ele cobre regressao de ESTADO, que
+      // e outro fato e nao foi substituido por este trabalho.
+      expect(gatilhos.split(",")).toContain("prognostics_status_sem_regressao");
     });
 
-    it("CONTEUDO MUDA DEPOIS DE REVISADO: a aprovacao anterior continua valendo?", async () => {
+    it("CONTEUDO TROCADO DEPOIS DE APROVADO: a aprovacao DEIXA de cobri-lo e a ENTREGA e recusada", async () => {
+      // ASSERCAO REESCRITA. Antes este teste terminava em
+      // `expect(d.status).toBe("reviewed")` e `expect(d.reviewed_at).toBe(...)`
+      // -- isto e, AFIRMAVA o defeito: "a aprovacao anterior continua valendo
+      // sobre um texto diferente do que foi aprovado". Os dois fatos antigos
+      // continuam verdadeiros e seguem medidos (a troca de conteudo e uma
+      // escrita legitima, e o gatilho da 015 nem dispara, porque ele e
+      // `before update of status`). O que mudou e a CONSEQUENCIA, e e ela a
+      // evidencia nova: o selo de aprovacao deixa de bater com o conteudo, e o
+      // banco RECUSA entregar esse texto. O selo nao e apagado nem reescrito --
+      // ele segue dizendo a verdade sobre qual texto foi aprovado.
       const { data: antes } = await db
         .from("prognostics")
-        .select("id, status, reviewed_at, edited_content")
+        .select("id, status, reviewed_at, edited_content, conteudo_aprovado_hash")
         .eq("participant_id", P.A.id)
         .single();
       const doc = antes as Record<string, any>;
       const revisadoEm = doc.reviewed_at;
+      const seloDaAprovacao = doc.conteudo_aprovado_hash as string;
+      expect(seloDaAprovacao).not.toBeNull();
 
-      // Troca SO o conteudo, sem tocar no status (nao e regressao: o gatilho da
-      // 015 nem dispara, porque ele e `before update of status`).
+      const trocado = {
+        ...doc.edited_content,
+        analise_geral: "TEXTO TROCADO DEPOIS DA APROVACAO (marca da prova).",
+      };
+      // Troca SO o conteudo, sem tocar no status nem na data de revisao.
       const { error } = await db
         .from("prognostics")
-        .update({
-          edited_content: {
-            ...doc.edited_content,
-            analise_geral: "TEXTO TROCADO DEPOIS DA APROVACAO (marca da prova).",
-          },
-        } as never)
+        .update({ edited_content: trocado } as never)
         .eq("id", doc.id);
 
       const { data: depois } = await db
         .from("prognostics")
-        .select("status, reviewed_at, edited_content")
+        .select("status, reviewed_at, edited_content, conteudo_aprovado_hash")
         .eq("participant_id", P.A.id)
         .single();
       const d = depois as Record<string, any>;
+      const impressaoDoTextoDeAgora = sql(
+        `select encode(sha256(convert_to(coalesce(edited_content, raw_ai_output)::text, 'UTF8')), 'hex')
+           from public.prognostics where id = '${doc.id}'`,
+      );
       anota("elo4_troca_de_conteudo_pos_aprovacao", {
         erro: error?.message ?? null,
         status_continua: d.status,
         reviewed_at_mudou: d.reviewed_at !== revisadoEm,
         texto_agora: String(d.edited_content?.analise_geral ?? "").slice(0, 60),
+        selo_mudou: d.conteudo_aprovado_hash !== seloDaAprovacao,
+        selo: String(d.conteudo_aprovado_hash).slice(0, 12),
+        impressao_do_texto_de_agora: impressaoDoTextoDeAgora.slice(0, 12),
       });
-      // MEDIDO: o conteudo trocou, o status seguiu `reviewed` e `reviewed_at`
-      // nao mudou -- a aprovacao anterior cobre um texto que ninguem aprovou.
       expect(error).toBeNull();
       expect(d.status).toBe("reviewed");
       expect(d.reviewed_at).toBe(revisadoEm);
+      // O selo e IMUTAVEL fora do ato de aprovacao, e agora NAO cobre o texto.
+      expect(d.conteudo_aprovado_hash).toBe(seloDaAprovacao);
+      expect(impressaoDoTextoDeAgora).not.toBe(seloDaAprovacao);
+
+      // A CONSEQUENCIA: entregar o texto trocado e RECUSADO pelo banco.
+      const { error: eEntrega } = await db
+        .from("prognostics")
+        .update({
+          final_content: trocado,
+          status: "delivered",
+          delivered_at: new Date().toISOString(),
+        } as never)
+        .eq("id", doc.id);
+      anota("elo4_entrega_do_texto_trocado", {
+        codigo: (eEntrega as any)?.code ?? null,
+        mensagem: eEntrega?.message ?? "ACEITO",
+      });
+      expect(eEntrega).not.toBeNull();
+
+      // E O QUE O PARTICIPANTE VE: a consulta EXATA da pagina de entrega
+      // (app/(participant)/prognostic/[token]/page.tsx) nao acha nada.
+      const tokenDeA = sql(
+        `select public_share_token from public.prognostics where id = '${doc.id}'`,
+      );
+      const { data: pagina } = await db
+        .from("prognostics")
+        .select("final_content")
+        .eq("public_share_token", tokenDeA)
+        .eq("status", "delivered")
+        .maybeSingle();
+      anota("elo4_o_que_o_participante_ve_com_o_texto_trocado", pagina ? "MOSTROU" : "404 (nada entregue)");
+      expect(pagina).toBeNull();
+    });
+
+    it("CONTROLE POSITIVO da correcao legitima: salvar a revisao REAPROVA no mesmo ato e a entrega e liberada", async () => {
+      // A decisao de produto declarada: corrigir uma virgula INVALIDA a
+      // aprovacao anterior (teste acima) E a propria correcao, salva pelo
+      // caminho da revisao, e uma nova aprovacao -- a rota grava status
+      // `reviewed` com `reviewed_at` NOVO, e o gatilho sela o texto daquele
+      // instante. Sem este controle positivo, a correcao acima poderia estar
+      // medindo "entrega quebrada para todo mundo".
+      const { data: antes } = await db
+        .from("prognostics")
+        .select("id, reviewed_at, raw_ai_output, conteudo_aprovado_hash")
+        .eq("participant_id", P.A.id)
+        .single();
+      const doc = antes as Record<string, any>;
+      const seloAntigo = doc.conteudo_aprovado_hash as string;
+      const revisadoEmAntigo = doc.reviewed_at as string;
+
+      const reaprovado = {
+        ...doc.raw_ai_output,
+        analise_geral: "TEXTO REAPROVADO PELO HOST APOS CORRECAO (marca da prova).",
+      };
+      // A MESMA escrita de app/api/prognostics/[id]/route.ts.
+      const { error } = await db
+        .from("prognostics")
+        .update({
+          edited_content: reaprovado,
+          yuri_note: null,
+          trail_recommendation: reaprovado.trilha_recomendada,
+          status: "reviewed",
+          reviewed_at: new Date().toISOString(),
+          pdf_url: null,
+        } as never)
+        .eq("id", doc.id);
+      expect(error).toBeNull();
+
+      const { data: depois } = await db
+        .from("prognostics")
+        .select("reviewed_at, aprovado_em, conteudo_aprovado_hash")
+        .eq("participant_id", P.A.id)
+        .single();
+      const d = depois as Record<string, any>;
+      const impressaoDoReaprovado = sql(
+        `select encode(sha256(convert_to(coalesce(edited_content, raw_ai_output)::text, 'UTF8')), 'hex')
+           from public.prognostics where id = '${doc.id}'`,
+      );
+      anota("elo4_reaprovacao", {
+        selo_novo: String(d.conteudo_aprovado_hash).slice(0, 12),
+        selo_antigo: String(seloAntigo).slice(0, 12),
+        impressao_do_texto_reaprovado: impressaoDoReaprovado.slice(0, 12),
+        aprovado_em_igual_reviewed_at: d.aprovado_em === d.reviewed_at,
+        reviewed_at_avancou: d.reviewed_at !== revisadoEmAntigo,
+      });
+      expect(d.conteudo_aprovado_hash).toBe(impressaoDoReaprovado);
+      expect(d.conteudo_aprovado_hash).not.toBe(seloAntigo);
+      expect(d.aprovado_em).toBe(d.reviewed_at);
     });
 
     it("depois de ENTREGUE, a rota de revisao nao consegue mais escrever (regressao recusada pelo banco)", async () => {
@@ -680,8 +879,18 @@ descreve("cadeia pos-coleta do documento individual", () => {
           reviewed_at: new Date().toISOString(),
         } as never)
         .eq("id", doc.id);
-      anota("elo4_corrigir_documento_entregue", error?.message ?? "ACEITO");
+      anota("elo4_corrigir_documento_entregue", {
+        codigo: (error as any)?.code ?? null,
+        mensagem: error?.message ?? "ACEITO",
+      });
       expect(error).not.toBeNull();
+      // ASSERCAO ACRESCENTADA: o codigo do banco e `23514` (check_violation), e
+      // e exatamente nele que `app/api/prognostics/[id]/route.ts` passou a
+      // ramificar para devolver PROGNOSTIC_STATE_REGRESSION (400) em vez do
+      // texto cru do banco com 500 -- erro de produto vestido de falha de
+      // servidor. A rota em si nao e servida nesta prova (ver o cabecalho); o
+      // que esta prova garante e o FATO de banco em que ela se apoia.
+      expect((error as any)?.code).toBe("23514");
     });
   });
 
@@ -727,11 +936,22 @@ descreve("cadeia pos-coleta do documento individual", () => {
       });
       expect(vista?.participants?.full_name).toBe("Participante A");
 
-      // O que a entrega mostra e o texto REVISADO (final_content), nao o cru.
-      anota(
-        "elo5_entrega_mostra_texto_revisado",
-        String(vista.final_content?.analise_geral ?? "").startsWith("TEXTO TROCADO"),
+      // ASSERCAO REESCRITA. Antes esta linha apenas ANOTAVA que a entrega
+      // mostrava o texto que comecava com "TEXTO TROCADO" -- o texto que
+      // ninguem aprovou. Agora o que chega ao participante e o texto
+      // REAPROVADO, e o trocado nao chega: a entrega so passou depois da
+      // reaprovacao, e o que foi entregue tem a impressao digital aprovada.
+      const textoEntregue = String(vista.final_content?.analise_geral ?? "");
+      anota("elo5_texto_que_o_participante_ve", textoEntregue.slice(0, 70));
+      anota("elo5_entrega_mostra_texto_reaprovado", textoEntregue.startsWith("TEXTO REAPROVADO"));
+      expect(textoEntregue).toContain("TEXTO REAPROVADO");
+      expect(textoEntregue).not.toContain("TEXTO TROCADO");
+      const conferencia = sql(
+        `select conteudo_aprovado_hash = encode(sha256(convert_to(final_content::text, 'UTF8')), 'hex')
+           from public.prognostics where participant_id = '${P.A.id}'`,
       );
+      anota("elo5_impressao_do_entregue_bate_com_a_aprovada", conferencia);
+      expect(conferencia).toBe("t");
     });
 
     it("A NAO ve o documento de B, e anonimo nao ve nenhum (com controle positivo)", async () => {
@@ -907,7 +1127,7 @@ descreve("cadeia pos-coleta do documento individual", () => {
       expect(depois).toBe(antes);
     });
 
-    it("RESPOSTA PARCIAL - 5 etapas mas perguntas faltando: virou documento?", async () => {
+    it("RESPOSTA PARCIAL - 5 etapas mas as 30 perguntas do motor ausentes: RECUSADO, sem chamada ao modelo e sem documento", async () => {
       await criarParticipante("F");
       // As 5 linhas existem (o portao de contexto-quiz conta LINHAS), mas as 24
       // Likert e as 6 situacionais que o motor consome estao ausentes.
@@ -941,10 +1161,127 @@ descreve("cadeia pos-coleta do documento individual", () => {
       );
       anota("elo6_parcial_perguntas_documentos_gravados", linhas);
 
-      // Esta asserção e a MEDICAO, nao a preferencia: o relatorio diz em qual
-      // lado o produto caiu. Se o gerador aceitar, `ok` e true e ha documento.
+      // ASSERCAO REESCRITA. Antes era `expect(typeof r.ok).toBe("boolean")` --
+      // uma assercao que passa nos DOIS lados e por isso documentava o defeito
+      // 1 sem reprova-lo (medido: o gerador ACEITOU, chamou o modelo, gastou a
+      // chamada e GRAVOU o documento com os quatro eixos em zero). A evidencia
+      // nova e a recusa COM CODIGO PROPRIO do portao de completude
+      // (lib/ai/completude-marco-zero.ts), zero chamada ao modelo e zero linha
+      // em `prognostics`.
       anota("elo6_parcial_perguntas_veredito", r.ok ? "GEROU DOCUMENTO" : "RECUSOU");
-      expect(typeof r.ok).toBe("boolean");
+      expect(r.ok).toBe(false);
+      if (r.ok) return;
+      expect(r.status).toBe(400);
+      expect(r.code).toBe("PROGNOSTIC_RESPONSES_INSUFFICIENT");
+      expect(r.detalhes?.blocos_incompletos).toEqual(["likert", "situacional"]);
+      expect(r.detalhes?.itens?.length).toBe(30);
+      // A mensagem DIZ O QUE FALTA, e nao carrega texto de resposta de ninguem.
+      expect(r.error).toContain("de 24");
+      expect(depois).toBe(antes); // nenhuma chamada ao modelo
+      expect(linhas).toBe(0); // nenhum documento gravado
+    });
+
+    it("FRONTEIRA DO LIMIAR, os dois lados: 2 Elementos ausentes GERA; 3 ausentes RECUSA", async () => {
+      // O limiar e um por bloco, e o unico que nao e "todos" e o dos Elementos
+      // da Vida Plena: `MINIMO_ELEMENTOS_ANALISE_PARCIAL` (5 de 7), importado
+      // do motor, onde o proprio motor ja separa "parcial" de "insuficiente".
+      // Esta prova mede os dois lados do mesmo numero, no mesmo ambiente.
+      await criarParticipante("G"); // 5 de 7 Elementos: o lado que PASSA
+      const errosG = await gravarPelaTela(
+        "G",
+        respostasCanonicas({ omitir: new Set(["q12", "q13"]) }),
+      );
+      expect(errosG.every((e) => e === null)).toBe(true);
+      await concluir("G");
+
+      await criarParticipante("H"); // 4 de 7 Elementos: o lado que RECUSA
+      const errosH = await gravarPelaTela(
+        "H",
+        respostasCanonicas({ omitir: new Set(["q11", "q12", "q13"]) }),
+      );
+      expect(errosH.every((e) => e === null)).toBe(true);
+      await concluir("H");
+
+      await zerarCanario();
+      const antes = await chamadasAoModelo();
+      const rG = await generatePrognostic(P.G.id, eventId);
+      const depoisDeG = await chamadasAoModelo();
+      const rH = await generatePrognostic(P.H.id, eventId);
+      const depoisDeH = await chamadasAoModelo();
+
+      anota("elo6_fronteira_5_de_7_elementos", {
+        ok: rG.ok,
+        code: (rG as any).code ?? null,
+        chamadas: { antes, depois: depoisDeG },
+      });
+      anota("elo6_fronteira_4_de_7_elementos", {
+        ok: rH.ok,
+        status: (rH as any).status ?? null,
+        code: (rH as any).code ?? null,
+        detalhes: (rH as any).detalhes ?? null,
+        chamadas: { antes: depoisDeG, depois: depoisDeH },
+      });
+      anota("elo6_fronteira_documentos_gravados", {
+        G: Number(sql(`select count(*) from public.prognostics where participant_id = '${P.G.id}'`)),
+        H: Number(sql(`select count(*) from public.prognostics where participant_id = '${P.H.id}'`)),
+      });
+
+      // O LADO QUE PASSA (controle positivo do limiar).
+      expect(rG.ok).toBe(true);
+      expect(depoisDeG).toBeGreaterThan(antes);
+      // O LADO QUE RECUSA, com o codigo proprio e sem gastar o modelo.
+      expect(rH.ok).toBe(false);
+      expect((rH as any).code).toBe("PROGNOSTIC_RESPONSES_INSUFFICIENT");
+      expect((rH as any).detalhes?.blocos_incompletos).toEqual(["elementos"]);
+      expect(depoisDeH).toBe(depoisDeG);
+      expect(
+        Number(sql(`select count(*) from public.prognostics where participant_id = '${P.H.id}'`)),
+      ).toBe(0);
+    });
+
+    it("FRONTEIRA DO LIMIAR: UMA pergunta Likert em branco (29 de 30) ja RECUSA, e o controle positivo e A", async () => {
+      // O lado rigido do limiar, medido: nos blocos Likert e situacional o item
+      // ausente nao vira "nao sei", vira ZERO na soma -- entao uma pergunta em
+      // branco produz um eixo REBAIXADO, e o texto falaria com autoridade sobre
+      // uma medida errada. Zero tolerancia ali e decisao declarada, e ela nao
+      // custa documento de quem respondeu pelo aplicativo: as 37 perguntas que
+      // o motor consome sao todas `required` e a tela nao deixa enviar a etapa
+      // com pergunta `required` em branco.
+      await criarParticipante("I");
+      const erros = await gravarPelaTela("I", respostasCanonicas({ omitir: new Set(["q31"]) }));
+      expect(erros.every((e) => e === null)).toBe(true);
+      await concluir("I");
+
+      await zerarCanario();
+      const antes = await chamadasAoModelo();
+      const r = await generatePrognostic(P.I.id, eventId);
+      const depois = await chamadasAoModelo();
+      const linhas = Number(
+        sql(`select count(*) from public.prognostics where participant_id = '${P.I.id}'`),
+      );
+      anota("elo6_fronteira_uma_likert_em_branco", {
+        ok: r.ok,
+        status: (r as any).status ?? null,
+        code: (r as any).code ?? null,
+        detalhes: (r as any).detalhes ?? null,
+        error: (r as any).error ?? null,
+        chamadas: { antes, depois },
+        documentos_gravados: linhas,
+      });
+      expect(r.ok).toBe(false);
+      expect((r as any).code).toBe("PROGNOSTIC_RESPONSES_INSUFFICIENT");
+      expect((r as any).detalhes?.itens).toEqual(["q31"]);
+      expect(depois).toBe(antes);
+      expect(linhas).toBe(0);
+
+      // CONTROLE POSITIVO ja medido no elo 3: A, com as 52 respondidas, gerou
+      // documento neste mesmo ambiente. Aqui so se afirma que o portao nao
+      // passou a recusar todo mundo.
+      const docsDeA = Number(
+        sql(`select count(*) from public.prognostics where participant_id = '${P.A.id}'`),
+      );
+      anota("elo6_controle_positivo_A_segue_com_documento", docsDeA);
+      expect(docsDeA).toBe(1);
     });
   });
 });

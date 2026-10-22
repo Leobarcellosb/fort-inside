@@ -18,8 +18,11 @@ import { MENSAGEM_GENERICA } from "../../../lib/erros/mensagens-host";
 import type { Previa } from "../../../lib/importacao/borda";
 import {
   DESFECHO_DO_CODIGO,
+  TITULO_DO_AVISO,
   aplicarImportacao,
   conferirPreviaContraGravado,
+  desfechoDeErro,
+  linhaDaRecusa,
   pedirPrevia,
   porcentagem,
   resumoDaPrevia,
@@ -309,6 +312,163 @@ describe("a previa e a aplicacao sao duas rotas, e a confirmacao leva a previa v
   it("CONTROLE POSITIVO: 200 com previa e resumo -> aplicado", async () => {
     const d = await aplicarImportacao(PEDIDO, PREVIA, async () => json(200, { ok: true, previa: PREVIA, gravado: GRAVADO }));
     expect(d.tipo).toBe("aplicado");
+  });
+
+  it("CONTROLE POSITIVO: o lote legitimo continua dizendo que GRAVOU, e a previa bate", async () => {
+    // O que impede esta correcao de ser "recusa tudo": o mesmo caminho, com um
+    // lote integro, chega a tela como gravacao -- com o titulo de gravacao, nao de
+    // recusa -- e a conferencia previa-contra-gravado bate.
+    const d = await aplicarImportacao(PEDIDO, PREVIA, async () =>
+      json(200, { ok: true, previa: PREVIA, gravado: GRAVADO }),
+    );
+    expect(d.tipo).toBe("aplicado");
+    if (d.tipo !== "aplicado") return;
+    expect(TITULO_DO_AVISO[d.tipo]).toBe("Importação gravada");
+    expect(TITULO_DO_AVISO[d.tipo]).not.toMatch(/recusad/i);
+    expect(d.gravado.linhas_de_resposta_gravadas).toBe(PREVIA.linhas_de_resposta_a_gravar);
+    expect(conferirPreviaContraGravado(d.previa, d.gravado)).toEqual({ bate: true });
+  });
+});
+
+// ======================================= o LOTE RECUSADO na revalidacao, na tela
+//
+// Um lote recusado NAO E ERRO: e um desfecho previsto que protegeu a resposta de
+// alguem. A tela tem de dizer isso, dizer que NADA foi gravado, dizer QUAL
+// submissao causou e por que, e dizer o que fazer -- previa nova sem as
+// conflitantes. Nada disso pode aparecer como falha de conexao nem como erro
+// interno, e nenhum numero estranho pode aparecer como sucesso parcial.
+describe("o LOTE RECUSADO na revalidacao e um desfecho PREVISTO, nomeado na tela", () => {
+  const detalhesDoLote = (
+    recusadas: unknown[],
+    revalidacao: string | undefined = "resposta_do_aplicativo",
+  ) => ({ ato: "importar_lote", ...(revalidacao ? { revalidacao } : {}), recusadas });
+
+  const recusada = (over: Record<string, unknown> = {}) => ({
+    submissao_id: "resp-1",
+    codigo: "resposta_do_aplicativo",
+    etapas_em_conflito: ["104"],
+    etapas_nao_gravadas: 5,
+    ...over,
+  });
+
+  const respostaDaRota = (detalhes: unknown) =>
+    erroHttp("IMPORT_REVALIDATION_REFUSED", { detalhes: detalhes as never }).clone();
+
+  it("NEGATIVA: a recusa chega como `lote_recusado`, com a lista e a acao -- nunca como sucesso", async () => {
+    const d = await aplicarImportacao(PEDIDO, PREVIA, async () =>
+      respostaDaRota(detalhesDoLote([recusada()])),
+    );
+    expect(d.tipo).toBe("lote_recusado");
+    if (d.tipo !== "lote_recusado") return;
+    expect(d.codigo).toBe("IMPORT_REVALIDATION_REFUSED");
+    expect(d.acao).toBe("refazer_previa_sem_as_recusadas");
+    expect(d.recusadas).toHaveLength(1);
+
+    // A CLASSE continua saindo da tabela unica: conferido e nao permitido.
+    expect(DESFECHO_DO_CODIGO.IMPORT_REVALIDATION_REFUSED.classe).toBe("recusado");
+
+    // O texto: lote inteiro, nada gravado, resposta intacta, e a instrucao.
+    expect(texto(d)).toMatch(/LOTE INTEIRO foi recusado/);
+    expect(texto(d)).toMatch(/NADA foi gravado/);
+    expect(texto(d)).toMatch(/continua intacta/);
+    expect(texto(d)).toMatch(/PRÉVIA NOVA sem elas/);
+    // E NAO diz que algo quebrou, nem manda esperar, nem manda instalar nada.
+    expect(texto(d)).not.toMatch(/erro|defeito|falhou|sem conexão/i);
+    expect(texto(d)).not.toMatch(/aguarde|instalar|migration/i);
+    // O titulo diz, na primeira linha, as duas coisas que importam.
+    expect(TITULO_DO_AVISO[d.tipo]).toMatch(/NADA foi gravado/);
+    // E a submissao e nomeada, com a causa, por uma funcao so.
+    expect(linhaDaRecusa(d.recusadas[0], PREVIA)).toMatch(
+      /^resp-1 \(a@x\): o participante respondeu PELO APLICATIVO/,
+    );
+  });
+
+  it("NEGATIVA: lista VAZIA ou ILEGIVEL num corpo que diz recusa e INDISPONIBILIDADE, nao 'recusa sem motivo'", async () => {
+    // Nao se afirma recusa sem poder dizer o que tirar da planilha. E
+    // indisponibilidade: o recurso existe, respondeu, e o que respondeu nao da
+    // para ler. Nem recusa, nem "o recurso nao esta instalado".
+    const corpos = [
+      detalhesDoLote([]),
+      detalhesDoLote([{ codigo: "resposta_do_aplicativo" }]), // sem submissao_id
+      detalhesDoLote([{ submissao_id: "   " }], undefined), // sem id utilizavel
+      detalhesDoLote(["resp-1"] as unknown[]), // nem objeto
+      {}, // sem detalhes nenhum
+    ];
+    for (const detalhes of corpos) {
+      const d = await aplicarImportacao(PEDIDO, PREVIA, async () => respostaDaRota(detalhes), () => {});
+      expect(d.tipo).toBe("nao_verificado");
+      if (d.tipo !== "nao_verificado") return;
+      expect(d.codigo).toBe("IMPORT_UNAVAILABLE");
+      expect(d.acao).toBe("aguardar");
+      expect(texto(d)).toMatch(/não respondeu/);
+      expect(texto(d)).toMatch(/aguarde/i);
+      // NAO afirma recusa e NAO manda mexer no banco.
+      expect(texto(d)).not.toMatch(/recusad/i);
+      expect(texto(d)).not.toMatch(/migration|instalar/i);
+    }
+  });
+
+  it("causa com nome que a tela nao conhece: a recusa continua afirmada, a CAUSA nao e inventada", async () => {
+    const d = await aplicarImportacao(PEDIDO, PREVIA, async () =>
+      respostaDaRota(detalhesDoLote([recusada({ codigo: "algo_que_ninguem_previu" })], undefined)),
+    );
+    expect(d.tipo).toBe("lote_recusado");
+    if (d.tipo !== "lote_recusado") return;
+    // O FATO (lote recusado, nada gravado) foi verificado e e afirmado.
+    expect(texto(d)).toMatch(/LOTE INTEIRO foi recusado/);
+    // A CAUSA nao: ela nao e traduzida por semelhanca nem omitida em silencio.
+    expect(d.recusadas[0].codigo).toBeNull();
+    expect(linhaDaRecusa(d.recusadas[0], PREVIA)).toMatch(/nome que esta versão da tela ainda não conhece/);
+  });
+
+  it("resposta que SE CONTRADIZ: a tela nao afirma nem que gravou nem que nao gravou", async () => {
+    // A guarda da borda (lib/importacao/borda.ts) ja impede este corpo de ser
+    // lido como recusa; aqui se mede o que a TELA diz quando o codigo chega.
+    const d = await aplicarImportacao(
+      PEDIDO,
+      PREVIA,
+      async () => erroHttp("IMPORT_WRITE_UNVERIFIABLE").clone(),
+      () => {},
+    );
+    expect(d.tipo).toBe("estado_incerto");
+    if (d.tipo !== "estado_incerto") return;
+    expect(d.codigo).toBe("IMPORT_WRITE_UNVERIFIABLE");
+    // Indisponibilidade na classificacao, mas a acao NAO e esperar: esperar e
+    // tentar de novo convidaria a gravar duas vezes o que talvez ja esteja lá.
+    expect(DESFECHO_DO_CODIGO.IMPORT_WRITE_UNVERIFIABLE.classe).toBe("nao_verificado");
+    expect(d.acao).toBe("conferir_o_que_esta_gravado");
+
+    const naTela = `${TITULO_DO_AVISO[d.tipo]} ${texto(d)}`;
+    // Nenhum dos dois lados e AFIRMADO -- nem o titulo o afirma. (A mensagem
+    // RELATA o que o banco disse, inclusive a palavra "RECUSADO"; relatar a
+    // contradicao e o oposto de afirmar um dos lados dela.)
+    expect(naTela).not.toMatch(/nada foi gravado/i);
+    expect(naTela).not.toMatch(/O LOTE INTEIRO foi recusado/);
+    expect(naTela).not.toMatch(/importação gravada/i);
+    expect(TITULO_DO_AVISO[d.tipo]).not.toMatch(/recusad/i);
+    // E diz o que se sabe, com a instrucao de conferir antes de repetir.
+    expect(TITULO_DO_AVISO[d.tipo]).toMatch(/se contradiz/);
+    expect(texto(d)).toMatch(/não dá para dizer que o lote entrou, e não dá para dizer que ele não entrou/);
+    expect(texto(d)).toMatch(/NÃO repita a importação antes de conferir/);
+    expect(texto(d)).not.toMatch(/aguarde/i);
+    expect(texto(d)).not.toMatch(/instalar|migration/i);
+  });
+
+  it("o MESMO codigo, na decisao sobre UMA submissao, continua pedindo a ficha nova", async () => {
+    // Um codigo, dois atos, duas acoes -- e uma so tabela de classificacao. A
+    // tela da decisao usa `desfechoDeErro`, que nao sabe de lote: ela pede a mesa.
+    const d = desfechoDeErro(
+      erroHttp("IMPORT_REVALIDATION_REFUSED", {
+        detalhes: { ato: "reconciliar", revalidacao: "resposta_do_aplicativo" },
+      }).clone(),
+      { code: "IMPORT_REVALIDATION_REFUSED", detalhes: { ato: "reconciliar", revalidacao: "resposta_do_aplicativo" } },
+      () => {},
+    );
+    expect(d.tipo).toBe("recusado");
+    if (d.tipo !== "recusado") return;
+    expect(d.acao).toBe("refazer_ficha");
+    expect(texto(d)).toMatch(/Recarregue a mesa/);
+    expect(texto(d)).not.toMatch(/LOTE INTEIRO/);
   });
 });
 

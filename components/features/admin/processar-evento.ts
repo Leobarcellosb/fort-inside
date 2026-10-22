@@ -103,6 +103,11 @@ const CLASSE_DO_CODIGO: Record<CodigoDeErro, "recusado" | "bloqueado" | "fila_in
   // corresponde ao fato, nunca na da fila.
   IMPORT_SCHEMA_MISSING: "bloqueado",
   IMPORT_UNAVAILABLE: "bloqueado",
+  // Respondeu e a resposta se contradiz: indisponibilidade, como as outras desta
+  // classe. A tela da importação tem título próprio para ela, porque lá o aviso
+  // de "não foi possível verificar" termina em "nada foi gravado" -- e é isso que
+  // esta resposta não permite afirmar.
+  IMPORT_WRITE_UNVERIFIABLE: "bloqueado",
   IMPORT_MANIFEST_MISMATCH: "recusado",
   IMPORT_MANIFEST_UNVERIFIABLE: "bloqueado",
   IMPORT_SPREADSHEET_INVALID: "recusado",

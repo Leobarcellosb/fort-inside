@@ -28,6 +28,7 @@ import type {
 } from "../../../lib/importacao/decisao-do-operador";
 import {
   MENSAGEM_SEM_CONEXAO,
+  TITULO_DO_ESTADO_INCERTO,
   corpoDe,
   desfechoDeErro,
   ocorrenciaDaResposta,
@@ -46,7 +47,16 @@ export const ROTA_DE_REVOGAR = "/api/importacao/revogar";
 /** Os ramos de erro, reaproveitados inteiros da tela da importacao. */
 export type DesfechoDeErro = Extract<
   Desfecho,
-  { tipo: "recusado" } | { tipo: "nao_verificado" } | { tipo: "recurso_ausente" } | { tipo: "erro_inesperado" } | { tipo: "sem_conexao" }
+  // `estado_incerto` entra porque a reconciliacao tambem passa por `aplicarPlano`:
+  // se a resposta da gravacao se contradisser, o codigo chega aqui, e ele NAO pode
+  // ser mostrado como "o ato foi registrado e nao foi efetivado" -- essa frase
+  // afirma que nada foi gravado, que e justamente o que nao se sabe.
+  | { tipo: "recusado" }
+  | { tipo: "nao_verificado" }
+  | { tipo: "estado_incerto" }
+  | { tipo: "recurso_ausente" }
+  | { tipo: "erro_inesperado" }
+  | { tipo: "sem_conexao" }
 >;
 
 export type DesfechoDaMesa = { tipo: "mesa"; mesa: MesaDeDecisao } | DesfechoDeErro;
@@ -297,4 +307,6 @@ export const TITULO_DO_CODIGO: Partial<Record<CodigoDeErro, string>> = {
   IMPORT_REVOKE_BLOCKED: "Há documento gerado a partir destas respostas — nada foi alterado",
   IMPORT_DERIVATIVES_UNVERIFIABLE: "Não foi possível verificar os derivados — nada foi alterado",
   IMPORT_ACT_NOT_APPLIED: "A decisão foi registrada e não foi efetivada",
+  // O titulo nasce na tela da importacao e e importado: um fato, um texto.
+  IMPORT_WRITE_UNVERIFIABLE: TITULO_DO_ESTADO_INCERTO,
 };

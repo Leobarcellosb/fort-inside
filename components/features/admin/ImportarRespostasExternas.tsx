@@ -27,9 +27,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  ROTULO_DA_ACAO,
+  TITULO_DO_AVISO,
   aplicarImportacao,
   conferirPreviaContraGravado,
   contarEstados,
+  linhaDaRecusa,
   pedirPrevia,
   porcentagem,
   resumoDaPrevia,
@@ -44,40 +47,25 @@ interface Props {
   eventId: string;
 }
 
-/** O rotulo de cada acao sugerida. O texto da causa vem da mensagem do host. */
-const ROTULO_DA_ACAO: Record<string, string> = {
-  corrigir_planilha: "Corrija a planilha e confira de novo.",
-  corrigir_coleta: "Corrija a coleta (o formulário ou a versão) e confira de novo.",
-  refazer_previa: "Gere a prévia outra vez.",
-  refazer_ficha: "Recarregue a mesa de decisões e confirme a partir da ficha que ela mostra.",
-  escolher_outro_alvo: "Escolha outro participante, ou revogue antes a reconciliação que ocupa esse participante.",
-  entrar_de_novo: "Entre de novo como administrador.",
-  aguardar: "Aguarde alguns instantes e tente de novo.",
-  instalar_no_banco: "Avise a equipe técnica: falta instalar a atualização do banco.",
-  falar_com_equipe: "Avise a equipe técnica.",
-};
-
 const CLASSES_DO_AVISO: Record<Desfecho["tipo"], string> = {
   previa: "border-border bg-muted/40",
   aplicado: "border-emerald-600/40 bg-emerald-600/10",
+  // LOTE RECUSADO NA REVALIDACAO -> desfecho PREVISTO, nada gravado, resposta de
+  // quem respondeu intacta. Nao usa a cor de erro: nada quebrou. Usa a mesma cor
+  // de "conferido e nao permitido", porque e exatamente isso que aconteceu.
+  lote_recusado: "border-amber-600/50 bg-amber-600/10",
   // CONFERI E NAO PERMITI -> ha o que corrigir.
   recusado: "border-amber-600/50 bg-amber-600/10",
   // NAO CONSEGUI VERIFICAR -> nada foi decidido. Nao e culpa de ninguem.
   nao_verificado: "border-sky-600/50 bg-sky-600/10",
+  // NAO DA PARA AFIRMAR O QUE FOI GRAVADO -> a unica situacao desta tela em que o
+  // estado do banco esta em duvida. Cor propria, porque a reacao e propria:
+  // conferir antes de tentar de novo.
+  estado_incerto: "border-orange-600/60 bg-orange-600/10",
   // NAO ESTA INSTALADO -> nem o operador nem a espera resolvem.
   recurso_ausente: "border-violet-600/50 bg-violet-600/10",
   erro_inesperado: "border-destructive/50 bg-destructive/10",
   sem_conexao: "border-destructive/50 bg-destructive/10",
-};
-
-const TITULO_DO_AVISO: Record<Desfecho["tipo"], string> = {
-  previa: "Prévia",
-  aplicado: "Importação gravada",
-  recusado: "Conferido e não autorizado — nada foi gravado",
-  nao_verificado: "Não foi possível verificar — nada foi gravado",
-  recurso_ausente: "O recurso não está instalado neste ambiente — nada foi gravado",
-  erro_inesperado: "Algo inesperado — nada foi gravado",
-  sem_conexao: "Sem conexão — nada foi gravado",
 };
 
 export function ImportarRespostasExternas({ eventId }: Props) {
@@ -91,6 +79,10 @@ export function ImportarRespostasExternas({ eventId }: Props) {
   const [erroDeLeitura, setErroDeLeitura] = useState<string | null>(null);
 
   const [previa, setPrevia] = useState<Previa | null>(null);
+  // A previa que foi confirmada e cujo LOTE o banco RECUSOU. Ela sai da tela (o
+  // botao de confirmar com ela gravaria o que acaba de ser recusado) e fica aqui
+  // so para nomear de quem era cada submissao recusada.
+  const [previaRecusada, setPreviaRecusada] = useState<Previa | null>(null);
   const [gravado, setGravado] = useState<ResumoGravado | null>(null);
   const [aviso, setAviso] = useState<Desfecho | null>(null);
   const [ocupado, setOcupado] = useState<null | "previa" | "aplicar">(null);
@@ -148,6 +140,7 @@ export function ImportarRespostasExternas({ eventId }: Props) {
 
   function descartarPrevia() {
     setPrevia(null);
+    setPreviaRecusada(null);
     setGravado(null);
     setAssinaturaDaPrevia("");
     setAviso(null);
@@ -177,6 +170,16 @@ export function ImportarRespostasExternas({ eventId }: Props) {
     if (r.tipo === "aplicado") {
       setPrevia(r.previa);
       setGravado(r.gravado);
+    } else if (r.tipo === "lote_recusado") {
+      // NADA foi gravado -- nem as submissoes sem conflito. A previa que estava na
+      // tela descreve um pedido que o banco ACABOU de recusar, entao ela SAI: um
+      // botao de confirmar ali ofereceria gravar outra vez a mesma coisa, e seria
+      // recusado pelo mesmo motivo. O caminho e tirar as recusadas da planilha e
+      // conferir de novo -- e e isso que o aviso manda fazer.
+      setPreviaRecusada(previa);
+      setPrevia(null);
+      setGravado(null);
+      setAssinaturaDaPrevia("");
     } else if (r.tipo === "recusado" && r.codigo === "IMPORT_PREVIEW_STALE") {
       // A previa venceu: pede a nova NA HORA, para o operador ver o que mudou em
       // vez de so ler que venceu. Nada foi gravado neste caminho.
@@ -387,6 +390,25 @@ export function ImportarRespostasExternas({ eventId }: Props) {
         <div className={`rounded-md border p-4 text-sm ${CLASSES_DO_AVISO[falha.tipo]}`}>
           <p className="font-medium text-foreground">{TITULO_DO_AVISO[falha.tipo]}</p>
           <p className="mt-1.5 leading-relaxed text-muted-foreground">{falha.mensagem}</p>
+          {/* AS SUBMISSOES RECUSADAS, nomeadas uma por uma: e esta lista que diz
+              o que tirar da planilha antes de gerar a previa nova. Sem ela, "o
+              lote foi recusado" seria um enigma. */}
+          {falha.tipo === "lote_recusado" && (
+            <div className="mt-3 rounded-md border border-amber-600/40 bg-background/60 p-3">
+              <p className="text-xs font-medium uppercase tracking-[0.1em] text-foreground">
+                {falha.recusadas.length === 1
+                  ? "A submissão recusada"
+                  : `As ${falha.recusadas.length} submissões recusadas`}
+              </p>
+              <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-muted-foreground">
+                {falha.recusadas.map((r) => (
+                  <li key={r.submissao_id} className="border-l-2 border-amber-600/40 pl-2">
+                    {linhaDaRecusa(r, previaRecusada)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {"acao" in falha && (
             <p className="mt-2 text-xs font-medium text-foreground">{ROTULO_DA_ACAO[falha.acao]}</p>
           )}

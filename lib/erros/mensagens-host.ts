@@ -1,4 +1,4 @@
-import type { CodigoDeErro, DetalhesDeErro } from "./codigos";
+import type { CodigoDaRevalidacao, DetalhesDeErro, TodoCodigoDeErro } from "./codigos";
 import { formatarInstante } from "../eventos/fuso";
 
 // CÓDIGO -> MENSAGEM QUE O HOST LÊ. É o único lugar onde o texto da tela nasce.
@@ -24,9 +24,44 @@ export const MENSAGEM_FILA_INDISPONIVEL =
 export const MENSAGEM_GENERICA =
   "Algo inesperado impediu o processamento. Antes de tentar de novo, confira a seção Prognósticos para ver se alguém já entrou na fila (reenviar não duplica o trabalho). Se continuar, avise a equipe técnica informando o número da ocorrência.";
 
+/**
+ * A CAUSA de cada recusa da revalidação do banco (migration 024), em uma frase.
+ *
+ * `Record<CodigoDaRevalidacao, string>` faz o compilador exigir uma frase para
+ * cada causa do vocabulário: um código novo na 024 não compila sem que alguém
+ * diga, aqui, o que o operador lê. É a ÚNICA fonte destas frases -- a mensagem
+ * do host e a lista de submissões recusadas na tela leem desta tabela, para não
+ * haver duas maneiras de dizer o mesmo fato.
+ *
+ * Nenhuma delas culpa o operador e nenhuma sugere defeito: cada uma nomeia o que
+ * o sistema encontrou no último instante e que a gravação recusou.
+ */
+export const MOTIVO_DA_REVALIDACAO: Record<CodigoDaRevalidacao, string> = {
+  resposta_do_aplicativo:
+    "o participante respondeu PELO APLICATIVO nessas etapas depois da conferência -- a resposta dele vale e fica, e a importada foi recusada",
+  outra_submissao_externa:
+    "essas etapas já têm resposta de OUTRA submissão externa, e trocar uma coleta por outra em silêncio não é atualização, é conflito",
+  outra_submissao_ativa_do_participante:
+    "esse participante já tem outra submissão externa ligada a ele, e duas coletas para a mesma pessoa é conflito",
+  duplicidade_no_lote:
+    "outra submissão do mesmo envio já grava para esse participante, e a segunda não passa por cima da primeira",
+  participante_inexistente: "o participante escolhido não existe mais",
+  participante_fora_do_evento: "o participante escolhido não é mais deste evento",
+  email_do_participante_mudou:
+    "o e-mail do participante mudou depois da conferência, e foi dele que a identidade veio",
+  versao_da_submissao_mudou:
+    "essa submissão já está gravada em outra versão ou com outra impressão digital do questionário -- não é a mesma submissão, e é exatamente isso que a impressão digital existe para impedir",
+  identidade_da_submissao_mudou:
+    "essa submissão já está gravada para OUTRO participante, e não é por aqui que a identidade dela muda",
+};
+
+/** Quando o banco nomeia uma causa que esta versão da tela não conhece. */
+export const MOTIVO_DA_REVALIDACAO_SEM_NOME =
+  "a causa tem um nome que esta versão da tela ainda não conhece; ela está registrada no banco, com o motivo, junto desta recusa";
+
 type Mensagem = string | ((detalhes: DetalhesDeErro | undefined) => string);
 
-const MENSAGENS: Record<CodigoDeErro, Mensagem> = {
+const MENSAGENS: Record<TodoCodigoDeErro, Mensagem> = {
   INVALID_REQUEST: "O pedido enviado pela tela não é válido. Recarregue a página e tente de novo.",
 
   AUTH_REQUIRED: "Sua sessão expirou ou não foi encontrada. Entre de novo como administrador.",
@@ -85,6 +120,13 @@ const MENSAGENS: Record<CodigoDeErro, Mensagem> = {
     "A importação de respostas coletadas fora do aplicativo não está instalada neste ambiente, então nada foi conferido e nada foi gravado. Avise a equipe técnica: falta aplicar a atualização do banco da importação externa (migration 022). Depois de aplicada, recarregue esta página.",
   IMPORT_UNAVAILABLE:
     "A importação de respostas externas não respondeu agora, então nada foi gravado. Isso não quer dizer que a planilha ou o questionário estejam errados. Aguarde alguns instantes e tente de novo; se persistir, avise a equipe técnica.",
+  // A ÚNICA mensagem desta família que não afirma o que foi gravado -- porque é a
+  // única situação em que não se pode. Ela não diz "nada foi gravado" (a resposta
+  // informa escrita) e não diz "foi gravado" (a resposta diz recusa). Diz o que
+  // se sabe: as duas afirmações vieram juntas, e por isso o estado tem de ser
+  // conferido ANTES de qualquer nova tentativa.
+  IMPORT_WRITE_UNVERIFIABLE:
+    "A gravação respondeu, e a resposta dela se contradiz: afirma que o lote foi RECUSADO e, ao mesmo tempo, informa escrita -- ou afirma que gravou e nomeia submissões recusadas. Por isso esta tela não afirma nenhum dos dois lados: não dá para dizer que o lote entrou, e não dá para dizer que ele não entrou. Nenhuma das duas coisas foi verificada, e afirmar uma delas aqui seria afirmar o que não se sabe. NÃO repita a importação antes de conferir, porque repetir sem saber o que entrou pode escrever duas vezes: abra este evento e confira o que está registrado para estas pessoas -- as submissões externas desta origem e as respostas de cada etapa. Avise a equipe técnica informando o número da ocorrência: a resposta contraditória está no registro do servidor com esse número.",
   IMPORT_MANIFEST_MISMATCH: (d) => {
     const base =
       "O questionário usado na coleta NÃO é o que o sistema conhece: algum enunciado, alternativa, escala ou ordem foi alterado no caminho. A importação foi recusada ANTES de pontuar qualquer resposta, e nada foi gravado -- pontuar estas respostas produziria número errado, e número errado não parece erro. Refaça o formulário a partir do questionário que o sistema exporta, ou confirme com a equipe técnica qual versão do questionário foi usada na coleta.";
@@ -190,19 +232,30 @@ const MENSAGENS: Record<CodigoDeErro, Mensagem> = {
     );
   },
   IMPORT_REVALIDATION_REFUSED: (d) => {
-    const porQue: Record<NonNullable<DetalhesDeErro["revalidacao"]>, string> = {
-      resposta_do_aplicativo:
-        "entre a sua conferência e a sua confirmação, esse participante respondeu PELO APLICATIVO nas mesmas etapas. A resposta dele vale e fica; a importada foi recusada",
-      outra_submissao_externa:
-        "essas etapas já têm resposta de OUTRA submissão externa. Trocar uma coleta por outra em silêncio não é atualização, é conflito",
-      outra_submissao_ativa_do_participante:
-        "esse participante já tem outra submissão externa ligada a ele",
-      duplicidade_no_lote: "outra submissão do mesmo envio já gravou para esse participante",
-      participante_inexistente: "o participante escolhido não existe mais",
-      participante_fora_do_evento: "o participante escolhido não é mais deste evento",
-      email_do_participante_mudou: "o e-mail do participante mudou depois que a ficha foi gerada",
-    };
-    const causa = d?.revalidacao ? porQue[d.revalidacao] : null;
+    // DOIS atos caem neste código, e o que o operador faz depois NÃO é o mesmo:
+    // na decisão sobre UMA submissão ele recarrega a mesa; na importação de um
+    // LOTE ele pede uma prévia nova sem as conflitantes. O ato é declarado em
+    // `detalhes.ato`; a CAUSA de cada submissão sai da mesma tabela nos dois
+    // caminhos (MOTIVO_DA_REVALIDACAO), para não existirem duas versões do
+    // mesmo fato escritas com palavras diferentes.
+    const causa = d?.revalidacao ? MOTIVO_DA_REVALIDACAO[d.revalidacao] : null;
+
+    if (d?.ato === "importar_lote") {
+      const n = d?.recusadas?.length ?? 0;
+      const quantas =
+        n > 0
+          ? `${n} submiss${n === 1 ? "ão" : "ões"} do lote entr${n === 1 ? "ou" : "aram"} em conflito depois da prévia`
+          : "pelo menos uma submissão do lote entrou em conflito depois da prévia";
+      return (
+        `O LOTE INTEIRO foi recusado na hora de gravar, e NADA foi gravado -- nem as submissões que não tinham conflito. ${quantas}` +
+        (causa ? `: ${causa}` : "") +
+        ". Isto não é falha do sistema: é a conferência que ele faz no último instante, dentro da transação, para não escrever por cima da resposta de alguém. " +
+        "A resposta que cada participante já tinha continua intacta, nada que existia foi tocado, e a recusa ficou registrada com a causa de cada submissão. " +
+        "Nenhuma coleta se perdeu: a sua planilha continua inteira. " +
+        "Tire da planilha as submissões recusadas, nomeadas abaixo, gere uma PRÉVIA NOVA sem elas e confirme a importação a partir dessa prévia -- as recusadas se resolvem depois, uma a uma, na mesa de decisões de identidade."
+      );
+    }
+
     return (
       "O banco conferiu na hora de gravar e RECUSOU" +
       (causa ? `, porque ${causa}` : "") +
@@ -235,6 +288,27 @@ const MENSAGENS: Record<CodigoDeErro, Mensagem> = {
   GUIDE_DATA_INCONSISTENT:
     "As contagens de participação deste evento não fecham entre si, então o guia não foi gerado. Um guia com a população errada afirmaria a coisa errada sobre o que foi verificado. Confira a lista de convidados, os check-ins e as respostas registradas deste evento antes de gerar outra vez.",
 
+  // --- o documento individual ----------------------------------------------
+  PROGNOSTIC_RESPONSES_INSUFFICIENT: (d) => {
+    const faltas = d?.completude ?? [];
+    const onde = faltas
+      .map((f) => `${f.bloco} (${f.respondidas} de ${f.total}, mínimo ${f.minimo})`)
+      .join("; ");
+    return faltas.length > 0
+      ? `Este participante não respondeu o questionário o bastante para o documento existir: ${onde}. Nenhum documento foi gerado e nada foi cobrado, de propósito -- com essas perguntas em branco as pontuações sairiam rebaixadas, e o texto falaria com autoridade sobre uma medida errada. Peça a ele que complete as perguntas que faltam e gere de novo.`
+      : "Este participante não respondeu o questionário o bastante para o documento existir, então nada foi gerado e nada foi cobrado. Peça a ele que complete as perguntas que faltam e gere de novo.";
+  },
+  PROGNOSTIC_RESPONSES_UNREADABLE:
+    "Há uma resposta deste participante que está PRESENTE e fora do que o questionário aceita, então o documento não foi gerado e nada foi cobrado. Isso não é pergunta em branco: é valor que o sistema não sabe ler, e tratá-lo como ausente produziria uma leitura falsa da pessoa. Avise a equipe técnica informando o número da ocorrência.",
+  PROGNOSTIC_STATE_REGRESSION: (d) =>
+    `Este documento já está em "${d?.estado_do_documento ?? "entregue"}" e não volta para revisão, então a correção não foi gravada. O documento que o participante recebeu não é alterado por baixo dele: o que já foi entregue permanece como foi entregue. Para corrigir um documento entregue, fale com a equipe técnica -- é procedimento à parte, porque exige avisar o participante.`,
+  PROGNOSTIC_APPROVAL_STALE:
+    "O conteúdo deste documento mudou depois da última revisão, então a aprovação anterior não cobre o texto que seria entregue e a entrega foi recusada. Isso é proposital: o selo de revisão vale para o texto que foi revisado, não para qualquer texto que ocupe o lugar dele. Abra o documento, revise o texto como ele está agora e salve a revisão; depois disso a entrega é liberada.",
+  PROGNOSTIC_NOT_FOUND:
+    "Este documento não foi encontrado. Recarregue a página: ele pode ter sido removido junto com o participante ou com o evento.",
+  PROGNOSTIC_WRITE_UNAVAILABLE:
+    "Não foi possível gravar o documento agora, porque o banco não respondeu. Isso NÃO quer dizer que a gravação foi recusada, e também não quer dizer que ela passou: quer dizer que não deu para saber. Recarregue a página para ver o estado atual antes de tentar de novo; se persistir, avise a equipe técnica informando o número da ocorrência.",
+
   COVERAGE_UNAVAILABLE:
     "A cobertura oficial deste evento não respondeu agora, e sem ela não há população verificada para o guia nem veredito do volume mínimo. Nada foi gerado. Aguarde alguns instantes e tente de novo; se persistir, avise a equipe técnica informando o número da ocorrência.",
   INVITE_COUNT_UNDETERMINED:
@@ -243,7 +317,7 @@ const MENSAGENS: Record<CodigoDeErro, Mensagem> = {
   INTERNAL_ERROR: MENSAGEM_GENERICA,
 };
 
-export function mensagemParaHost(codigo: CodigoDeErro, detalhes?: DetalhesDeErro): string {
+export function mensagemParaHost(codigo: TodoCodigoDeErro, detalhes?: DetalhesDeErro): string {
   const m = MENSAGENS[codigo];
   return typeof m === "function" ? m(detalhes) : m;
 }

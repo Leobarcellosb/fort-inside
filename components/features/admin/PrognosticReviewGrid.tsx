@@ -132,8 +132,21 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
       const shareUrl = `${window.location.origin}/prognostic/${prog.public_share_token}`;
       await navigator.clipboard.writeText(shareUrl).catch(() => {});
       toast.success("Entregue! Link copiado para a área de transferência.");
-    } catch {
-      toast.error("Erro ao entregar");
+    } catch (err) {
+      // A entrega passa pelo portão do banco (migration 025): `delivered` exige
+      // `final_content` com a MESMA impressão digital que a última revisão
+      // humana aprovou. A recusa chega aqui como `check_violation` (23514), e
+      // "Erro ao entregar" mandaria o host investigar a coisa errada -- ele
+      // tentaria de novo, e seria recusado de novo, pelo mesmo motivo. A
+      // mensagem abaixo é a mesma frase de PROGNOSTIC_APPROVAL_STALE em
+      // lib/erros/mensagens-host.ts; esta tela escreve direto no banco (não há
+      // rota no caminho), então o texto é escolhido aqui pelo código do banco.
+      const codigo = (err as { code?: string } | null)?.code;
+      toast.error(
+        codigo === "23514"
+          ? "Entrega recusada: o texto deste documento não é o que foi revisado e aprovado. Abra o documento, revise o texto como ele está agora e salve a revisão; depois disso a entrega é liberada."
+          : "Erro ao entregar"
+      );
     } finally {
       setSaving(false);
     }
@@ -239,10 +252,22 @@ export function PrognosticReviewGrid({ eventId, participants, prognostics }: Pro
                 </Button>
               )}
               {prog && prog.status !== "delivered" && (
+                // O botão fica DESLIGADO enquanto não há aprovação registrada
+                // (migration 025): o banco recusaria a entrega de qualquer
+                // maneira, e um botão que só pode falhar é pior do que um botão
+                // que diz por que está desligado. A garantia é do banco; isto
+                // aqui é só não oferecer o caminho sem saída. O selo em si é
+                // escrito pelo gatilho quando a revisão é salva -- esta tela
+                // não o calcula e não o escreve.
                 <Button
                   size="sm"
                   onClick={() => deliver(prog.id)}
-                  disabled={saving}
+                  disabled={saving || !prog.conteudo_aprovado_hash}
+                  title={
+                    prog.conteudo_aprovado_hash
+                      ? undefined
+                      : "Este documento ainda não tem revisão salva. Abra em Editar, revise o texto e salve: a entrega é liberada em seguida."
+                  }
                   className="flex-1 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
                 >
                   Entregar

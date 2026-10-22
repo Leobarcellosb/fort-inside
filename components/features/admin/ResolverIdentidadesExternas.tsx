@@ -42,6 +42,7 @@ import {
   type DesfechoDaMesa,
   type DesfechoDoAto,
 } from "./decidir-identidade";
+import { TITULO_DO_ESTADO_INCERTO } from "./importar-respostas";
 import type {
   FichaDeReconciliacao,
   FichaDeRevogacao,
@@ -61,13 +62,23 @@ const ROTULO_DA_ACAO: Record<string, string> = {
   escolher_outro_alvo: "Escolha outro participante, ou revogue antes a reconciliação que ocupa esse participante.",
   entrar_de_novo: "Entre de novo como administrador.",
   aguardar: "Aguarde alguns instantes e tente de novo.",
+  conferir_o_que_esta_gravado:
+    "Antes de tentar outra vez: abra este evento e confira o que está registrado para esta pessoa. Avise a equipe técnica com o número da ocorrência.",
   instalar_no_banco: "Avise a equipe técnica: falta instalar a atualização do banco.",
   falar_com_equipe: "Avise a equipe técnica.",
 };
 
 type Falha = Extract<
   DesfechoDoAto | DesfechoDaMesa,
-  { tipo: "recusado" } | { tipo: "nao_verificado" } | { tipo: "recurso_ausente" } | { tipo: "erro_inesperado" } | { tipo: "sem_conexao" }
+  | { tipo: "recusado" }
+  | { tipo: "nao_verificado" }
+  // A gravacao desta tela passa pela MESMA funcao da importacao, entao a resposta
+  // contraditoria do banco chega aqui tambem -- e nao pode ser mostrada com um
+  // titulo que afirme "nada foi alterado".
+  | { tipo: "estado_incerto" }
+  | { tipo: "recurso_ausente" }
+  | { tipo: "erro_inesperado" }
+  | { tipo: "sem_conexao" }
 >;
 
 const CLASSES_DA_FALHA: Record<Falha["tipo"], string> = {
@@ -75,6 +86,8 @@ const CLASSES_DA_FALHA: Record<Falha["tipo"], string> = {
   recusado: "border-amber-600/50 bg-amber-600/10",
   // NAO CONSEGUI VERIFICAR -> nada foi decidido. Nao e culpa de ninguem.
   nao_verificado: "border-sky-600/50 bg-sky-600/10",
+  // NAO DA PARA AFIRMAR O QUE FOI GRAVADO -> conferir antes de tentar de novo.
+  estado_incerto: "border-orange-600/60 bg-orange-600/10",
   // NAO ESTA INSTALADO -> nem o operador nem a espera resolvem.
   recurso_ausente: "border-violet-600/50 bg-violet-600/10",
   erro_inesperado: "border-destructive/50 bg-destructive/10",
@@ -84,6 +97,9 @@ const CLASSES_DA_FALHA: Record<Falha["tipo"], string> = {
 const TITULO_DA_FALHA: Record<Falha["tipo"], string> = {
   recusado: "Conferido e não autorizado — nada foi alterado",
   nao_verificado: "Não foi possível verificar — nada foi alterado",
+  // Sem "nada foi alterado": e isso que esta em duvida. O titulo por codigo
+  // (TITULO_DO_CODIGO) e o que aparece, e ele vem da tela da importacao.
+  estado_incerto: TITULO_DO_ESTADO_INCERTO,
   recurso_ausente: "O recurso não está instalado neste ambiente — nada foi alterado",
   erro_inesperado: "Algo inesperado — nada foi alterado",
   sem_conexao: "Sem conexão — nada foi alterado",

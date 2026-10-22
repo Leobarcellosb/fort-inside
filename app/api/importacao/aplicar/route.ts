@@ -89,7 +89,13 @@ async function aplicar(req: NextRequest) {
     montagem.plano,
   );
   if (!gravacao.ok) {
-    return erroHttp(gravacao.codigo, { causa: gravacao.motivo });
+    // Tres naturezas, e nenhuma se confunde com a outra: "nao esta instalado",
+    // "nao respondeu" e -- com `gravacao.recusa` -- "CONFERI DENTRO DA TRANSACAO
+    // E NAO PERMITI" (IMPORT_REVALIDATION_REFUSED). No terceiro caso nada foi
+    // gravado, nem as submissoes sem conflito, e os `detalhes` dizem QUAIS
+    // submissoes causaram a recusa para a tela poder instruir em vez de enigmar.
+    // O `motivo` (prosa do banco) vai so para o log, como `causa`.
+    return erroHttp(gravacao.codigo, { causa: gravacao.motivo, detalhes: gravacao.detalhes });
   }
 
   return NextResponse.json({

@@ -27,6 +27,15 @@ import {
 } from "./borda";
 import { montarManifesto, type LinhaDeEtapa, type ManifestoQuestionario } from "./manifesto-questionario";
 import { letraDeclarada } from "./mapear-resposta";
+// O ULTIMO METRO: a resposta de erro REAL do servidor e a TELA de verdade, para
+// o texto que o operador le ser medido aqui e nao prometido.
+import { erroHttp } from "../erros/resposta";
+import {
+  ROTULO_DA_ACAO,
+  TITULO_DO_AVISO,
+  aplicarImportacao,
+  linhaDaRecusa,
+} from "../../components/features/admin/importar-respostas";
 
 const IMPRESSAO_PUBLICADA = "859d5aeb9bf590ae0fd4fbd1b28b3bb143f5b6fca180ba03ad76a9b6f5169d4b";
 
@@ -729,5 +738,349 @@ describe("'nao esta instalado' e 'nao respondeu' sao dois fatos", () => {
     }
     // O plano inteiro vai como UM argumento jsonb: a funcao SQL o recebe pronto.
     expect((recebido as unknown as { plano?: { ok?: boolean } })?.plano?.ok).toBe(true);
+  });
+});
+
+// ================================================ o LOTE RECUSADO na revalidacao
+//
+// A funcao do banco (migration 024) recusa o LOTE INTEIRO quando qualquer
+// submissao entra em conflito depois da previa, e comunica isso por VALOR DE
+// RETORNO: `ok: false`, codigo proprio, zeros em todos os contadores e a lista das
+// recusadas. Antes desta unidade, `aplicarPlano` remontava so os contadores e
+// devolvia `ok: true` -- o operador recebia a divergencia generica da conferencia
+// ("a previa disse 5 e o banco gravou 0") em vez de "o lote foi recusado porque a
+// pessoa respondeu pelo aplicativo; peca uma previa nova sem ela".
+//
+// O payload abaixo e o da 024, campo por campo (FASE 3 da funcao).
+describe("o LOTE RECUSADO na revalidacao nao volta como sucesso", () => {
+  const LOTE = "9f1c2d3e4a5b6c7d8e9f0a1b2c3d4e5f";
+
+  /** O pedido que a TELA envia, para as provas que vao ate ela. */
+  const PEDIDO_DA_TELA = {
+    event_id: EVENTO,
+    formulario_id: FORMULARIO,
+    impressao_declarada: MANIFESTO.impressao,
+    cabecalhos: CABECALHOS,
+    linhas: [linhaCompleta("maria@example.org")],
+    email_verificado: true,
+  };
+
+  function recusadaDa024(over: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      submissao_id: "resp-maria",
+      codigo: "resposta_do_aplicativo",
+      motivo:
+        "o participante respondeu PELO APLICATIVO nas etapas 104 depois que esta previa foi montada: a resposta dele fica",
+      estado_do_plano: "importavel",
+      estado: null,
+      participante_pretendido: PARTICIPANTES[0].id,
+      identidade_via: "email_verificado",
+      etapas_em_conflito: ["104"],
+      etapas_nao_gravadas: 5,
+      submissao_existente: null,
+      bloqueio_do_plano: null,
+      ...over,
+    };
+  }
+
+  function retornoDa024(recusadas: Record<string, unknown>[]): Record<string, unknown> {
+    return {
+      ok: false,
+      codigo: "LOTE_RECUSADO_NA_REVALIDACAO",
+      motivo: `${recusadas.length} submissao(oes) do lote entraram em conflito depois da previa. O LOTE INTEIRO foi recusado e NADA foi gravado. Peca uma previa nova sem as submissoes conflitantes.`,
+      evento_id: EVENTO,
+      formulario_id: FORMULARIO,
+      questionario_impressao: IMPRESSAO_PUBLICADA,
+      lote_impressao: LOTE,
+      por_estado: {},
+      linhas_de_resposta_gravadas: 0,
+      itens_registrados: 0,
+      importado_por: OPERADOR.id,
+      recusas_na_revalidacao: recusadas.length,
+      recusadas_na_revalidacao: recusadas,
+    };
+  }
+
+  const aplicarCom = async (data: unknown) => {
+    const r = await montar();
+    if (!r.ok) throw new Error("plano");
+    return { previa: r.previa, aplicacao: await aplicarPlano({ rpc: async () => ({ data, error: null }) }, r.plano) };
+  };
+
+  it("NEGATIVA: `ok: false` NAO vira `ok: true` com zeros -> IMPORT_REVALIDATION_REFUSED", async () => {
+    const { aplicacao } = await aplicarCom(retornoDa024([recusadaDa024()]));
+
+    // O que esta unidade existe para corrigir: isto era `ok: true`.
+    expect(aplicacao.ok).toBe(false);
+    if (aplicacao.ok) return;
+
+    // O codigo e o que JA EXISTIA no vocabulario para este fato exato, nao um novo.
+    expect(aplicacao.codigo).toBe("IMPORT_REVALIDATION_REFUSED");
+    // Nem "nao esta instalado", nem "nao respondeu": o banco respondeu e recusou.
+    expect(aplicacao.codigo).not.toBe("IMPORT_SCHEMA_MISSING");
+    expect(aplicacao.codigo).not.toBe("IMPORT_UNAVAILABLE");
+
+    // A LISTA chega, com a submissao nomeada, a causa, as etapas e o numero.
+    expect(aplicacao.detalhes?.ato).toBe("importar_lote");
+    expect(aplicacao.detalhes?.revalidacao).toBe("resposta_do_aplicativo");
+    expect(aplicacao.detalhes?.recusadas).toEqual([
+      {
+        submissao_id: "resp-maria",
+        codigo: "resposta_do_aplicativo",
+        etapas_em_conflito: ["104"],
+        etapas_nao_gravadas: 5,
+      },
+    ]);
+
+    // E o resumo recusado continua inteiro, com os zeros DECLARADOS: nada gravado.
+    expect(aplicacao.recusa?.ok).toBe(false);
+    expect(aplicacao.recusa?.codigo).toBe("LOTE_RECUSADO_NA_REVALIDACAO");
+    expect(aplicacao.recusa?.linhas_de_resposta_gravadas).toBe(0);
+    expect(aplicacao.recusa?.itens_registrados).toBe(0);
+    expect(aplicacao.recusa?.por_estado).toEqual({});
+    expect(aplicacao.recusa?.lote_impressao).toBe(LOTE);
+    // `estado: null` = a submissao nunca foi gravada. Nao e "" e nao e 'conflito'.
+    expect(aplicacao.recusa?.recusadas_na_revalidacao[0].estado).toBeNull();
+    expect(aplicacao.recusa?.recusadas_na_revalidacao[0].participante_pretendido).toBe(PARTICIPANTES[0].id);
+    // A prosa do banco fica no `motivo` da falha, que vai para o LOG como `causa`.
+    expect(aplicacao.motivo).toMatch(/LOTE_RECUSADO_NA_REVALIDACAO/);
+  });
+
+  it("NEGATIVA: recusa SEM lista utilizavel e INDISPONIBILIDADE, nunca 'recusa sem motivo'", async () => {
+    // Tres retornos que dizem RECUSA e nao dizem QUAIS submissoes. Nenhum deles
+    // autoriza afirmar recusa: sem saber o que tirar da planilha, a instrucao nao
+    // existe -- e inventar uma causa e pior que dizer que nao deu para ler.
+    const semLista = await aplicarCom(retornoDa024([]));
+    const semId = await aplicarCom(retornoDa024([recusadaDa024({ submissao_id: "" })]));
+    const semCodigo = await aplicarCom(retornoDa024([recusadaDa024({ codigo: null })]));
+
+    for (const { aplicacao } of [semLista, semId, semCodigo]) {
+      expect(aplicacao.ok).toBe(false);
+      if (aplicacao.ok) return;
+      expect(aplicacao.codigo).toBe("IMPORT_UNAVAILABLE");
+      // Indisponibilidade NAO e recusa, e NAO e ausencia de recurso.
+      expect(aplicacao.codigo).not.toBe("IMPORT_REVALIDATION_REFUSED");
+      expect(aplicacao.codigo).not.toBe("IMPORT_SCHEMA_MISSING");
+      expect(aplicacao.recusa).toBeUndefined();
+      expect(aplicacao.detalhes?.recusadas).toBeUndefined();
+    }
+    expect(semLista.aplicacao.ok === false && semLista.aplicacao.motivo).toMatch(/nao disse quais submissoes/);
+  });
+
+  // =======================================================================
+  // "GRAVOU E RECUSOU" NAO EXISTE -- NOS DOIS SENTIDOS, LADO A LADO.
+  //
+  // E a MESMA regra, e os dois casos estao juntos de proposito: guardar um
+  // sentido e deixar o outro passar e confiar num invariante do banco em vez de
+  // conferi-lo. Sob a 024 de hoje nenhum dos dois acontece (na recusa a decisao
+  // vem ANTES de qualquer escrita e os contadores saem zerados) -- o que se
+  // conferem aqui sao os invariantes, nao um defeito observado.
+  //
+  // O preco de confiar e NOMEADO: a tela afirmaria "NADA foi gravado, e nada que
+  // existia foi tocado" em cima de um corpo que informa cinco linhas gravadas. E
+  // afirmacao falsa e pior que enigma -- enigma deixa quem le desconfiado,
+  // afirmacao falsa deixa tranquilo.
+  // =======================================================================
+  it.each([
+    [
+      "RECUSA com contadores NAO-ZERADOS",
+      {
+        ...retornoDa024([recusadaDa024()]),
+        linhas_de_resposta_gravadas: 5,
+        itens_registrados: 52,
+      },
+      /disse LOTE_RECUSADO_NA_REVALIDACAO .*informou escrita no MESMO retorno \(linhas_de_resposta_gravadas=5, itens_registrados=52\)/,
+    ],
+    [
+      "RECUSA com `por_estado` NAO-VAZIO",
+      { ...retornoDa024([recusadaDa024()]), por_estado: { importavel: 1 } },
+      /informou escrita no MESMO retorno \(por_estado=\{importavel=1\}\)/,
+    ],
+    [
+      "GRAVACAO com recusas NOMEADAS (o espelho)",
+      { ...retornoDa024([recusadaDa024()]), ok: true },
+      /afirmou gravacao e listou 1 recusa\(s\) no MESMO retorno/,
+    ],
+  ])(
+    "NEGATIVA (%s): CONTRADICAO -> IMPORT_WRITE_UNVERIFIABLE, nem recusa nem gravacao",
+    async (_n, data, motivoEsperado) => {
+      const { previa, aplicacao } = await aplicarCom(data);
+      expect(aplicacao.ok).toBe(false);
+      if (aplicacao.ok) return;
+
+      // Nao e recusa: a recusa e justamente o que nao da para afirmar.
+      expect(aplicacao.codigo).not.toBe("IMPORT_REVALIDATION_REFUSED");
+      // Nao e "nao respondeu" (respondeu) e nao e "nao esta instalado".
+      expect(aplicacao.codigo).not.toBe("IMPORT_UNAVAILABLE");
+      expect(aplicacao.codigo).not.toBe("IMPORT_SCHEMA_MISSING");
+      expect(aplicacao.codigo).toBe("IMPORT_WRITE_UNVERIFIABLE");
+      // Nenhum resumo e entregue como recusa: nada ali pode ser afirmado.
+      expect(aplicacao.recusa).toBeUndefined();
+      expect(aplicacao.detalhes).toBeUndefined();
+      // A contradicao inteira vai para o LOG, nomeada.
+      expect(aplicacao.motivo).toMatch(motivoEsperado);
+
+      // E O QUE O OPERADOR LE: nem "gravou", nem "nada foi gravado".
+      const resposta = erroHttp(aplicacao.codigo, { causa: aplicacao.motivo });
+      expect(resposta.status).toBe(503);
+      const desfecho = await aplicarImportacao(PEDIDO_DA_TELA, previa, async () => resposta.clone(), () => {});
+      expect(desfecho.tipo).toBe("estado_incerto");
+      if (desfecho.tipo !== "estado_incerto") return;
+
+      const naTela = `TITULO: ${TITULO_DO_AVISO[desfecho.tipo]}\n\n${desfecho.mensagem}\n\nACAO: ${ROTULO_DA_ACAO[desfecho.acao]}`;
+      console.log(`\n--- O QUE O OPERADOR LE (${_n}) ---\n${naTela}\n---------------------------\n`);
+
+      // O titulo e a mensagem NAO afirmam nenhum dos dois lados.
+      expect(naTela).not.toMatch(/nada foi gravado/i);
+      expect(naTela).not.toMatch(/NADA foi gravado, e nada que existia foi tocado/);
+      expect(naTela).not.toMatch(/foi gravad[ao] com sucesso|importação gravada/i);
+      expect(naTela).not.toMatch(/LOTE INTEIRO foi recusado/);
+      // Diz o que de fato se sabe, e manda CONFERIR antes de repetir.
+      expect(naTela).toMatch(/se contradiz/);
+      expect(naTela).toMatch(/não dá para afirmar o que foi gravado/);
+      expect(naTela).toMatch(/NÃO repita a importação antes de conferir/);
+      expect(naTela).toMatch(/confira o que está registrado/);
+      // E NAO manda esperar e tentar de novo, que e o convite a gravar duas vezes.
+      expect(desfecho.mensagem).not.toMatch(/aguarde/i);
+      expect(naTela).not.toMatch(/instalar|migration/i);
+      // Indisponibilidade tem numero de ocorrencia: e por ele que a equipe acha a
+      // resposta contraditoria no log.
+      expect(desfecho.ocorrencia).toMatch(/^[0-9a-f]{12}$/);
+      expect(desfecho.mensagem).toContain(desfecho.ocorrencia as string);
+    },
+  );
+
+  it("CONTROLE POSITIVO do espelho: recusa com contadores ZERADOS continua recusa normal", async () => {
+    // A guarda nova NAO pode engolir o caminho que funciona: zeros sao a afirmacao
+    // de que o lote nao entrou, e com eles a recusa segue sendo recusa -- com o
+    // texto que instrui.
+    const { previa, aplicacao } = await aplicarCom(retornoDa024([recusadaDa024()]));
+    expect(aplicacao.ok).toBe(false);
+    if (aplicacao.ok) return;
+    expect(aplicacao.codigo).toBe("IMPORT_REVALIDATION_REFUSED");
+    expect(aplicacao.recusa?.linhas_de_resposta_gravadas).toBe(0);
+
+    const desfecho = await aplicarImportacao(
+      PEDIDO_DA_TELA,
+      previa,
+      async () => erroHttp(aplicacao.codigo, { causa: aplicacao.motivo, detalhes: aplicacao.detalhes }).clone(),
+      () => {},
+    );
+    expect(desfecho.tipo).toBe("lote_recusado");
+    if (desfecho.tipo !== "lote_recusado") return;
+    expect(desfecho.mensagem).toMatch(/LOTE INTEIRO foi recusado/);
+    expect(desfecho.mensagem).toMatch(/NADA foi gravado/);
+    expect(desfecho.mensagem).toMatch(/PRÉVIA NOVA sem elas/);
+    expect(desfecho.acao).toBe("refazer_previa_sem_as_recusadas");
+  });
+
+  it("NEGATIVA: `ok` que nao e booleano nao vira gravacao nem recusa", async () => {
+    const { aplicacao } = await aplicarCom({ ...retornoDa024([recusadaDa024()]), ok: "false" });
+    expect(aplicacao.ok).toBe(false);
+    if (aplicacao.ok) return;
+    expect(aplicacao.codigo).toBe("IMPORT_UNAVAILABLE");
+    expect(aplicacao.motivo).toMatch(/'ok' de tipo string/);
+  });
+
+  it("CONTROLE POSITIVO: lote legitimo continua gravando, com e sem o campo `ok`", async () => {
+    // O campo `ok` AUSENTE e o retorno da funcao da 022 -- e continua sendo
+    // sucesso. Se a ausencia virasse recusa, esta correcao seria "recusa tudo".
+    const r = await montar();
+    if (!r.ok) throw new Error("plano");
+    const gravado = {
+      evento_id: EVENTO,
+      formulario_id: FORMULARIO,
+      questionario_impressao: IMPRESSAO_PUBLICADA,
+      lote_impressao: LOTE,
+      por_estado: { importavel: 1 },
+      linhas_de_resposta_gravadas: r.previa.linhas_de_resposta_a_gravar,
+      itens_registrados: r.previa.itens_a_registrar,
+      importado_por: OPERADOR.id,
+      recusas_na_revalidacao: 0,
+      recusadas_na_revalidacao: [],
+    };
+
+    for (const data of [{ ...gravado, ok: true }, gravado]) {
+      const a = await aplicarPlano({ rpc: async () => ({ data, error: null }) }, r.plano);
+      expect(a.ok).toBe(true);
+      if (!a.ok) return;
+      expect(a.resumo.ok).toBe(true);
+      expect(a.resumo.codigo).toBeNull();
+      expect(a.resumo.linhas_de_resposta_gravadas).toBe(r.previa.linhas_de_resposta_a_gravar);
+      expect(a.resumo.itens_registrados).toBe(r.previa.itens_a_registrar);
+      // Lista vazia e uma AFIRMACAO: nada foi recusado neste lote.
+      expect(a.resumo.recusadas_na_revalidacao).toEqual([]);
+    }
+  });
+
+  // =======================================================================
+  // O ULTIMO METRO, de ponta a ponta: a funcao do banco recusa, a BORDA
+  // classifica, o SERVIDOR monta a resposta de erro de verdade (`erroHttp`, a
+  // mesma que a rota devolve) e a TELA le. Nada escrito a mao no meio.
+  // =======================================================================
+  it("O TEXTO DO OPERADOR: a recusa do banco chega a tela como desfecho previsto, com a instrucao", async () => {
+    const { previa, aplicacao } = await aplicarCom(
+      retornoDa024([
+        recusadaDa024(),
+        recusadaDa024({
+          submissao_id: "resp-joao",
+          codigo: "versao_da_submissao_mudou",
+          participante_pretendido: PARTICIPANTES[1].id,
+          etapas_em_conflito: [],
+          etapas_nao_gravadas: 3,
+          estado: "importavel",
+        }),
+      ]),
+    );
+    expect(aplicacao.ok).toBe(false);
+    if (aplicacao.ok) return;
+
+    // O que a ROTA faz com isso, nos mesmos termos de app/api/importacao/aplicar.
+    const resposta = erroHttp(aplicacao.codigo, { causa: aplicacao.motivo, detalhes: aplicacao.detalhes });
+    expect(resposta.status).toBe(400);
+
+    // E o que a TELA faz com a resposta da rota.
+    const desfecho = await aplicarImportacao(PEDIDO_DA_TELA, previa, async () => resposta.clone(), () => {});
+
+    expect(desfecho.tipo).toBe("lote_recusado");
+    if (desfecho.tipo !== "lote_recusado") return;
+    expect(desfecho.codigo).toBe("IMPORT_REVALIDATION_REFUSED");
+    expect(desfecho.acao).toBe("refazer_previa_sem_as_recusadas");
+
+    // ---- O TEXTO EXATO, impresso para quem revisa esta unidade ler -------
+    const naTela = [
+      `TITULO: ${TITULO_DO_AVISO.lote_recusado}`,
+      "",
+      desfecho.mensagem,
+      "",
+      ...desfecho.recusadas.map((r) => `- ${linhaDaRecusa(r, previa)}`),
+      "",
+      `ACAO: ${ROTULO_DA_ACAO[desfecho.acao]}`,
+    ].join("\n");
+    console.log(`\n--- O QUE O OPERADOR LE ---\n${naTela}\n---------------------------\n`);
+
+    // 1. O LOTE INTEIRO, e NADA gravado -- nem o que nao tinha conflito.
+    expect(desfecho.mensagem).toMatch(/LOTE INTEIRO foi recusado/);
+    expect(desfecho.mensagem).toMatch(/NADA foi gravado/);
+    expect(desfecho.mensagem).toMatch(/nem as submissões que não tinham conflito/);
+    // 2. A resposta de quem respondeu esta INTACTA, e a coleta nao se perdeu.
+    expect(desfecho.mensagem).toMatch(/continua intacta/);
+    expect(desfecho.mensagem).toMatch(/planilha continua inteira/);
+    // 3. NAO e erro: o texto diz que o sistema funcionou.
+    expect(desfecho.mensagem).toMatch(/não é falha do sistema/);
+    expect(desfecho.mensagem).not.toMatch(/erro|defeito|falhou|tente de novo/i);
+    // 4. Quantas, e por que a primeira.
+    expect(desfecho.mensagem).toMatch(/2 submissões do lote entraram em conflito/);
+    expect(desfecho.mensagem).toMatch(/respondeu PELO APLICATIVO/);
+    // 5. A ACAO: previa nova SEM as recusadas -- nunca "aguarde", nunca "instale".
+    expect(desfecho.mensagem).toMatch(/PRÉVIA NOVA sem elas/);
+    expect(desfecho.mensagem).not.toMatch(/aguarde|instalar|migration/i);
+    // 6. QUAIS submissoes, de quem, e por que -- uma linha por submissao.
+    expect(naTela).toMatch(/resp-maria \(maria@example\.org\): o participante respondeu PELO APLICATIVO/);
+    expect(naTela).toMatch(/Etapas em conflito: 104\./);
+    expect(naTela).toMatch(/5 etapa\(s\) desta submissão não foram gravadas\./);
+    expect(naTela).toMatch(/resp-joao: essa submissão já está gravada em outra versão/);
+    // 7. Nada de texto interno de banco na tela.
+    expect(naTela).not.toMatch(/LOTE_RECUSADO_NA_REVALIDACAO|jsonb|plano recusado/);
   });
 });

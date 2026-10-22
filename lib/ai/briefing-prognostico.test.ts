@@ -15,9 +15,15 @@ import {
 } from "./fixtures-marco-zero";
 import {
   TEXTO_SITUACIONAL_SEM_DESTAQUE,
+  montarBriefingMarcoZero,
   textosDoParticipante,
 } from "../scoring/briefing-marco-zero";
-import { ROTULOS_DIMENSAO } from "../../components/features/marco-zero/catalogo-dimensoes";
+import { achatarRespostas } from "../scoring/achatar-respostas";
+import { calcularMarcoZero } from "../scoring/marco-zero";
+import {
+  ROTULOS_DIMENSAO,
+  ROTULOS_EIXOS_MARCO_ZERO,
+} from "../../components/features/marco-zero/catalogo-dimensoes";
 import { validarTextoDeSaida } from "../../components/features/marco-zero/validacao-saida";
 
 function montar(o?: OpcoesDeRespostas) {
@@ -143,11 +149,43 @@ describe("o briefing nunca contradiz o veto", () => {
     ["elementos incompletos", { elementos: [7, undefined, undefined, 5, 9, 7, 4] }],
     ["poucos elementos", { elementos: [7, undefined, undefined, undefined, 9, undefined, undefined] }],
   ];
+  // Os CINCO casos seguem medidos, e nenhum foi apagado ou pulado. O que mudou
+  // e por onde eles chegam ao briefing: `prepararBriefing` passou a ter o
+  // PORTAO DE COMPLETUDE (lib/ai/completude-marco-zero.ts), e o caso "poucos
+  // elementos" (2 de 7) cai nele -- de proposito, porque um documento sobre 2
+  // dos 7 Elementos nao e o que o produto promete. O SUJEITO deste describe,
+  // porem, e a CAMADA DE LINGUAGEM: "nenhum texto que o briefing produz
+  // contradiz o veto de saida". Para continuar medindo isso nos cinco estados,
+  // o briefing e montado aqui direto sobre o motor, sem o portao -- que tem
+  // prova propria, logo abaixo e em completude-marco-zero.test.ts.
   it.each(casos)("todo texto do briefing passa pela validacao de saida (%s)", (_n, o) => {
-    const { b } = montar(o);
-    for (const t of textosDoParticipante(b.briefing)) {
+    const respostas = respostasMarcoZero(o);
+    const briefing = montarBriefingMarcoZero(
+      calcularMarcoZero(achatarRespostas(respostas)),
+      { rotulosEixos: ROTULOS_EIXOS_MARCO_ZERO },
+    );
+    for (const t of textosDoParticipante(briefing)) {
       expect(validarTextoDeSaida(t), t).toEqual([]);
     }
+  });
+
+  it("e o PORTAO decide quais desses estados viram documento: 5 de 7 Elementos sim, 2 de 7 nao", () => {
+    // ASSERCAO ACRESCENTADA: a evidencia nova do portao, no mesmo arquivo em
+    // que os dois estados ja eram descritos. Antes, os dois geravam documento.
+    const cinco = prepararBriefing(
+      respostasMarcoZero({ elementos: [7, undefined, undefined, 5, 9, 7, 4] }),
+    );
+    expect(cinco.ok).toBe(true); // controle positivo: a leitura parcial existe
+
+    const dois = prepararBriefing(
+      respostasMarcoZero({ elementos: [7, undefined, undefined, undefined, 9, undefined, undefined] }),
+    );
+    expect(dois.ok).toBe(false);
+    if (dois.ok) return;
+    expect(dois.status).toBe(400);
+    expect(dois.code).toBe("PROGNOSTIC_RESPONSES_INSUFFICIENT");
+    expect(dois.detalhes?.blocos_incompletos).toEqual(["elementos"]);
+    expect(dois.error).toContain("2 de 7");
   });
 });
 

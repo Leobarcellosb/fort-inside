@@ -87,6 +87,8 @@ export const DEFINICOES_DE_ERRO = {
   //
   //   não instalado      IMPORT_SCHEMA_MISSING        (a ÚNICA que cita a 022)
   //   não respondeu      IMPORT_UNAVAILABLE
+  //   respondeu e se contradiz  IMPORT_WRITE_UNVERIFIABLE (não se afirma nem que
+  //                      gravou nem que não gravou)
   //   não deu p/ conferir IMPORT_MANIFEST_UNVERIFIABLE
   //   conferi e recusei  IMPORT_MANIFEST_MISMATCH, IMPORT_SPREADSHEET_INVALID,
   //                      IMPORT_PLAN_REFUSED, IMPORT_PREVIEW_STALE
@@ -95,6 +97,23 @@ export const DEFINICOES_DE_ERRO = {
   IMPORT_SCHEMA_MISSING: { status: 503, error: "A importação de respostas externas não está instalada no banco" },
   /** A importação existe e a chamada falhou (rede, banco, timeout). NÃO é ausência e NÃO é recusa. */
   IMPORT_UNAVAILABLE: { status: 503, error: "A importação de respostas externas não respondeu" },
+  /**
+   * A gravação RESPONDEU, e a resposta se CONTRADIZ: ela afirma que o lote foi
+   * recusado e ao mesmo tempo informa escrita (linhas gravadas, itens registrados
+   * ou `por_estado` não-vazio), ou afirma que gravou e nomeia submissões
+   * recusadas. Nenhuma das duas coisas pode ser afirmada a partir dela.
+   *
+   * É um QUARTO fato, e não um dos três: não é "não está instalado", não é "não
+   * respondeu" (respondeu), e não é "conferi e recusei" (a recusa é justamente o
+   * que não se pode afirmar). Colapsá-lo em IMPORT_UNAVAILABLE faria a tela dizer
+   * "nada foi gravado" sobre um corpo que afirma linhas gravadas -- e afirmar
+   * falsamente que nada foi escrito é pior que o enigma: enigma deixa quem lê
+   * desconfiado, afirmação falsa deixa tranquilo.
+   */
+  IMPORT_WRITE_UNVERIFIABLE: {
+    status: 503,
+    error: "A resposta da gravação da importação se contradiz",
+  },
   /** CONFERIDO: a impressão digital do questionário da coleta NÃO é a do sistema. Recusa ANTES de pontuar. */
   IMPORT_MANIFEST_MISMATCH: { status: 400, error: "O questionário da coleta não é o do sistema" },
   /** NÃO deu para conferir a impressão (não declarada, ou não é SHA-256). NÃO é "bate" nem "não bate". */
@@ -162,6 +181,33 @@ export const DEFINICOES_DE_ERRO = {
   /** CONFERIDO: as contagens de participação do evento não fecham entre si. */
   GUIDE_DATA_INCONSISTENT: { status: 400, error: "Os dados de participação do evento não fecham" },
 
+  // --- o DOCUMENTO INDIVIDUAL (geração, revisão e entrega)
+  //
+  // A mesma distinção de sempre, aplicada ao documento que o jovem recebe:
+  // "não consegui gravar", "conferi e recusei" e "o recurso não está instalado"
+  // são fatos diferentes. Recusar por DADO INSUFICIENTE não é erro de servidor:
+  // é desfecho previsto, com código próprio e mensagem que diz o que falta.
+
+  /**
+   * CONFERIDO pelo motor de pontuação: faltam perguntas acima do limiar
+   * (lib/ai/completude-marco-zero.ts). Nenhuma chamada ao modelo foi feita e
+   * nenhum documento foi gravado. `detalhes.itens` nomeia o que falta.
+   */
+  PROGNOSTIC_RESPONSES_INSUFFICIENT: { status: 400, error: "As respostas não bastam para gerar o documento" },
+  /** CONFERIDO: há valor PRESENTE e ilegível (fora do domínio do motor). Não é "não respondeu": é dado errado. */
+  PROGNOSTIC_RESPONSES_UNREADABLE: { status: 422, error: "Há resposta ilegível no questionário" },
+  /** CONFERIDO e NÃO PERMITIDO: o documento já avançou (entregue) e não volta para revisão. */
+  PROGNOSTIC_STATE_REGRESSION: { status: 400, error: "O documento não volta para o estado de revisão" },
+  /**
+   * CONFERIDO e NÃO PERMITIDO pelo banco (migration 025): o conteúdo a entregar
+   * não é o conteúdo aprovado, ou não há aprovação vigente sobre ele.
+   */
+  PROGNOSTIC_APPROVAL_STALE: { status: 400, error: "A aprovação não cobre este conteúdo" },
+  /** CONFERIDO: não existe documento com este identificador. */
+  PROGNOSTIC_NOT_FOUND: { status: 404, error: "Documento não encontrado" },
+  /** NÃO DEU PARA GRAVAR: o banco não respondeu ou falhou por causa não prevista. Nem recusa nem ausência. */
+  PROGNOSTIC_WRITE_UNAVAILABLE: { status: 503, error: "Não foi possível gravar o documento" },
+
   /** A consulta oficial de cobertura do Marco Zero não respondeu. Sem ela não há denominador nem veredito de volume. */
   COVERAGE_UNAVAILABLE: { status: 503, error: "A cobertura oficial do evento não respondeu" },
   /** Verificado: o banco não tem fotografia de convite utilizável, então o total de convidados não é conhecido. */
@@ -171,18 +217,66 @@ export const DEFINICOES_DE_ERRO = {
   INTERNAL_ERROR: { status: 500, error: "Erro interno" },
 } as const satisfies Record<string, { status: number; error: string }>;
 
-export type CodigoDeErro = keyof typeof DEFINICOES_DE_ERRO;
+// A FAMÍLIA DO DOCUMENTO INDIVIDUAL (prefixo `PROGNOSTIC_`) está na MESMA tabela
+// de status e texto -- um código, um lugar -- mas FORA do tipo `CodigoDeErro`.
+//
+// Por que essa separação existe, escrito aqui para quem for juntá-las:
+//   `CodigoDeErro` é consumido por MAPAS EXAUSTIVOS nas telas de processamento e
+//   de importação (`components/features/admin/processar-evento.ts` e
+//   `components/features/admin/importar-respostas.ts`), e essas telas NUNCA
+//   recebem um código desta família: quem a emite é /api/generate-prognostic e
+//   /api/prognostics/[id], que têm tela própria (o painel de revisão). Fechar
+//   aqueles mapas sobre os códigos que eles de fato recebem é mais honesto do
+//   que obrigá-los a classificar um desfecho que não chega até lá.
+//   Juntar as duas famílias depois é remover o `Exclude` destas duas linhas e
+//   classificar os seis códigos naqueles dois mapas.
+export type CodigoDeErroDocumento = Extract<
+  keyof typeof DEFINICOES_DE_ERRO,
+  `PROGNOSTIC_${string}`
+>;
+export type CodigoDeErro = Exclude<
+  keyof typeof DEFINICOES_DE_ERRO,
+  CodigoDeErroDocumento
+>;
+/** Qualquer código do vocabulário, das duas famílias. É o que `erroHttp` aceita. */
+export type TodoCodigoDeErro = CodigoDeErro | CodigoDeErroDocumento;
 
-export const CODIGOS_DE_ERRO = Object.keys(DEFINICOES_DE_ERRO) as CodigoDeErro[];
+const EH_DOCUMENTO = (k: string) => k.startsWith("PROGNOSTIC_");
 
+export const CODIGOS_DE_ERRO = Object.keys(DEFINICOES_DE_ERRO).filter(
+  (k) => !EH_DOCUMENTO(k),
+) as CodigoDeErro[];
+
+export const CODIGOS_DE_ERRO_DOCUMENTO = Object.keys(DEFINICOES_DE_ERRO).filter(
+  EH_DOCUMENTO,
+) as CodigoDeErroDocumento[];
+
+/**
+ * Reconhece um código das telas de processamento/importação. NÃO reconhece a
+ * família do documento individual: devolver `true` para ela faria aqueles mapas
+ * exaustivos serem indexados com uma chave que não têm, e o resultado seria
+ * `undefined` em tempo de execução -- um furo pior do que o código desconhecido,
+ * que já tem caminho seguro (mensagem genérica).
+ */
 export function ehCodigoDeErro(valor: unknown): valor is CodigoDeErro {
   return (
     typeof valor === "string" &&
+    !EH_DOCUMENTO(valor) &&
     Object.prototype.hasOwnProperty.call(DEFINICOES_DE_ERRO, valor)
   );
 }
 
-export function statusDoCodigo(codigo: CodigoDeErro): number {
+export function ehCodigoDeErroDocumento(
+  valor: unknown,
+): valor is CodigoDeErroDocumento {
+  return (
+    typeof valor === "string" &&
+    EH_DOCUMENTO(valor) &&
+    Object.prototype.hasOwnProperty.call(DEFINICOES_DE_ERRO, valor)
+  );
+}
+
+export function statusDoCodigo(codigo: TodoCodigoDeErro): number {
   return DEFINICOES_DE_ERRO[codigo].status;
 }
 
@@ -232,8 +326,14 @@ export interface DetalhesDeErro {
   ocupacao?: "respostas_canonicas" | "submissao_externa_ativa" | "ambos";
   /** Quantas respostas o participante escolhido já tem. Número, não lista. */
   respostas_existentes?: number;
-  /** Qual ato o operador tentou: reconciliar ou revogar. */
-  ato?: "reconciliar" | "revogar";
+  /**
+   * Qual ato o operador tentou. `importar_lote` é a importação de uma planilha
+   * inteira (/api/importacao/aplicar); os outros dois são a decisão sobre UMA
+   * submissão. O ato muda o que o operador tem de fazer em seguida -- pedir uma
+   * prévia nova sem as conflitantes não é o mesmo que recarregar a mesa --, então
+   * ele é DECLARADO pelo servidor e não adivinhado pela tela.
+   */
+  ato?: "reconciliar" | "revogar" | "importar_lote";
   /**
    * Em qual dos três estados do contrato de reversibilidade a decisão cai.
    * `correcao_simples` desfaz com um ato; `operacao_controlada` desfaz removendo
@@ -241,21 +341,103 @@ export interface DetalhesDeErro {
    * ação simples, porque há derivado gerado ou entregue.
    */
   reversibilidade?: "correcao_simples" | "operacao_controlada" | "procedimento_excepcional";
+  // --- documento individual -------------------------------------------------
+  /**
+   * Bloco do instrumento que ficou abaixo do mínimo de perguntas respondidas
+   * (lib/ai/completude-marco-zero.ts). A tela usa isto para dizer ONDE falta,
+   * sem interpretar texto. `itens` nomeia as perguntas.
+   */
+  blocos_incompletos?: ("likert" | "situacional" | "elementos")[];
+  /** Quantas perguntas o motor exige e quantas chegaram, por bloco insuficiente. */
+  completude?: { bloco: string; respondidas: number; total: number; minimo: number }[];
+  /** Estado em que o documento está AGORA, quando é ele que impede a escrita. */
+  estado_do_documento?: string;
+
   /** O código com que a revalidação do banco (migration 024) recusou a gravação. */
-  revalidacao?:
-    | "resposta_do_aplicativo"
-    | "outra_submissao_externa"
-    | "outra_submissao_ativa_do_participante"
-    | "duplicidade_no_lote"
-    | "participante_inexistente"
-    | "participante_fora_do_evento"
-    | "email_do_participante_mudou";
+  revalidacao?: CodigoDaRevalidacao;
+  /**
+   * As submissões que a revalidação do banco RECUSOU, nomeadas uma por uma.
+   *
+   * Existe porque um lote recusado é ATÔMICO: nada do lote foi gravado, e dizer
+   * só "o lote foi recusado" deixaria o operador sem saber QUAL submissão tirar
+   * da planilha para a próxima prévia. Vazia nunca é enviada: um retorno que diz
+   * recusa e não diz quais submissões é INDISPONIBILIDADE, não "recusa sem
+   * motivo" (lib/importacao/borda.ts).
+   *
+   * Só dado que o operador já tem em mãos: o id da submissão da planilha dele, o
+   * nome fechado da causa e números. Nunca texto interno de banco.
+   */
+  recusadas?: RecusaDeSubmissaoNaRevalidacao[];
+}
+
+/**
+ * O vocabulário FECHADO das causas de recusa da revalidação (migration 024).
+ *
+ * Esta lista é o espelho, em TypeScript, do `check` de
+ * `external_import_rejections.codigo`. Os dois lados têm de dizer o mesmo: um
+ * código que o banco emite e o TypeScript não conhece cai em "o ato ficou
+ * registrado e não foi efetivado" -- degradação honesta e IMPRECISA, porque o
+ * sistema conferiu e recusou. Um teste compara esta lista com o SQL da 024
+ * (lib/importacao/decisao-do-operador.test.ts) para que elas não divirjam em
+ * silêncio.
+ */
+export type CodigoDaRevalidacao =
+  | "resposta_do_aplicativo"
+  | "outra_submissao_externa"
+  | "outra_submissao_ativa_do_participante"
+  | "duplicidade_no_lote"
+  | "participante_inexistente"
+  | "participante_fora_do_evento"
+  | "email_do_participante_mudou"
+  | "versao_da_submissao_mudou"
+  | "identidade_da_submissao_mudou";
+
+/**
+ * As causas, em lista. Derivada de um `Record<CodigoDaRevalidacao, true>` de
+ * propósito: a lista é EXAUSTIVA por construção, e um código novo no tipo acima
+ * NÃO COMPILA sem entrar aqui. Antes, a lista era escrita à mão num outro
+ * arquivo, e foi assim que duas causas da 024 ficaram de fora dela -- caindo em
+ * "o ato ficou registrado e não foi efetivado" em vez de "recusado na
+ * revalidação", que é honesto e impreciso.
+ */
+const CAUSAS_DA_REVALIDACAO: Record<CodigoDaRevalidacao, true> = {
+  resposta_do_aplicativo: true,
+  outra_submissao_externa: true,
+  outra_submissao_ativa_do_participante: true,
+  duplicidade_no_lote: true,
+  participante_inexistente: true,
+  participante_fora_do_evento: true,
+  email_do_participante_mudou: true,
+  versao_da_submissao_mudou: true,
+  identidade_da_submissao_mudou: true,
+};
+
+export const CODIGOS_DA_REVALIDACAO = Object.keys(CAUSAS_DA_REVALIDACAO) as CodigoDaRevalidacao[];
+
+/** O nome que o banco mandou é uma causa DESTE vocabulário? */
+export function ehCodigoDaRevalidacao(valor: unknown): valor is CodigoDaRevalidacao {
+  return (
+    typeof valor === "string" &&
+    Object.prototype.hasOwnProperty.call(CAUSAS_DA_REVALIDACAO, valor)
+  );
+}
+
+/** Uma submissão recusada na revalidação, como a tela a lê. */
+export interface RecusaDeSubmissaoNaRevalidacao {
+  /** O identificador da submissão na planilha do operador. */
+  submissao_id: string;
+  /** A causa, nomeada. `null` quando o banco usou um nome fora deste vocabulário. */
+  codigo: CodigoDaRevalidacao | null;
+  /** As etapas cuja resposta já tem outro dono. Ids de etapa, não conteúdo. */
+  etapas_em_conflito: string[];
+  /** Quantas etapas desta submissão deixaram de ser gravadas. Zero é um número. */
+  etapas_nao_gravadas: number;
 }
 
 /** Corpo de toda resposta de erro das rotas de processamento. */
 export interface CorpoDeErro {
   error: string;
-  code: CodigoDeErro;
+  code: TodoCodigoDeErro;
   /** Identificador desta ocorrência: está no log do servidor e é o que o host informa à equipe. */
   ocorrencia: string;
   detalhes?: DetalhesDeErro;

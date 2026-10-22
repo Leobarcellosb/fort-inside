@@ -69,7 +69,11 @@
 // `registrarAtoDoOperador`, `revogarReconciliacao`) e do SHA-256.
 
 import { createHash } from "node:crypto";
-import type { CodigoDeErro, DetalhesDeErro } from "../erros/codigos";
+import {
+  ehCodigoDaRevalidacao,
+  type CodigoDeErro,
+  type DetalhesDeErro,
+} from "../erros/codigos";
 import { indicaEsquemaAusente, type ErroRpcCru } from "../erros/falha-de-fila";
 import type { ManifestoQuestionario } from "./manifesto-questionario";
 import {
@@ -1649,35 +1653,45 @@ export function planoDaDecisao(
  * participante -- foi assim antes da 024, e esta medido na prova desta borda.
  */
 export function recusaDaRevalidacao(
-  resumo: { recusadas_na_revalidacao: { submissao_id: string; codigo: string; estado: string }[] },
+  resumo: {
+    recusadas_na_revalidacao: { submissao_id: string; codigo: string; estado?: string | null }[];
+  },
   submissaoDoFormulario: string,
 ): { codigo: CodigoDeErro; motivo: string; detalhes: DetalhesDeErro } | null {
   const r = resumo.recusadas_na_revalidacao.find((x) => x.submissao_id === submissaoDoFormulario);
   if (r === undefined) return null;
-  const conhecido = (CODIGOS_DA_REVALIDACAO as readonly string[]).includes(r.codigo);
+  const causa = ehCodigoDaRevalidacao(r.codigo) ? r.codigo : null;
+  // O estado REAL da submissao no banco depois da recusa. `null` quando ela nunca
+  // foi gravada -- e "nao existe linha" nao se escreve como "conflito".
+  const estado = r.estado ?? null;
+  const ESTADOS = ["importavel", "incompativel", "pendente", "conflito", "revogada"] as const;
+  const nomeado = ESTADOS.find((e) => e === estado) ?? null;
   return {
     // Codigo desconhecido NAO vira "conferi e recusei": vira "o ato ficou
     // registrado e nao foi efetivado", que e o que se pode afirmar sem saber por que.
-    codigo: conhecido ? "IMPORT_REVALIDATION_REFUSED" : "IMPORT_ACT_NOT_APPLIED",
-    motivo: `a revalidacao do banco recusou a gravacao (${r.codigo}); a submissao ficou ${r.estado} e nada foi gravado dela`,
+    codigo: causa !== null ? "IMPORT_REVALIDATION_REFUSED" : "IMPORT_ACT_NOT_APPLIED",
+    motivo:
+      `a revalidacao do banco recusou a gravacao (${r.codigo}); ` +
+      (nomeado === null
+        ? "a submissao nao ficou gravada em estado nenhum e nada foi gravado dela"
+        : `a submissao ficou ${nomeado} e nada foi gravado dela`),
     detalhes: {
       ato: "reconciliar",
-      estado_da_submissao: r.estado as DetalhesDeErro["estado_da_submissao"],
-      ...(conhecido ? { revalidacao: r.codigo as NonNullable<DetalhesDeErro["revalidacao"]> } : {}),
+      ...(nomeado === null ? {} : { estado_da_submissao: nomeado }),
+      ...(causa === null ? {} : { revalidacao: causa }),
     },
   };
 }
 
-/** Os codigos de recusa que a revalidacao da 024 produz. */
-export const CODIGOS_DA_REVALIDACAO = [
-  "resposta_do_aplicativo",
-  "outra_submissao_externa",
-  "outra_submissao_ativa_do_participante",
-  "duplicidade_no_lote",
-  "participante_inexistente",
-  "participante_fora_do_evento",
-  "email_do_participante_mudou",
-] as const;
+/**
+ * Os codigos de recusa que a revalidacao da 024 produz.
+ *
+ * A lista mora em lib/erros/codigos.ts, junto do tipo `CodigoDaRevalidacao`, e e
+ * exaustiva por construcao. Reexportada aqui porque e por este nome que a borda
+ * da decisao a conhece -- e porque uma SEGUNDA lista escrita a mao foi o que
+ * deixou `versao_da_submissao_mudou` e `identidade_da_submissao_mudou` de fora.
+ */
+export { CODIGOS_DA_REVALIDACAO } from "../erros/codigos";
 
 /** Qual codigo HTTP corresponde a cada recusa do plano da decisao. Uma tabela. */
 export const CODIGO_DA_RECUSA_DA_DECISAO: Record<

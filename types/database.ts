@@ -127,6 +127,15 @@ export interface Prognostic {
   delivered_at: string | null;
   pdf_url: string | null;
   public_share_token: string;
+  /**
+   * Impressao digital (SHA-256 hex) do conteudo que a ultima revisao humana
+   * aprovou -- migration 025. Escrita SOMENTE pelo gatilho do banco: o que a
+   * aplicacao gravar aqui e sobrescrito. Entregar (`delivered`) exige
+   * `final_content` com esta mesma impressao, por CHECK e por gatilho.
+   */
+  conteudo_aprovado_hash: string | null;
+  /** Instante do ato de aprovacao a que `conteudo_aprovado_hash` se refere. */
+  aprovado_em: string | null;
 }
 
 export interface PrognosticContent {

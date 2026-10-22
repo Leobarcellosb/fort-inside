@@ -3,7 +3,7 @@ import type { ResultadoDeAdmin } from "../auth/require-admin";
 import {
   DEFINICOES_DE_ERRO,
   novaOcorrencia,
-  type CodigoDeErro,
+  type TodoCodigoDeErro,
   type CorpoDeErro,
   type DetalhesDeErro,
 } from "./codigos";
@@ -17,7 +17,7 @@ import {
 // host não recebe texto interno de banco; quem investiga acha pela ocorrência.
 
 export function erroHttp(
-  codigo: CodigoDeErro,
+  codigo: TodoCodigoDeErro,
   opcoes: { causa?: unknown; detalhes?: DetalhesDeErro; error?: string } = {}
 ): NextResponse<CorpoDeErro> {
   const def = DEFINICOES_DE_ERRO[codigo];

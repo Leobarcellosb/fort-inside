@@ -464,6 +464,7 @@ describe("critério 7 -- cada erro tem controle positivo ao lado", () => {
       QUEUE_SCHEMA_MISSING: "fila_indisponivel",
       IMPORT_SCHEMA_MISSING: "bloqueado",
       IMPORT_UNAVAILABLE: "bloqueado",
+      IMPORT_WRITE_UNVERIFIABLE: "bloqueado",
       IMPORT_MANIFEST_MISMATCH: "recusado",
       IMPORT_MANIFEST_UNVERIFIABLE: "bloqueado",
       IMPORT_SPREADSHEET_INVALID: "recusado",

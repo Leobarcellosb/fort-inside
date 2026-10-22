@@ -4,8 +4,11 @@
 // lib/importacao/provas/decisao-http.test.ts. Aqui ficam as decisoes puras, cada
 // negativa com o controle positivo ao lado.
 
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { MOTIVO_DA_REVALIDACAO, mensagemParaHost } from "../erros/mensagens-host";
 import {
+  CODIGOS_DA_REVALIDACAO,
   CODIGO_DA_RECUSA_DA_DECISAO,
   SEPARADOR_DO_INVENTARIO,
   SEM_DERIVADOS,
@@ -573,5 +576,70 @@ describe("a recusa da revalidacao do banco (024) e lida com nome", () => {
     // CONTROLE POSITIVO: sem recusa, nao se inventa recusa.
     expect(recusaDaRevalidacao({ recusadas_na_revalidacao: [] }, "resp-001")).toBeNull();
     expect(recusaDaRevalidacao(resumo("resposta_do_aplicativo"), "resp-002")).toBeNull();
+  });
+
+  it("TODOS os codigos que a 024 emite caem em RECUSA, e nenhum em 'o ato nao foi efetivado'", () => {
+    // O defeito que este teste mede: `versao_da_submissao_mudou` e
+    // `identidade_da_submissao_mudou` nao estavam na lista, e caiam em
+    // IMPORT_ACT_NOT_APPLIED -- "nao deu para concluir". Honesto e IMPRECISO: o
+    // sistema conferiu e NAO PERMITIU, e so a recusa manda o operador olhar a
+    // ficha nova em vez de esperar.
+    for (const codigo of CODIGOS_DA_REVALIDACAO) {
+      const r = recusaDaRevalidacao(
+        { recusadas_na_revalidacao: [{ submissao_id: "resp-001", codigo, estado: "conflito" }] },
+        "resp-001",
+      );
+      expect(r?.codigo, codigo).toBe("IMPORT_REVALIDATION_REFUSED");
+      expect(r?.detalhes.revalidacao, codigo).toBe(codigo);
+      // E o host le uma causa NOMEADA, nao a frase generica.
+      expect(mensagemParaHost("IMPORT_REVALIDATION_REFUSED", r?.detalhes)).toContain(
+        MOTIVO_DA_REVALIDACAO[codigo],
+      );
+    }
+    // Os dois que faltavam, nomeados: se alguem os tirar da lista, este teste cai.
+    expect(CODIGOS_DA_REVALIDACAO).toContain("versao_da_submissao_mudou");
+    expect(CODIGOS_DA_REVALIDACAO).toContain("identidade_da_submissao_mudou");
+  });
+
+  it("estado nulo (a submissao nunca foi gravada) nao vira 'conflito' nem ''", () => {
+    // O lote e atomico: na recusa, NADA foi gravado. Uma submissao que nunca
+    // existiu no banco nao ficou em estado nenhum, e afirmar 'conflito' aqui seria
+    // afirmar uma escrita que a transacao nao fez.
+    const r = recusaDaRevalidacao(
+      {
+        recusadas_na_revalidacao: [
+          { submissao_id: "resp-001", codigo: "resposta_do_aplicativo", estado: null },
+        ],
+      },
+      "resp-001",
+    );
+    expect(r?.codigo).toBe("IMPORT_REVALIDATION_REFUSED");
+    expect(r?.detalhes.estado_da_submissao).toBeUndefined();
+    expect(r?.motivo).toMatch(/nao ficou gravada em estado nenhum/);
+  });
+
+  it("a lista do TypeScript e a do SQL da 024 dizem a MESMA coisa", () => {
+    // O vocabulario vive em dois lugares -- o `check` de
+    // `external_import_rejections.codigo` e `CodigoDaRevalidacao` -- e eles tem de
+    // dizer o mesmo. Um codigo que o banco emite e o TypeScript nao conhece volta a
+    // cair em "o ato ficou registrado e nao foi efetivado"; um que o TypeScript tem e
+    // o banco nao emite e promessa de causa que nunca chega. Este teste LE a
+    // migration, para a lista nao divergir em silencio.
+    const sql = readFileSync(
+      new URL("../../supabase/migrations/024_importacao_revalidacao_na_transacao.sql", import.meta.url),
+      "utf8",
+    );
+    const check = /external_import_rejections_codigo_check[\s\S]*?codigo in \(([\s\S]*?)\)\)/.exec(sql);
+    expect(check, "o check de codigo da 024 nao foi encontrado").not.toBeNull();
+    const doCheck = [...(check?.[1] ?? "").matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).sort();
+    expect(doCheck.length).toBeGreaterThan(0);
+    expect([...CODIGOS_DA_REVALIDACAO].sort()).toEqual(doCheck);
+
+    // E cada um deles e, de fato, EMITIDO pela revalidacao (`v_recusa_codigo :=`):
+    // vocabulario que o banco declara e nunca usa seria promessa sem emissor.
+    const emitidos = [...sql.matchAll(/v_recusa_codigo\s*:=\s*'([a-z_]+)'/g)].map((m) => m[1]);
+    for (const codigo of CODIGOS_DA_REVALIDACAO) {
+      expect(emitidos, codigo).toContain(codigo);
+    }
   });
 });

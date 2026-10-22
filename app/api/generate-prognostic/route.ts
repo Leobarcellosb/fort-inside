@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { generatePrognosticSchema } from "@/lib/schemas";
 import { generatePrognostic } from "@/lib/ai/generate-prognostic";
 import { renderAndStorePdf } from "@/lib/pdf/render-prognostic-pdf";
+import { erroHttp } from "@/lib/erros/resposta";
 
 export const maxDuration = 120;
 
@@ -74,6 +75,18 @@ export async function POST(req: NextRequest) {
   const result = await generatePrognostic(participant_id, event_id);
 
   if (!result.ok) {
+    // Recusa COM causa conhecida sai pelo vocabulario (lib/erros/codigos.ts):
+    // corpo com `code`, `ocorrencia` e `detalhes`, para a tela dizer o que
+    // falta em vez de cair na mensagem generica. "Nao bastam as respostas" e
+    // desfecho previsto, nao erro de servidor -- e o 400 com codigo proprio e
+    // o que diz isso.
+    if (result.code) {
+      return erroHttp(result.code, {
+        error: result.error,
+        detalhes: result.detalhes,
+        causa: result.detail,
+      });
+    }
     return NextResponse.json(
       { error: result.error, detail: result.detail },
       { status: result.status }

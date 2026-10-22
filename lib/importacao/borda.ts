@@ -27,12 +27,20 @@
 // OS CODIGOS, e a distincao que governa esta borda inteira (lib/erros/codigos.ts):
 //   IMPORT_SCHEMA_MISSING         o recurso NAO ESTA INSTALADO no banco;
 //   IMPORT_UNAVAILABLE           o recurso existe e NAO RESPONDEU;
+//   IMPORT_WRITE_UNVERIFIABLE    RESPONDEU e a resposta SE CONTRADIZ (recusa com
+//                                escrita informada, ou gravacao com recusas
+//                                nomeadas): nao se afirma nem que gravou nem que
+//                                nao gravou;
 //   IMPORT_MANIFEST_UNVERIFIABLE NAO DEU PARA CONFERIR a impressao;
 //   IMPORT_MANIFEST_MISMATCH     CONFERI e o questionario e outro -> recusa;
 //   IMPORT_SPREADSHEET_INVALID   CONFERI os cabecalhos e nao casam -> recusa;
 //   IMPORT_PLAN_REFUSED          CONFERI o operador/origem/versao -> recusa;
-//   IMPORT_PREVIEW_STALE         CONFERI que a previa venceu -> recusa.
-// Os tres primeiros grupos nunca se confundem, e e por isso que sao sete codigos.
+//   IMPORT_PREVIEW_STALE         CONFERI que a previa venceu -> recusa;
+//   IMPORT_REVALIDATION_REFUSED  o BANCO conferiu DENTRO da transacao e recusou o
+//                                LOTE INTEIRO (migration 024) -> recusa, e nada
+//                                foi gravado. Desfecho PREVISTO, nao erro: ele
+//                                protegeu a resposta de alguem.
+// Os tres primeiros grupos nunca se confundem, e e por isso que sao oito codigos.
 //
 // O OPERADOR NAO VEM DO CORPO DO PEDIDO. Vem de `verificarAdmin()`, e so. Um
 // campo `operador` no JSON seria um pedido para importar em nome de outra pessoa,
@@ -42,7 +50,12 @@
 // Funcoes puras, fora de `lerContextoDoEvento` (que le o banco) e do SHA-256.
 
 import { createHash } from "node:crypto";
-import type { CodigoDeErro, DetalhesDeErro } from "../erros/codigos";
+import {
+  ehCodigoDaRevalidacao,
+  type CodigoDaRevalidacao,
+  type CodigoDeErro,
+  type DetalhesDeErro,
+} from "../erros/codigos";
 import { indicaEsquemaAusente, type ErroRpcCru } from "../erros/falha-de-fila";
 import {
   montarManifesto,
@@ -834,15 +847,49 @@ export interface RecusaNaRevalidacao {
   submissao_id: string;
   /** O codigo da 024: `resposta_do_aplicativo`, `outra_submissao_externa`, ... */
   codigo: string;
-  /** Em que estado a submissao FICOU retida: `conflito` ou `pendente`. */
-  estado: string;
+  /**
+   * O estado em que a submissao FICOU no banco depois da recusa. Como o lote e
+   * atomico e NADA foi gravado, e o estado que ela ja tinha -- ou `null` quando
+   * ela nunca foi gravada. `null` nao e "conflito" nem "" : e "nao existe linha".
+   */
+  estado: string | null;
+  /** O estado que o PLANO pretendia gravar. */
+  estado_do_plano: string | null;
+  /** O participante a quem esta submissao seria atribuida, se houver. */
+  participante_pretendido: string | null;
+  /** As etapas cuja resposta canonica passou a ter outro dono. Ids de etapa. */
+  etapas_em_conflito: string[];
   etapas_nao_gravadas: number;
+  /**
+   * A prosa do banco. Vai para o LOG (a `causa` de `erroHttp`) e NUNCA para a
+   * tela: o que o operador le nasce em lib/erros/mensagens-host.ts, a partir do
+   * `codigo`. Texto interno de banco nao chega a quem conduz o evento.
+   */
+  motivo: string;
 }
 
+/**
+ * O que a funcao do banco devolveu sobre o LOTE -- nos dois desfechos.
+ *
+ * `ok: false` NAO e um sucesso com numeros estranhos: e o LOTE RECUSADO da
+ * migration 024, com todos os contadores em zero porque nada foi gravado, e com
+ * `recusadas_na_revalidacao` dizendo quais submissoes causaram e por que. Remontar
+ * so os contadores e descartar esses campos -- o que esta borda fazia antes --
+ * entregava ao operador a divergencia generica da conferencia ("a previa disse 5
+ * e o banco gravou 0") em vez da instrucao que ele precisa.
+ */
 export interface ResumoDaGravacao {
+  /** `true` gravou, `false` RECUSOU o lote inteiro. Ausente no banco pre-024: ausencia e sucesso. */
+  ok: boolean;
+  /** O codigo DO BANCO na recusa (`LOTE_RECUSADO_NA_REVALIDACAO`); `null` no sucesso. */
+  codigo: string | null;
+  /** A prosa do banco na recusa, para o LOG; `null` no sucesso. Nunca para a tela. */
+  motivo: string | null;
   evento_id: string;
   formulario_id: string;
   questionario_impressao: string;
+  /** A marca do lote (md5 do plano), como a 024 a devolve. `null` em banco que nao a tem. */
+  lote_impressao: string | null;
   por_estado: Partial<Record<EstadoDaSubmissao, number>>;
   linhas_de_resposta_gravadas: number;
   itens_registrados: number;
@@ -853,7 +900,12 @@ export interface ResumoDaGravacao {
 
 export type Aplicacao =
   | { ok: true; resumo: ResumoDaGravacao }
-  | ({ ok: false } & FalhaDaBorda);
+  /**
+   * `recusa` presente significa UM fato especifico: o banco CONFERIU e NAO
+   * PERMITIU, e nada foi gravado. Ausente, a falha e das outras duas naturezas
+   * ("nao esta instalado" / "nao respondeu"), e nenhuma das tres se confunde.
+   */
+  | ({ ok: false; recusa?: ResumoDaGravacao } & FalhaDaBorda);
 
 /**
  * "O recurso nao esta instalado" x "o recurso nao respondeu".
@@ -897,8 +949,8 @@ export async function aplicarPlano(
       motivo: resposta.error.message ?? "falha ao gravar a importacao",
     };
   }
-  const d = resposta.data as Partial<ResumoDaGravacao> | null;
-  if (d === null || typeof d !== "object") {
+  const d = resposta.data as Record<string, unknown> | null;
+  if (d === null || typeof d !== "object" || Array.isArray(d)) {
     // A funcao respondeu sem o resumo: NAO da para afirmar o que foi gravado.
     // Dizer "pronto" aqui seria afirmar um numero que nao se tem.
     return {
@@ -907,28 +959,187 @@ export async function aplicarPlano(
       motivo: "a funcao de importacao respondeu sem resumo: nao da para afirmar o que foi gravado",
     };
   }
+
+  // `ok` AUSENTE e sucesso: e a funcao da 022, que nao tinha este campo e nao
+  // tinha revalidacao. `ok` presente com valor que nao e booleano nao e nenhuma
+  // das duas coisas -- nao da para afirmar nem gravacao nem recusa.
+  if (d.ok !== undefined && typeof d.ok !== "boolean") {
+    return {
+      ok: false,
+      codigo: "IMPORT_UNAVAILABLE",
+      motivo: `a funcao de importacao respondeu com 'ok' de tipo ${typeof d.ok}: nao da para afirmar se gravou ou recusou`,
+    };
+  }
+
+  const resumo = lerResumoDaGravacao(d);
+
+  // --------------------------------------------------------------------------
+  // A RESPOSTA SE CONTRADIZ? Antes de ler o desfecho, nos DOIS sentidos.
+  //
+  // E a mesma regra, e por isso ela e UMA funcao: "gravou e recusou" nao existe,
+  // venha a contradicao de que lado vier. Afirmar o desfecho que o `ok` diz, com
+  // o resto do corpo dizendo o contrario, e confiar num invariante do banco em
+  // vez de conferi-lo -- e a tela afirmaria "NADA foi gravado" em cima de um
+  // corpo que informa cinco linhas gravadas.
+  // --------------------------------------------------------------------------
+  const contradicao = contradicaoDaGravacao(resumo);
+  if (contradicao !== null) {
+    return { ok: false, codigo: "IMPORT_WRITE_UNVERIFIABLE", motivo: contradicao };
+  }
+
+  if (resumo.ok === false) {
+    // ---------------------------------------------------------------------
+    // LOTE RECUSADO NA REVALIDACAO (migration 024). Desfecho PREVISTO: o banco
+    // conferiu dentro da transacao e nao permitiu. Nada foi gravado -- nem as
+    // submissoes sem conflito --, e a resposta que cada participante tinha
+    // continua intacta.
+    // ---------------------------------------------------------------------
+    if (!recusaUtilizavel(resumo.recusadas_na_revalidacao)) {
+      // Um retorno que diz RECUSA e nao diz QUAIS submissoes nao autoriza
+      // afirmar "recusa sem motivo": nao se promete o que nao foi verificado.
+      // Isto e INDISPONIBILIDADE -- o recurso existe, respondeu, e o que
+      // respondeu nao da para ler.
+      return {
+        ok: false,
+        codigo: "IMPORT_UNAVAILABLE",
+        motivo: `a funcao de importacao disse ${resumo.codigo ?? "recusa"} e nao disse quais submissoes recusou (${resumo.recusadas_na_revalidacao.length} entrada(s) ilegivel(eis)): nao da para afirmar o motivo`,
+      };
+    }
+    return {
+      ok: false,
+      codigo: "IMPORT_REVALIDATION_REFUSED",
+      motivo: `${resumo.codigo ?? "LOTE_RECUSADO_NA_REVALIDACAO"}: ${resumo.motivo ?? "o banco recusou o lote na revalidacao"}`,
+      detalhes: detalhesDaRecusaDoLote(resumo.recusadas_na_revalidacao),
+      recusa: resumo,
+    };
+  }
+
+  return { ok: true, resumo };
+}
+
+/**
+ * "GRAVOU e RECUSOU" nao existe. Esta funcao e a unica que decide isso, e ela
+ * olha os DOIS sentidos da mesma contradicao:
+ *
+ *   `ok: true` com recusas NOMEADAS. Na 024, lote gravado tem lista VAZIA -- e e
+ *   assim que a lista vazia e uma AFIRMACAO ("nada foi recusado"). Aceitar como
+ *   sucesso descartaria em silencio uma recusa que o banco nomeou.
+ *
+ *   `ok: false` com ESCRITA informada (linhas, itens ou `por_estado` nao-vazio).
+ *   Na 024, a recusa decide ANTES de escrever qualquer coisa do plano e sai com
+ *   todos os contadores em zero -- os zeros sao a afirmacao de que o lote nao
+ *   entrou. Aceitar como recusa normal faria a tela afirmar "NADA foi gravado, e
+ *   nada que existia foi tocado" em cima de um corpo que informa escrita.
+ *
+ * Nenhum dos dois e defeito observado em producao: sob a 024 de hoje nenhum
+ * acontece. Sao invariantes do banco, e esta borda os CONFERE em vez de confiar
+ * neles -- porque o preco de confiar e uma afirmacao falsa sobre o que foi escrito
+ * no documento de alguem, e afirmacao falsa deixa quem le tranquilo.
+ *
+ * Devolve a descricao da contradicao (para o LOG), ou `null` quando o corpo e
+ * coerente.
+ */
+function contradicaoDaGravacao(resumo: ResumoDaGravacao): string | null {
+  const escritas: string[] = [];
+  if (resumo.linhas_de_resposta_gravadas !== 0) {
+    escritas.push(`linhas_de_resposta_gravadas=${resumo.linhas_de_resposta_gravadas}`);
+  }
+  if (resumo.itens_registrados !== 0) escritas.push(`itens_registrados=${resumo.itens_registrados}`);
+  const porEstado = Object.entries(resumo.por_estado).filter(([, n]) => Number(n) !== 0);
+  if (porEstado.length > 0) {
+    escritas.push(`por_estado={${porEstado.map(([e, n]) => `${e}=${n}`).join(", ")}}`);
+  }
+  const recusas = resumo.recusadas_na_revalidacao.length;
+
+  if (resumo.ok === false && escritas.length > 0) {
+    return `a funcao de importacao disse ${resumo.codigo ?? "recusa"} (lote recusado, nada gravado) e informou escrita no MESMO retorno (${escritas.join(", ")}): nao da para afirmar o que foi gravado nem o que nao foi`;
+  }
+  if (resumo.ok === true && recusas > 0) {
+    return `a funcao de importacao afirmou gravacao e listou ${recusas} recusa(s) no MESMO retorno: nao da para afirmar o que foi gravado nem o que nao foi`;
+  }
+  return null;
+}
+
+/**
+ * O retorno da funcao do banco, lido campo por campo -- os DOIS desfechos pelo
+ * MESMO leitor. Um leitor para o sucesso e outro para a recusa divergiriam, e
+ * divergir aqui e a tela afirmando uma coisa e o banco tendo feito outra.
+ */
+function lerResumoDaGravacao(d: Record<string, unknown>): ResumoDaGravacao {
+  const texto = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
   return {
-    ok: true,
-    resumo: {
-      evento_id: String(d.evento_id ?? ""),
-      formulario_id: String(d.formulario_id ?? ""),
-      questionario_impressao: String(d.questionario_impressao ?? ""),
-      por_estado: (d.por_estado ?? {}) as Partial<Record<EstadoDaSubmissao, number>>,
-      linhas_de_resposta_gravadas: Number(d.linhas_de_resposta_gravadas ?? 0),
-      itens_registrados: Number(d.itens_registrados ?? 0),
-      importado_por: String(d.importado_por ?? ""),
-      // A lista da 024. Ausente em banco que ainda nao a tem: ausencia da lista e
-      // lista vazia, e e assim que ela nao inventa recusa onde a funcao antiga
-      // nao recusava nada.
-      recusadas_na_revalidacao: Array.isArray(d.recusadas_na_revalidacao)
-        ? (d.recusadas_na_revalidacao as unknown as Record<string, unknown>[]).map((r) => ({
+    // Ausencia de `ok` e SUCESSO (banco pre-024). Nao se inventa recusa onde a
+    // funcao antiga nao recusava nada.
+    ok: d.ok === undefined ? true : d.ok === true,
+    codigo: texto(d.codigo),
+    motivo: texto(d.motivo),
+    evento_id: String(d.evento_id ?? ""),
+    formulario_id: String(d.formulario_id ?? ""),
+    questionario_impressao: String(d.questionario_impressao ?? ""),
+    lote_impressao: texto(d.lote_impressao),
+    por_estado: (d.por_estado ?? {}) as Partial<Record<EstadoDaSubmissao, number>>,
+    linhas_de_resposta_gravadas: Number(d.linhas_de_resposta_gravadas ?? 0),
+    itens_registrados: Number(d.itens_registrados ?? 0),
+    importado_por: String(d.importado_por ?? ""),
+    // A lista da 024. Ausente em banco que ainda nao a tem: ausencia da lista e
+    // lista vazia, e e assim que ela nao inventa recusa onde a funcao antiga
+    // nao recusava nada.
+    recusadas_na_revalidacao: Array.isArray(d.recusadas_na_revalidacao)
+      ? (d.recusadas_na_revalidacao as unknown[])
+          .filter((r): r is Record<string, unknown> => r !== null && typeof r === "object" && !Array.isArray(r))
+          .map((r) => ({
             submissao_id: String(r.submissao_id ?? ""),
             codigo: String(r.codigo ?? ""),
-            estado: String(r.estado ?? ""),
+            estado: texto(r.estado),
+            estado_do_plano: texto(r.estado_do_plano),
+            participante_pretendido: texto(r.participante_pretendido),
+            etapas_em_conflito: Array.isArray(r.etapas_em_conflito)
+              ? (r.etapas_em_conflito as unknown[]).map((e) => String(e)).filter((e) => e !== "")
+              : [],
             etapas_nao_gravadas: Number(r.etapas_nao_gravadas ?? 0),
+            motivo: String(r.motivo ?? ""),
           }))
-        : [],
-    },
+      : [],
+  };
+}
+
+/**
+ * A lista de recusadas da para LER? Vazia, nao. Com entrada que nao nomeia a
+ * submissao ou a causa, nao.
+ *
+ * Nao e preciosismo: a unica acao que resolve um lote recusado e pedir previa
+ * nova SEM as conflitantes, e isso exige saber QUAIS sao. Uma lista que nao
+ * nomeia nao instrui ninguem, e afirmar "recusado" sem poder dizer o que tirar da
+ * planilha e o enigma que esta unidade existe para acabar.
+ */
+function recusaUtilizavel(recusadas: RecusaNaRevalidacao[]): boolean {
+  return (
+    recusadas.length > 0 &&
+    recusadas.every((r) => r.submissao_id.trim() !== "" && r.codigo.trim() !== "")
+  );
+}
+
+/**
+ * Os detalhes SEGUROS da recusa do lote, para a tela. So o que o operador ja tem
+ * em maos: o id da submissao da planilha dele, o nome fechado da causa e numeros.
+ * Nenhum texto de banco, nenhum e-mail de terceiro.
+ *
+ * `revalidacao` (a causa da PRIMEIRA recusada) existe para a mensagem do host
+ * poder nomear uma causa numa frase; a lista inteira vai em `recusadas`, e e
+ * dela que a tela monta o que o operador tem de tirar da planilha.
+ */
+function detalhesDaRecusaDoLote(recusadas: RecusaNaRevalidacao[]): DetalhesDeErro {
+  const nomeada = (c: string): CodigoDaRevalidacao | null => (ehCodigoDaRevalidacao(c) ? c : null);
+  const primeira = nomeada(recusadas[0]?.codigo ?? "");
+  return {
+    ato: "importar_lote",
+    ...(primeira === null ? {} : { revalidacao: primeira }),
+    recusadas: recusadas.map((r) => ({
+      submissao_id: r.submissao_id,
+      codigo: nomeada(r.codigo),
+      etapas_em_conflito: r.etapas_em_conflito,
+      etapas_nao_gravadas: r.etapas_nao_gravadas,
+    })),
   };
 }
 

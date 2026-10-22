@@ -30,6 +30,7 @@ import type {
   Prognostic,
   TrailRecommendation,
 } from "@/types/database";
+import type { DetalhesDeErro, TodoCodigoDeErro } from "@/lib/erros/codigos";
 
 // Core prognostic generation, callable in-process. Both the HTTP route and
 // batch-process go through this instead of self-fetching /api/generate-prognostic,
@@ -53,7 +54,21 @@ const ESTADOS_REGERAVEIS = ["pending", "generating", "generated"] as const;
 
 export type GenerateResult =
   | { ok: true; prognosticId: string; trail: TrailRecommendation }
-  | { ok: false; status: number; error: string; detail?: unknown };
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      /**
+       * A CAUSA no vocabulário de lib/erros/codigos.ts, quando ela e conhecida.
+       * Recusar por DADO INSUFICIENTE nao e erro de servidor: e desfecho
+       * previsto, e o codigo e o que deixa a tela dizer o que falta. As recusas
+       * mais antigas (veto da saida, estado avancado) seguem sem codigo: o
+       * status delas ja esta provado e nao foi tocado por esta unidade.
+       */
+      code?: TodoCodigoDeErro;
+      detalhes?: DetalhesDeErro;
+      detail?: unknown;
+    };
 
 interface ParametrosDeChamada {
   system: Anthropic.Messages.TextBlockParam[];
@@ -216,7 +231,16 @@ export async function generatePrognostic(
   if (marcoZero) {
     const preparado = prepararBriefing(responses);
     if (!preparado.ok) {
-      return { ok: false, status: preparado.status, error: preparado.error };
+      // O portao de completude mora dentro de prepararBriefing: a recusa por
+      // perguntas faltando acontece AQUI, antes de chamar o modelo e antes de
+      // existir linha em `prognostics`. O codigo atravessa junto.
+      return {
+        ok: false,
+        status: preparado.status,
+        error: preparado.error,
+        code: preparado.code,
+        detalhes: preparado.detalhes,
+      };
     }
     systemPrompt = buildSystemPromptMarcoZero(kbEntries ?? []);
     userPrompt = buildUserPromptMarcoZero(participant.full_name, {
