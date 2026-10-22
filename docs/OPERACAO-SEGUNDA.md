@@ -16,7 +16,10 @@ cerca de 8 minutos por documento, contando leitura, ajuste, conferência e envio
 
 ## Antes de começar (até 8h)
 
-1. **A chave da IA foi testada** com uma chamada real e dados fictícios, e funcionou.
+1. **Testar a IA** no painel do evento (cartão "Teste da IA antes de processar"). Ele faz uma
+   chamada real, pelo servidor, com a mesma configuração que vai gerar os documentos. Só siga
+   se aparecer "A IA respondeu" com o servidor **api.anthropic.com**. Qualquer outra resposta
+   diz a causa e o que fazer: **não aperte Processar** antes de resolver.
 2. **O formulário está fechado** (o prazo era sexta, 23h59).
 3. **As alterações de banco 024, 025, 026, 027 e 029 estão aplicadas.** Sem a 025,
    o botão Entregar não liga. Sem a 027, não dá para tirar documento do ar.
@@ -26,13 +29,14 @@ cerca de 8 minutos por documento, contando leitura, ajuste, conferência e envio
 
 ## 1. Gerar (8h)
 
-1. Painel do evento, botão **Processar prognósticos**, confirmar.
+1. Painel do evento, botão **Processar prognósticos**, confirmar. Uma pessoa acompanha a
+   seção Prognósticos do começo ao fim.
 2. **Deixar a página do painel aberta** até a seção Prognósticos mostrar que ninguém
    está mais "em andamento". Não existe agendador: a fila só anda com a página aberta.
 3. Se aparecer **"Falha no processamento"** ou **"Processamento parcial"**:
    - abra "Ver motivo e tentativas" de uma pessoa e veja a causa;
-   - resolva a causa (por exemplo, a chave da IA) e só então use
-     **Reprocessar as N falhas**. Sem resolver a causa, falham de novo.
+   - se a causa for a chave ou o saldo da IA, **pare**: resolva, rode **Testar a IA** de novo
+     e só então use **Reprocessar as N falhas**. Sem resolver a causa, falham de novo.
 
 ## 2. Revisar (a partir das 9h)
 
