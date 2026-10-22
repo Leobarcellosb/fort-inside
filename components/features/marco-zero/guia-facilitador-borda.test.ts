@@ -21,7 +21,7 @@ const GUIA_OK = {
   motivo_sem_dna: "dna_nao_publicado",
   populacoes: { convidados: 36, leiturasIndividuaisLiberadas: 0 },
   acesso_individual: { idsLiberados: [] },
-  texto: "MARCO ZERO — MATERIAL RESTRITO AO FACILITADOR\n...",
+  texto: "MARCO ZERO: MATERIAL RESTRITO AO FACILITADOR\n...",
 };
 
 describe("borda da tela do guia do facilitador", () => {

@@ -421,7 +421,7 @@ descreve("borda do Guia de Preparacao do Facilitador", () => {
       respostasCompletasDePresentes: 36,
     });
     expect(r.corpo.texto).toContain("gerado e ainda não disponibilizado");
-    expect(r.corpo.texto).toContain("MARCO ZERO — MATERIAL RESTRITO AO FACILITADOR");
+    expect(r.corpo.texto).toContain("MARCO ZERO: MATERIAL RESTRITO AO FACILITADOR");
   });
 
   it("2b. DNA PUBLICADO e revisado -> 400 GUIDE_DNA_PUBLISHED, e NENHUM texto de guia", async () => {

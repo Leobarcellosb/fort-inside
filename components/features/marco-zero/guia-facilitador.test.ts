@@ -128,7 +128,7 @@ describe("grupo de 12 sem DNA Coletivo", () => {
 
   it("recebe o guia, com o cabecalho que o CTO escreveu e as cinco secoes", () => {
     const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: grupoDeDoze() }));
-    expect(g.cabecalho.restricao).toBe("MARCO ZERO — MATERIAL RESTRITO AO FACILITADOR");
+    expect(g.cabecalho.restricao).toBe("MARCO ZERO: MATERIAL RESTRITO AO FACILITADOR");
     expect(g.cabecalho.titulo).toBe("Guia de Preparação do Facilitador");
     expect(g.motivoSemDna).toBe("volume_insuficiente");
     expect([

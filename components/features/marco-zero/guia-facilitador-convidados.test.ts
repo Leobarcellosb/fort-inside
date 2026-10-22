@@ -16,11 +16,19 @@
 //   3. REGRESSAO: com convidados consolidados, texto e hash IDENTICOS aos de
 //      antes da mudanca. Os valores abaixo foram medidos no codigo ANTERIOR a
 //      Rodada 69, com estas mesmas entradas.
+//   4. CAMINHO EXPLICITO DE POPULACAO DESCONHECIDA (Rodada 71): sem lista, a
+//      avaliacao de elegibilidade do DNA NAO e chamada. Prova por ESPIAO: o
+//      modulo do DNA e o de agregacao sao substituidos por eles mesmos,
+//      embrulhados em `vi.fn`, e o teste conta as chamadas.
+//   5. VERSAO 2 DO MODELO (Rodada 71): a troca editorial dos travessoes, com
+//      os hashes das duas versoes registrados, a prova de que desfazer a troca
+//      devolve o texto da versao 1 byte a byte, e o texto que o host baixa.
 
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import * as F from "./dna-coletivo-fixtures";
 import { gerarDnaColetivo, type EntradaDna } from "./dna-coletivo-modelo";
+import { agregar } from "./dna-coletivo-agregacao";
 import { validarTextosColetivos } from "./dna-coletivo-validacao";
 import {
   CAMPOS_DE_PARTICIPACAO,
@@ -29,7 +37,11 @@ import {
   gerarGuiaDoFacilitador,
   numerosDoTexto,
   projetarParticipacao,
+  TEXTOS_GUIA,
+  VERSAO_DO_MODELO_DO_GUIA,
+  hashDoGuia,
   textoDoGuia,
+  textoDoGuiaNaoGerado,
   textosDoBloco,
   textosDoGuia,
   type EntradaGuia,
@@ -41,6 +53,52 @@ import {
   type ClienteDoGuia,
   type RespostaDeLeitura,
 } from "../../../lib/marco-zero/entrada-do-guia";
+import { pedirGuiaDoFacilitador } from "./guia-facilitador-borda";
+import { NextRequest } from "next/server";
+
+// Os ESPIOES: o comportamento real, contado. O gerador do guia importa estes
+// mesmos modulos, entao o que ele chamar passa por aqui.
+vi.mock("./dna-coletivo-modelo", async (original) => {
+  const real = await original<typeof import("./dna-coletivo-modelo")>();
+  return { ...real, gerarDnaColetivo: vi.fn(real.gerarDnaColetivo) };
+});
+vi.mock("./dna-coletivo-agregacao", async (original) => {
+  const real = await original<typeof import("./dna-coletivo-agregacao")>();
+  return { ...real, agregar: vi.fn(real.agregar) };
+});
+const espiaoDoDna = vi.mocked(gerarDnaColetivo);
+const espiaoDaAgregacao = vi.mocked(agregar);
+
+// A ROTA, para a prova do "Baixar em texto": so o login e a fabrica do cliente
+// sao simulados; o cliente e o banco em memoria deste arquivo.
+const h = vi.hoisted(() => ({ cliente: null as unknown }));
+vi.mock("../../../lib/supabase/server", () => ({
+  createClient: async () => ({
+    auth: {
+      getUser: async () => ({
+        data: { user: { id: "u-admin", app_metadata: { role: "admin" } } },
+        error: null,
+      }),
+    },
+  }),
+}));
+vi.mock("../../../lib/supabase/admin", () => ({
+  createAdminClient: () => h.cliente,
+}));
+// A configuracao de teste padrao nao resolve o atalho "@/" que a rota usa.
+// Cada atalho aponta para o MODULO REAL (nada simulado alem do login e da
+// fabrica do cliente, acima).
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => h.cliente }));
+vi.mock("@/lib/auth/require-admin", () => import("../../../lib/auth/require-admin"));
+vi.mock("@/lib/erros/resposta", () => import("../../../lib/erros/resposta"));
+vi.mock("@/lib/erros/codigos", () => import("../../../lib/erros/codigos"));
+vi.mock("@/lib/marco-zero/entrada-do-guia", () => import("../../../lib/marco-zero/entrada-do-guia"));
+vi.mock("@/components/features/marco-zero/guia-facilitador-modelo", () => import("./guia-facilitador-modelo"));
+
+beforeEach(() => {
+  espiaoDoDna.mockClear();
+  espiaoDaAgregacao.mockClear();
+});
 
 // ---------------------------------------------------------------------------
 // Utilitarios
@@ -261,65 +319,110 @@ describe("sem lista de convidados consolidada: guia neutro", () => {
     expect(participacao.semRespostaRegistrada).toBeNull();
   });
 
-  it("cada motivo de limiar continua nomeado, sem digito e sem retrato", () => {
-    const casos: [string, EntradaDna][] = [
-      ["volume_insuficiente", grupo(12)],
-      ["cobertura_insuficiente", grupo(10, { parciais: 5 })],
-      ["base_pequena_demais", grupo(4)],
-      ["checkin_aberto", grupo(12, { checkinFechado: false })],
-    ];
-    for (const [motivo, e] of casos) {
-      const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: semConvidados(e) }));
-      expect(g.motivoSemDna).toBe(motivo);
-      exigirNeutro(g);
-      expect(numerosDoTexto(textosDoBloco(g.semDna).join("\n"))).toEqual([]);
-    }
-  });
-
-  it("grupo que passaria nos limiares: o motivo e a populacao nao verificada, nao um DNA 'gerado'", () => {
-    const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: semConvidados(F.grupoSuficiente()) }));
-    expect(g.motivoSemDna).toBe("convidados_nao_verificados");
-    const t = textosDoBloco(g.semDna).join("\n");
-    expect(t).not.toContain("gerado e ainda não disponibilizado");
-    expect(numerosDoTexto(t)).toEqual([]);
-    exigirNeutro(g);
-  });
-
-  it("a decisao de limiar do DNA nao depende do parametro neutro: qualquer teto a partir dos presentes da o mesmo veredito", () => {
-    // Sem lista, o modulo do DNA recebe o numero de participantes registrados
-    // so para que a porta "mais presentes do que convidados" nao dispare. A
-    // prova de que isso nao decide nada: com o teto minimo (os presentes), com
-    // o registrados e com um teto absurdo, o veredito e o mesmo.
+  it("sem lista, o motivo e sempre a populacao nao verificada: nenhum limiar e avaliado", () => {
     const grupos: EntradaDna[] = [
       grupo(12),
       grupo(10, { parciais: 5 }),
       grupo(4),
       grupo(12, { checkinFechado: false }),
-      grupo(12, { parciais: 2, nada: 1 }),
       F.grupoSuficiente(),
-      F.grupoInsuficiente(),
     ];
+    // A fixture do grupo suficiente usa `agregar` para montar o gate: zera a
+    // contagem antes de chamar o gerador.
+    espiaoDaAgregacao.mockClear();
     for (const e of grupos) {
-      const presentes = e.participantes.filter((p) => p.presente).length;
-      const veredito = (convidados: number) => {
-        const r = gerarDnaColetivo({ ...e, convidados });
-        return r.tipo === "relatorio_operacional" ? r.motivo : r.tipo;
-      };
-      const comRegistrados = veredito(e.participantes.length);
-      expect(veredito(presentes)).toBe(comRegistrados);
-      expect(veredito(e.participantes.length + 1000)).toBe(comRegistrados);
+      const g = guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: semConvidados(e) }));
+      expect(g.motivoSemDna).toBe("convidados_nao_verificados");
+      exigirNeutro(g);
+      const t = textosDoBloco(g.semDna).join("\n");
+      expect(numerosDoTexto(t)).toEqual([]);
+      expect(t).toContain("a cobertura fica desconhecida");
+      expect(t).not.toContain("gerado e ainda não disponibilizado");
     }
-    // E o parametro neutro nao vaza para o texto: com tres registrados que nao
-    // vieram, o numero de registrados (18) difere de toda contagem impressa.
-    const base = grupo(12, { parciais: 2, nada: 1 });
-    const e: EntradaDna = {
-      ...base,
-      participantes: [...base.participantes, ...F.varias(3, { t: "nada" }, false)],
-    };
-    expect(e.participantes.length).toBe(18);
-    const neutro = gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: semConvidados(e) });
-    if (neutro.tipo !== "guia_do_facilitador") throw new Error("sem guia");
-    expect(textosDoGuia(neutro.guia).flatMap(numerosDoTexto)).not.toContain("18");
+    expect(espiaoDoDna).not.toHaveBeenCalled();
+    expect(espiaoDaAgregacao).not.toHaveBeenCalled();
+  });
+
+  it("RODADA 71: sem lista, 30 registrados e 30 presentes -> guia neutro, cobertura desconhecida, e gerarDnaColetivo NAO e chamado", async () => {
+    const preparo = await prepararEntradaDoGuia(clienteEmMemoria(banco(30, 30, SEM_LISTA)), EVENTO);
+    if (!preparo.ok) throw new Error(`esperava entrada, veio ${preparo.codigo}`);
+    expect(preparo.entrada.dna.convidados).toBeNull();
+    expect(preparo.entrada.dna.participantes).toHaveLength(30);
+
+    const g = guia(gerarGuiaDoFacilitador(preparo.entrada));
+    // Nenhuma avaliacao de elegibilidade com denominador ficticio: nem o
+    // modulo do DNA nem a agregacao (que tambem recebe um total) foram chamados.
+    expect(espiaoDoDna).not.toHaveBeenCalled();
+    expect(espiaoDaAgregacao).not.toHaveBeenCalled();
+
+    expect(g.motivoSemDna).toBe("convidados_nao_verificados");
+    exigirNeutro(g);
+    expect(g.populacoes.presentes).toBe(30);
+    expect(g.populacoes.respostasCompletasDePresentes).toBe(30);
+    const todos = textosDoGuia(g).join("\n");
+    expect(todos).toContain("a cobertura fica desconhecida");
+    // "Cobertura" so aparece para dizer que e desconhecida: sem valor ao lado.
+    expect(todos).not.toMatch(/cobertura (cheia|completa|total|de\s*\d)/i);
+    expect(todos).not.toMatch(/100/);
+  });
+
+  it("CONTROLE POSITIVO do espiao: com lista consolidada, a avaliacao de elegibilidade E chamada", async () => {
+    const preparo = await prepararEntradaDoGuia(
+      clienteEmMemoria(banco(30, 30, { convidados: 30, motivo_convidados: null })),
+      EVENTO,
+    );
+    if (!preparo.ok) throw new Error(`esperava entrada, veio ${preparo.codigo}`);
+    guia(gerarGuiaDoFacilitador(preparo.entrada));
+    expect(espiaoDoDna).toHaveBeenCalledTimes(1);
+    expect(espiaoDoDna.mock.calls[0][0].convidados).toBe(30);
+    expect(espiaoDaAgregacao).toHaveBeenCalled();
+  });
+
+  it("RODADA 71: sem lista e DNA PUBLICADO no registro do banco -> recusado, sem avaliar elegibilidade", async () => {
+    const b = banco(30, 30, SEM_LISTA);
+    b.tabelas.event_logs = [
+      { event_id: EVENTO, action: "dna_coletivo_disponibilizado", created_at: "2026-11-14T18:00:00Z" },
+    ];
+    const preparo = await prepararEntradaDoGuia(clienteEmMemoria(b), EVENTO);
+    if (!preparo.ok) throw new Error(`esperava entrada, veio ${preparo.codigo}`);
+    expect(preparo.publicacao).toEqual({ estado: "verificado", publicado: true });
+    const r = gerarGuiaDoFacilitador(preparo.entrada);
+    expect(r.tipo).toBe("guia_nao_gerado");
+    if (r.tipo === "guia_nao_gerado") expect(r.motivo).toBe("dna_publicado");
+    expect(espiaoDoDna).not.toHaveBeenCalled();
+  });
+
+  it("RODADA 71: sem lista e estado do DNA impossivel de verificar -> recusado", async () => {
+    // (a) a leitura do registro de disponibilizacao FALHA no banco;
+    const falha = await prepararEntradaDoGuia(
+      clienteEmMemoria(banco(30, 30, SEM_LISTA, { falhar: ["event_logs"] })),
+      EVENTO,
+    );
+    // (b) ha disponibilizacao e os sinais de invalidacao nao vieram.
+    const b = banco(30, 30, { ...SEM_LISTA, aprovacao_invalidada: null, invalidacoes_pendentes: null });
+    b.tabelas.event_logs = [
+      { event_id: EVENTO, action: "dna_coletivo_disponibilizado", created_at: "2026-11-14T18:00:00Z" },
+    ];
+    const semSinal = await prepararEntradaDoGuia(clienteEmMemoria(b), EVENTO);
+    for (const preparo of [falha, semSinal]) {
+      if (!preparo.ok) throw new Error(`esperava entrada, veio ${preparo.codigo}`);
+      expect(preparo.publicacao.estado).toBe("indeterminado");
+      const r = gerarGuiaDoFacilitador(preparo.entrada);
+      expect(r.tipo).toBe("guia_nao_gerado");
+      if (r.tipo === "guia_nao_gerado") expect(r.motivo).toBe("estado_do_dna_indeterminado");
+    }
+    expect(espiaoDoDna).not.toHaveBeenCalled();
+  });
+
+  it("sem lista, contagens que nao fecham continuam recusando (participante repetido)", () => {
+    const e = grupo(6);
+    const r = gerarGuiaDoFacilitador({
+      ...NAO_PUBLICADO,
+      dna: semConvidados({ ...e, participantes: [...e.participantes, e.participantes[0]] }),
+    });
+    expect(r.tipo).toBe("guia_nao_gerado");
+    if (r.tipo === "guia_nao_gerado") expect(r.motivo).toBe("dados_inconsistentes");
+    expect(espiaoDoDna).not.toHaveBeenCalled();
   });
 
   it("dois grupos com conteudo de resposta oposto, sem lista: mesmo texto e mesmo hash", () => {
@@ -467,8 +570,13 @@ const CASOS_DE_REGRESSAO: [string, () => EntradaGuia][] = [
   ["com liberacoes", () => autorizado(grupo(9, { nada: 3, convidados: 12 }))],
 ];
 
-/** Medido no codigo ANTERIOR a Rodada 69: [conteudoSha256, sha256 do texto renderizado]. */
-const ESPERADO: Record<string, [string, string]> = {
+// REGISTRO DE HASHES POR VERSAO DO MODELO. [conteudoSha256, sha256 do texto
+// renderizado], com as mesmas entradas de `CASOS_DE_REGRESSAO`.
+//
+// VERSAO 1: medido no codigo ANTERIOR a Rodada 69, e conferido de novo depois
+// do ajuste 1 da Rodada 71 (caminho de populacao desconhecida), antes da troca
+// editorial. E o que foi emitido ate a Rodada 71: NAO apagar.
+const ESPERADO_V1: Record<string, [string, string]> = {
   "doze, volume": ["a2ebe29ff6becd74973be3433b09311608018e732fe85d6f5474616eaa8ed8de", "967af07906ad70814b80332dbb31ff14ce05a15ced2fc51263fd71678323e283"],
   "doze e tres parciais de vinte": ["998e4470a364bcf5437db19b2b0bf44c209213f673f7e950db0edf135ff48b9f", "121f7944a043863db84b31ae9750445826698dd708d099b3d2a5403de21d36f0"],
   "check-in aberto": ["9deb427bef876e1a41d275fecdaf22d5ca8878e502c50ef4e0c531022f00d2e0", "df974045c4744e925fc15ed8091af8b8cb43a6cf833c67ad708c4b37b809a074"],
@@ -480,36 +588,172 @@ const ESPERADO: Record<string, [string, string]> = {
   "do banco": ["5a26cb3402515e7afa9e34a801a7b36c2d2402153a4f766340a82bd6e6aebfbb", "10db944d9a5878db3f47995192c2f267c753895d366902c1d30fe55fa81b1aa8"],
 };
 
-describe("regressao: convidados consolidados, mesmo texto e mesmo hash de antes", () => {
-  for (const [nome, entrada] of CASOS_DE_REGRESSAO) {
-    it(nome, () => {
-      const r = gerarGuiaDoFacilitador(entrada());
-      if (r.tipo !== "guia_do_facilitador") throw new Error(`sem guia: ${r.motivo}`);
-      const medido: [string, string] = [r.conteudoSha256, sha(textoDoGuia(r.guia))];
-      if (process.env.GUIA_MEDIR_LINHA_DE_BASE) {
-        console.log(`MEDIDO ${JSON.stringify(nome)}: ${JSON.stringify(medido)},`);
-        return;
-      }
-      expect(medido).toEqual(ESPERADO[nome]);
-    });
-  }
+// VERSAO 2 (Rodada 71): a unica mudanca e editorial, o travessao do cabecalho
+// virou dois pontos. A prova de que so isso mudou esta em "troca editorial".
+const ESPERADO_V2: Record<string, [string, string]> = {
+  "doze, volume": ["7ad014e306f8b0b5e6a8238c5aa7a526ba8cac028fad30dfc991ed28c29fa713", "25c8481546239e1a16f639011f70d5db002a3c78373cc1c728b2213fbad3cb82"],
+  "doze e tres parciais de vinte": ["edb9fa540199819e662a4d678673dc07fe34ca7331b57de018857233f1f121ad", "1d43627fcd5009450c608d6c3fd09380925298cf5fd1a71242c69c9075488855"],
+  "check-in aberto": ["b5fc815838de01d086c0b390115f378256353f564a5d9bea4eced7aa9d2771aa", "0df05adb6fcb432ab6a0f8dc73453dc6cd71a3d93f7a7020dc14e91088fd1619"],
+  "base pequena": ["2dbe6e5cf8bf278b6f17e5316ebdeb6a835d10bc77fd9d876c8b11b584b280a9", "3caa7fad0d022734bd42584c9cafaa08caa02efd55a9b83999340707874b34a3"],
+  "cobertura insuficiente": ["705624cbbb0f2321034e547dacde1d8235ab11ad0f43636b03b462214123548a", "98fcbd20acbc456c7da01f0dd40a621079d5d6e55f35e4279c2ca6be4a58a264"],
+  "dna em rascunho": ["3d7a450b093a70b2a644662e9f4b8c58d919618527533666f12a9ad82c00a091", "3d1387c37f9f3d0f371f0645d1fce200ed5232f139e644c57123a9c2a146f3b5"],
+  "sem nome de evento": ["4a8f633cdff3f13993d821f2808bb8eaa0c92dd8a181d3e8c6d557c956ff4b30", "cac42dc5c806160bb1a6c3636d54d1a6e602db9d8adc1c50edffd48540f185a3"],
+  "com liberacoes": ["cfe1fa0eec9a2ebb43558a0d328e9b8c58489247e4389215caa02157b20a6b73", "4d4b90054f096c005fde6a337eb6e639f4fb74098beafef088cfce9694ef8ba2"],
+  "do banco": ["16f70e2768b816e68ccf99bd81e4ac48cb37a2285eb8526b043b448435623cb5", "d8bd711e8ed52d358a6de1899d5b59d1c8d05a59468fb76678e55e9d0d71f5d1"],
+};
 
-  it("do banco ao texto: convidados consolidados na linha oficial -> mesmo hash de antes", async () => {
+const HASHES_POR_VERSAO_DO_MODELO: Record<number, Record<string, [string, string]>> = {
+  1: ESPERADO_V1,
+  2: ESPERADO_V2,
+};
+
+/**
+ * As trocas editoriais da versao 2, no sentido NOVO -> ANTIGO. Desfazer estas
+ * trocas no texto novo tem de devolver o texto antigo byte a byte (hash da
+ * versao 1). Se qualquer outra coisa tivesse mudado, o hash nao bateria.
+ */
+const TROCAS_DA_VERSAO_2: readonly [string, string][] = [
+  ["MARCO ZERO: MATERIAL RESTRITO AO FACILITADOR", "MARCO ZERO — MATERIAL RESTRITO AO FACILITADOR"],
+];
+
+function desfazerTrocas(texto: string): string {
+  let t = texto;
+  for (const [novo, antigo] of TROCAS_DA_VERSAO_2) t = t.split(novo).join(antigo);
+  return t;
+}
+
+function hashDosTextos(textos: readonly string[]): string {
+  return sha(textos.join("\n␟\n"));
+}
+
+const TRAVESSAO = /[—–]/;
+
+/** O guia de cada caso, inclusive o do banco (via camada de leitura). */
+async function guiaDoCaso(nome: string): Promise<GuiaDoFacilitador> {
+  if (nome === "do banco") {
     const preparo = await prepararEntradaDoGuia(
       clienteEmMemoria(banco(14, 12, { convidados: 20, motivo_convidados: null })),
       EVENTO,
     );
     if (!preparo.ok) throw new Error(`esperava entrada, veio ${preparo.codigo}`);
-    expect(preparo.entrada.dna.convidados).toBe(20);
-    const r = gerarGuiaDoFacilitador(preparo.entrada);
-    if (r.tipo !== "guia_do_facilitador") throw new Error(`sem guia: ${r.motivo}`);
-    const medido: [string, string] = [r.conteudoSha256, sha(textoDoGuia(r.guia))];
-    if (process.env.GUIA_MEDIR_LINHA_DE_BASE) {
-      console.log(`MEDIDO "do banco": ${JSON.stringify(medido)},`);
-      return;
-    }
-    expect(medido).toEqual(ESPERADO["do banco"]);
-    expect(r.guia.populacoes.convidados).toBe(20);
-    expect(r.guia.populacoes.semRespostaRegistrada).toBe(8);
+    return guia(gerarGuiaDoFacilitador(preparo.entrada));
+  }
+  const caso = CASOS_DE_REGRESSAO.find(([n]) => n === nome);
+  if (!caso) throw new Error(`caso desconhecido: ${nome}`);
+  return guia(gerarGuiaDoFacilitador(caso[1]()));
+}
+
+const NOMES_DOS_CASOS = [...CASOS_DE_REGRESSAO.map(([n]) => n), "do banco"];
+
+describe("regressao: convidados consolidados, hash registrado da versao vigente do modelo", () => {
+  for (const nome of NOMES_DOS_CASOS) {
+    it(nome, async () => {
+      const g = await guiaDoCaso(nome);
+      const medido: [string, string] = [hashDoGuia(g), sha(textoDoGuia(g))];
+      if (process.env.GUIA_MEDIR_LINHA_DE_BASE) {
+        console.log(`MEDIDO ${JSON.stringify(nome)}: ${JSON.stringify(medido)},`);
+        return;
+      }
+      expect(g.versaoDoModelo).toBe(VERSAO_DO_MODELO_DO_GUIA);
+      expect(medido).toEqual(HASHES_POR_VERSAO_DO_MODELO[VERSAO_DO_MODELO_DO_GUIA][nome]);
+    });
+  }
+
+  it("do banco ao texto: convidados consolidados chegam inteiros ao guia", async () => {
+    const g = await guiaDoCaso("do banco");
+    expect(g.populacoes.convidados).toBe(20);
+    expect(g.populacoes.semRespostaRegistrada).toBe(8);
   });
+
+  it("os hashes das duas versoes estao registrados e nunca coincidem", () => {
+    expect(VERSAO_DO_MODELO_DO_GUIA).toBe(2);
+    const v1 = new Set(Object.values(ESPERADO_V1).flat());
+    const v2 = Object.values(ESPERADO_V2).flat();
+    expect(Object.keys(ESPERADO_V1).sort()).toEqual([...NOMES_DOS_CASOS].sort());
+    expect(Object.keys(ESPERADO_V2).sort()).toEqual([...NOMES_DOS_CASOS].sort());
+    for (const h of v2) expect(v1.has(h)).toBe(false);
+  });
+});
+
+describe("troca editorial da versao 2: so os travessoes mudaram", () => {
+  for (const nome of NOMES_DOS_CASOS) {
+    it(`${nome}: desfazer a troca devolve o texto da versao 1 byte a byte`, async () => {
+      const g = await guiaDoCaso(nome);
+      const [conteudoV1, renderV1] = ESPERADO_V1[nome];
+      // O texto NOVO, com as trocas desfeitas, e exatamente o ANTIGO.
+      const antigoDosTextos = textosDoGuia(g).map(desfazerTrocas);
+      const antigoRender = desfazerTrocas(textoDoGuia(g));
+      expect(hashDosTextos(antigoDosTextos)).toBe(conteudoV1);
+      expect(sha(antigoRender)).toBe(renderV1);
+      // E a normalizacao da troca (travessao entre espacos -> dois pontos)
+      // aplicada ao antigo da o novo: nao ha outra diferenca.
+      const normalizar = (t: string) => t.replace(/ [—–] /g, ": ");
+      expect(normalizar(antigoRender)).toBe(textoDoGuia(g));
+      expect(antigoRender).not.toBe(textoDoGuia(g));
+    });
+  }
+
+  it("nenhum travessao no texto renderizado inteiro: com lista, sem lista e recusa", async () => {
+    const renders: string[] = [];
+    for (const nome of NOMES_DOS_CASOS) renders.push(textoDoGuia(await guiaDoCaso(nome)));
+    renders.push(
+      textoDoGuia(guia(gerarGuiaDoFacilitador({ ...NAO_PUBLICADO, dna: semConvidados(grupo(12)) }))),
+    );
+    for (const r of [
+      gerarGuiaDoFacilitador({ publicacaoDoDna: { estado: "verificado", publicado: true }, dna: F.grupoSuficiente() }),
+      gerarGuiaDoFacilitador({ publicacaoDoDna: { estado: "indeterminado", motivo: "registro_ilegivel" }, dna: grupo(12) }),
+    ]) {
+      if (r.tipo !== "guia_nao_gerado") throw new Error("esperava recusa");
+      renders.push(textoDoGuiaNaoGerado(r));
+    }
+    for (const t of renders) {
+      expect(t).toContain("MARCO ZERO: MATERIAL RESTRITO AO FACILITADOR");
+      expect(TRAVESSAO.test(t), t.split("\n").find((l) => TRAVESSAO.test(l))).toBe(false);
+    }
+    // E nenhum texto fixo do modelo carrega travessao.
+    for (const t of Object.values(TEXTOS_GUIA)) expect(TRAVESSAO.test(t)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// O que o host BAIXA: "Baixar em texto" do GuiaDoFacilitadorCard grava em
+// arquivo `desfecho.guia.texto`, que e o `texto` da rota passado adiante por
+// `pedirGuiaDoFacilitador`. Aqui a cadeia real: rota -> borda da tela.
+// ---------------------------------------------------------------------------
+
+describe("Baixar em texto: o arquivo baixado e o texto da versao vigente", () => {
+  for (const [nome, cobertura] of [
+    ["com lista", { convidados: 20, motivo_convidados: null }],
+    ["sem lista", SEM_LISTA],
+  ] as const) {
+    it(`${nome}: o texto que vai para o arquivo nao tem travessao e e o mesmo da previa`, async () => {
+      h.cliente = clienteEmMemoria(banco(14, 12, cobertura));
+      const { POST } = await import("../../../app/api/marco-zero/guia-facilitador/route");
+      const buscar = (async (_url: string, init?: RequestInit) =>
+        POST(
+          new NextRequest("http://localhost/api/marco-zero/guia-facilitador", {
+            method: init?.method,
+            headers: init?.headers,
+            body: init?.body as string,
+          }),
+        )) as unknown as typeof fetch;
+      const desfecho = await pedirGuiaDoFacilitador(EVENTO, buscar);
+      if (desfecho.tipo !== "gerado") throw new Error(`esperava guia, veio ${desfecho.tipo}`);
+
+      // O MESMO valor alimenta a previa (<pre>) e o Blob do download.
+      const baixado = desfecho.guia.texto;
+      expect(TRAVESSAO.test(baixado)).toBe(false);
+      expect(baixado.startsWith("MARCO ZERO: MATERIAL RESTRITO AO FACILITADOR\n")).toBe(true);
+
+      // E e o texto do gerador, com o hash registrado da versao vigente.
+      const preparo = await prepararEntradaDoGuia(clienteEmMemoria(banco(14, 12, cobertura)), EVENTO);
+      if (!preparo.ok) throw new Error(preparo.codigo);
+      const g = guia(gerarGuiaDoFacilitador(preparo.entrada));
+      expect(baixado).toBe(textoDoGuia(g));
+      expect(desfecho.guia.conteudo_sha256).toBe(hashDoGuia(g));
+      if (nome === "com lista") {
+        expect([desfecho.guia.conteudo_sha256, sha(baixado)]).toEqual(ESPERADO_V2["do banco"]);
+      }
+    });
+  }
 });

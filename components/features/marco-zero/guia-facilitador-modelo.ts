@@ -93,6 +93,12 @@
 // e que duas delas (`convidados` e `semRespostaRegistrada`) passam a admitir
 // `null`, do mesmo jeito que `presentes` ja admitia.
 //
+// Sem lista, o guia segue um CAMINHO EXPLICITO de populacao desconhecida
+// (Rodada 71, `guiaDePopulacaoDesconhecida`): a elegibilidade do DNA NAO e
+// avaliada, porque o modulo do DNA exige um total e qualquer numero no lugar
+// seria premissa falsa. A exclusividade continua: DNA publicado e estado do DNA
+// indeterminado recusam o guia nos dois caminhos.
+//
 // "Lista ausente" e informacao desconhecida e e decidida por quem le o banco
 // (`lib/marco-zero/entrada-do-guia.ts`); "nao consegui ler o banco" continua
 // sendo indisponibilidade e nunca chega aqui como `null`. Com a lista
@@ -123,10 +129,33 @@ import { exigirTextosColetivosValidos } from "./dna-coletivo-validacao";
 // Cabecalho e moldura (textos escritos aqui; revisao da metodologia)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Versao do MODELO do documento
+// ---------------------------------------------------------------------------
+
+/**
+ * Versao do modelo do Guia (a redacao fixa e a forma do documento, nao os
+ * dados). Antes da Rodada 71 nao havia identificador: tudo o que foi emitido ate
+ * ali e a versao 1. Muda quando a redacao fixa muda, e cada versao tem os seus
+ * hashes registrados nos testes (`guia-facilitador-convidados.test.ts`), para
+ * que um guia ja emitido nao seja confundido com um da versao seguinte.
+ *
+ *   1: redacao original. Cabecalho com travessao.
+ *   2: Rodada 71, mudanca SO editorial: os travessoes do texto fixo viram dois
+ *      pontos (`TEXTOS_GUIA.restricao`). Dados, regras e conclusoes iguais.
+ *
+ * O hash do conteudo continua sendo o do TEXTO (`hashDoGuia`); como o texto da
+ * versao 2 difere do da versao 1, os hashes das duas nunca coincidem.
+ */
+export const VERSAO_DO_MODELO_DO_GUIA = 2;
+
 export const TEXTOS_GUIA = {
   eyebrow: "Marco Zero",
-  /** Cabecalho escrito pelo CTO, palavra por palavra. */
-  restricao: "MARCO ZERO — MATERIAL RESTRITO AO FACILITADOR",
+  /**
+   * Cabecalho escrito pelo CTO. Na versao 2 do modelo, o travessao entre as
+   * duas partes virou dois pontos (Rodada 71, mudanca editorial autorizada).
+   */
+  restricao: "MARCO ZERO: MATERIAL RESTRITO AO FACILITADOR",
   titulo: "Guia de Preparação do Facilitador",
   abertura:
     "Este material é seu, para preparar a condução. Ele não descreve as pessoas que estarão na sala: traz a participação verificada, sugestões de pergunta e de atividade que fazem cada pessoa falar por si, e o caminho para abrir as leituras individuais liberadas.",
@@ -304,6 +333,8 @@ export interface EntradaGuia {
 }
 
 export interface GuiaDoFacilitador {
+  /** `VERSAO_DO_MODELO_DO_GUIA` de quando este guia foi montado. Fora do texto. */
+  versaoDoModelo: number;
   cabecalho: {
     eyebrow: string;
     restricao: string;
@@ -341,10 +372,10 @@ export type MotivoSemDnaPublicado =
   | MotivoRelatorio
   | "dna_nao_publicado"
   /**
-   * Os limiares nao recusariam o DNA, e a populacao de convidados nao foi
-   * verificada: sem ela o DNA Coletivo nao tem a participacao sobre quem foi
-   * chamado, e por isso nao e gerado. Nao se diz "DNA gerado" sobre um
-   * documento cujo denominador nao existe.
+   * A populacao de convidados nao foi verificada (nao ha fotografia
+   * consolidada). Sem ela a elegibilidade do DNA NAO e avaliada (Rodada 71):
+   * este motivo nao diz que os limiares passariam nem que falhariam, diz que
+   * nao ha populacao sobre a qual avalia-los.
    */
   | "convidados_nao_verificados";
 
@@ -678,7 +709,7 @@ const PROSA_SEM_DNA: Record<
   sem_presentes:
     "Não há presença registrada para este evento, e sem população não existe cobertura.",
   convidados_nao_verificados:
-    "A população de convidados deste evento não foi verificada, porque não há lista de convidados consolidada. O DNA Coletivo traz a participação sobre quem foi chamado, e sem essa população ele não é gerado. As respostas recebidas não substituem a lista: elas dizem quem respondeu, e não quem foi chamado.",
+    "A população de convidados deste evento não foi verificada, porque não há lista de convidados consolidada. Sem essa população, este guia não avalia se o evento teria DNA Coletivo: a cobertura fica desconhecida, e não se calcula limiar sobre um total que não existe. As respostas recebidas não substituem a lista: elas dizem quem respondeu, e não quem foi chamado.",
 };
 
 function blocoSemDna(motivo: MotivoSemDnaPublicado): BlocoDna {
@@ -1047,6 +1078,7 @@ export function montarGuia(
   idsLiberados: readonly string[],
 ): GuiaDoFacilitador {
   return {
+    versaoDoModelo: VERSAO_DO_MODELO_DO_GUIA,
     cabecalho: {
       eyebrow: TEXTOS_GUIA.eyebrow,
       restricao: TEXTOS_GUIA.restricao,
@@ -1097,27 +1129,94 @@ const PROSA_PUBLICACAO_INDETERMINADA: Record<MotivoPublicacaoIndeterminada, stri
     "há disponibilização registrada e não foi possível saber se a aprovação daquele fechamento continua valendo",
 };
 
+/** A recusa por DNA publicado, a mesma nos dois caminhos (com e sem lista). */
+function recusaPorDnaPublicado(): ResultadoGuia {
+  return naoGerado(
+    "dna_publicado",
+    [
+      "Este evento tem DNA Coletivo válido, revisado e disponibilizado para este mesmo conjunto de dados. O Guia de Preparação do Facilitador existe para o evento que não tem esse documento, e entregar os dois ao mesmo tempo convidaria a ler um como complemento do outro.",
+    ],
+    [
+      "Use o DNA Coletivo disponibilizado, com a revisão metodológica registrada.",
+      "Para a conversa individual, use os one-pagers individuais.",
+    ],
+  );
+}
+
+function recusaPorContagens(e: { descricaoPublica: string }): ResultadoGuia {
+  return naoGerado(
+    "dados_inconsistentes",
+    [
+      `As contagens de participação não fecham: ${e.descricaoPublica}. Um guia com população errada diria a coisa errada sobre o que foi verificado, e por isso ele não é gerado.`,
+    ],
+    ["Corrija os dados de origem e gere o guia de novo."],
+  );
+}
+
 /**
- * O que o modulo do DNA recebe para decidir os LIMIARES. Com a populacao de
- * convidados verificada, e a propria entrada, intocada.
- *
- * Sem ela (`convidados === null`), `gerarDnaColetivo` continua sendo quem decide
- * presenca, cobertura, piso e volume, e nao e reimplementado aqui. Ele exige um
- * inteiro em `convidados`, e nesses limiares so o usa numa porta: "ha mais
- * presentes do que convidados". O parametro passado e o numero de participantes
- * REGISTRADOS na entrada, que por construcao e teto dos presentes (todo presente
- * e um participante da lista), e por isso deixa essa porta sem efeito.
- *
- * Esse numero NAO e total de convidados e nao e tratado como tal: ele nao chega
- * a `projetarParticipacao` nem a `montarGuia`, nao entra no texto nem no hash, e
- * o documento que o modulo do DNA montar com ele e descartado (o motivo vira
- * `convidados_nao_verificados`). A independencia da decisao em relacao a esse
- * parametro e testada.
+ * As quatro camadas, nesta ordem, e a entrega. Qualquer uma que recuse
+ * interrompe a entrega: o guia que nao passa nao existe.
  */
-function entradaDoLimiar(dna: EntradaDnaDoGuia): EntradaDna {
-  if (dna.convidados !== null) return dna as EntradaDna;
-  const registrados = Array.isArray(dna.participantes) ? dna.participantes.length : 0;
-  return { ...dna, convidados: registrados };
+function entregar(guia: GuiaDoFacilitador, entrada: EntradaGuia): ResultadoGuia {
+  const textos = textosDoGuia(guia);
+  const identificadores = entrada.dna.participantes.flatMap((p) => [
+    p.id,
+    ...(p.nome ? [p.nome] : []),
+  ]);
+  exigirTextosColetivosValidos(textos, identificadores);
+  exigirGuiaSemRetratoColetivo(textos);
+  exigirNumerosVerificados(guia);
+
+  return congelar({
+    tipo: "guia_do_facilitador" as const,
+    guia,
+    conteudoSha256: hashDoGuia(guia),
+  });
+}
+
+/**
+ * CAMINHO EXPLICITO DE POPULACAO DESCONHECIDA (Rodada 71). O evento nao tem
+ * fotografia consolidada de convidados (`convidados === null`).
+ *
+ * Aqui NAO se chama `gerarDnaColetivo` nem `agregar`: os dois exigem um total
+ * de convidados, e qualquer numero posto no lugar seria premissa falsa dentro
+ * de uma decisao do sistema (30 registrados e 30 presentes, com convidados
+ * desconhecidos, fariam um avaliador achar cobertura cheia). Sem populacao, a
+ * elegibilidade do DNA nao e avaliada, a cobertura fica desconhecida e o motivo
+ * nomeado e esse: `convidados_nao_verificados`.
+ *
+ * A EXCLUSIVIDADE continua de pe, pelo veredito de publicacao que ja chegou
+ * aqui verificado (o indeterminado foi recusado antes, no ponto de entrada):
+ * DNA publicado recusa o guia. A contradicao "publicado, e os dados nao
+ * sustentam DNA" nao e conferida neste caminho porque conferi-la exigiria a
+ * avaliacao de elegibilidade; o publicado recusa do mesmo jeito.
+ *
+ * O que sai e so o guia neutro: as oito contagens de participacao ja
+ * permitidas, com convidados e sem-resposta nulos.
+ */
+function guiaDePopulacaoDesconhecida(
+  entrada: EntradaGuia,
+  publicacao: Extract<PublicacaoDoDna, { estado: "verificado" }>,
+): ResultadoGuia {
+  if (publicacao.publicado) return recusaPorDnaPublicado();
+
+  let projecao: Projecao;
+  try {
+    projecao = projetarParticipacao(entrada);
+  } catch (e) {
+    if (e instanceof DadosInconsistentesDna || e instanceof ParticipacaoInconsistente) {
+      return recusaPorContagens(e);
+    }
+    throw e;
+  }
+
+  const guia = montarGuia(
+    projecao.participacao,
+    "convidados_nao_verificados",
+    nomeDoEvento(entrada.dna.meta),
+    projecao.idsLiberados,
+  );
+  return entregar(guia, entrada);
 }
 
 /**
@@ -1160,12 +1259,19 @@ export function gerarGuiaDoFacilitador(entrada: EntradaGuia): ResultadoGuia {
     );
   }
 
-  const dnaDoLimiar = entradaDoLimiar(entrada.dna);
-  const convidadosNaoVerificados = entrada.dna.convidados === null;
+  // Sem fotografia consolidada de convidados, o caminho e outro, explicito, e
+  // nao passa pela avaliacao de elegibilidade do DNA (ver a funcao).
+  if (entrada.dna.convidados === null) {
+    return guiaDePopulacaoDesconhecida(entrada, publicacao);
+  }
+  // Daqui para baixo, o caminho com lista: o mesmo de antes da Rodada 69. Um
+  // total que nao seja inteiro (JavaScript nao tipado) chega ao modulo do DNA
+  // como antes, e ele o recusa como dado inconsistente.
+  const dnaComLista = entrada.dna as EntradaDna;
 
   let dna;
   try {
-    dna = gerarDnaColetivo(dnaDoLimiar);
+    dna = gerarDnaColetivo(dnaComLista);
   } catch {
     return naoGerado(
       "dados_inconsistentes",
@@ -1193,28 +1299,13 @@ export function gerarGuiaDoFacilitador(entrada: EntradaGuia): ResultadoGuia {
         ],
       );
     }
-    return naoGerado(
-      "dna_publicado",
-      [
-        "Este evento tem DNA Coletivo válido, revisado e disponibilizado para este mesmo conjunto de dados. O Guia de Preparação do Facilitador existe para o evento que não tem esse documento, e entregar os dois ao mesmo tempo convidaria a ler um como complemento do outro.",
-      ],
-      [
-        "Use o DNA Coletivo disponibilizado, com a revisão metodológica registrada.",
-        "Para a conversa individual, use os one-pagers individuais.",
-      ],
-    );
+    return recusaPorDnaPublicado();
   }
 
   // Daqui para baixo: VERIFICADO que nao ha DNA disponibilizado. O guia sai
-  // mesmo que o DNA seja geravel -- rascunho nao e publicacao. Sem populacao de
-  // convidados verificada, o "rascunho" saiu sobre o parametro neutro de
-  // `entradaDoLimiar` e NAO e um DNA: o motivo e a populacao nao verificada.
+  // mesmo que o DNA seja geravel -- rascunho nao e publicacao.
   const motivoSemDna: MotivoSemDnaPublicado =
-    dna.tipo === "relatorio_operacional"
-      ? dna.motivo
-      : convidadosNaoVerificados
-        ? "convidados_nao_verificados"
-        : "dna_nao_publicado";
+    dna.tipo === "relatorio_operacional" ? dna.motivo : "dna_nao_publicado";
 
   if (motivoSemDna === "dados_inconsistentes") {
     return naoGerado(
@@ -1228,17 +1319,11 @@ export function gerarGuiaDoFacilitador(entrada: EntradaGuia): ResultadoGuia {
 
   let projecao: Projecao;
   try {
-    agregar(dnaDoLimiar.convidados, entrada.dna.participantes);
+    agregar(dnaComLista.convidados, entrada.dna.participantes);
     projecao = projetarParticipacao(entrada);
   } catch (e) {
     if (e instanceof DadosInconsistentesDna || e instanceof ParticipacaoInconsistente) {
-      return naoGerado(
-        "dados_inconsistentes",
-        [
-          `As contagens de participação não fecham: ${e.descricaoPublica}. Um guia com população errada diria a coisa errada sobre o que foi verificado, e por isso ele não é gerado.`,
-        ],
-        ["Corrija os dados de origem e gere o guia de novo."],
-      );
+      return recusaPorContagens(e);
     }
     throw e;
   }
@@ -1249,23 +1334,7 @@ export function gerarGuiaDoFacilitador(entrada: EntradaGuia): ResultadoGuia {
     nomeDoEvento(entrada.dna.meta),
     projecao.idsLiberados,
   );
-
-  // As quatro camadas, nesta ordem. Qualquer uma que recuse interrompe a
-  // entrega: o guia que nao passa nao existe.
-  const textos = textosDoGuia(guia);
-  const identificadores = entrada.dna.participantes.flatMap((p) => [
-    p.id,
-    ...(p.nome ? [p.nome] : []),
-  ]);
-  exigirTextosColetivosValidos(textos, identificadores);
-  exigirGuiaSemRetratoColetivo(textos);
-  exigirNumerosVerificados(guia);
-
-  return congelar({
-    tipo: "guia_do_facilitador" as const,
-    guia,
-    conteudoSha256: hashDoGuia(guia),
-  });
+  return entregar(guia, entrada);
 }
 
 // ---------------------------------------------------------------------------
