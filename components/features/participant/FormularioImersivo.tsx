@@ -1255,7 +1255,18 @@ function BoasVindas(p: {
                 tabIndex={-1}
                 className="text-[36px] sm:text-[52px] leading-[1.02] font-semibold tracking-[-0.02em] outline-none text-balance"
               >
-                {p.eventName}
+                {/* "Marco Zero · Geração Preparada": o ponto nao pode abrir linha
+                    sozinho no celular, entao o que vem depois dele desce para
+                    uma linha propria, menor. */}
+                {tituloDividido(p.eventName).map((parte, i) =>
+                  i === 0 ? (
+                    <span key={i} className="block">{parte}</span>
+                  ) : (
+                    <span key={i} className="mt-2 block text-[24px] sm:text-[30px] leading-tight font-normal tracking-[-0.01em] text-white/75">
+                      {parte}
+                    </span>
+                  ),
+                )}
               </h1>
               <p className="text-[16px] leading-relaxed text-white/75">
                 Algumas perguntas para o encontro ser sobre a sua vida, e não sobre um roteiro genérico.
@@ -1352,6 +1363,12 @@ function BoasVindas(p: {
       </div>
     </section>
   );
+}
+
+/** "Marco Zero · Geração Preparada" -> ["Marco Zero", "Geração Preparada"]. */
+function tituloDividido(nome: string): string[] {
+  const i = nome.indexOf(" · ");
+  return i < 0 ? [nome] : [nome.slice(0, i), nome.slice(i + 3)];
 }
 
 /** "sábado, 24 de outubro" -> "Sáb · 24.10", para o canto da capa. */
