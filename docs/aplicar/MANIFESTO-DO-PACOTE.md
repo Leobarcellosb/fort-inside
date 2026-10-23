@@ -61,6 +61,13 @@ preflight real e da autorização do proprietário.
    antes de domingo, `revoke truncate on public.external_import_rejections from
    service_role;`, mas é decisão a autorizar: o pacote está congelado.
 
+## Mudanças de comportamento depois do congelamento
+
+- **Prompt da IA do questionário antigo (v1):** "Fort Inside" virou "Geração Preparada" a
+  pedido do proprietário. Não é só texto de tela: muda o que a IA lê ao gerar documento de
+  evento v1. O prompt do Marco Zero (v2) não mudou. Merece regressão própria antes de gerar
+  qualquer documento v1.
+
 ## Testes
 
 - **Comando padrão** (`npx vitest run`): 1562 executados e aprovados, 230 pulados.

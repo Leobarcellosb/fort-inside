@@ -52,6 +52,14 @@ import {
   classificarRecusaDeLiberacao,
   type ErroDeGravacao,
 } from "@/components/features/admin/liberar-etapa";
+import {
+  ROTULO_DA_SITUACAO,
+  passosDaOperacao,
+  prazoNaTela,
+  rotuloDoEstado,
+  tipoDaOperacao,
+  type SituacaoDoPasso,
+} from "@/components/features/admin/operacao-do-evento";
 
 interface Participant {
   id: string;
@@ -117,7 +125,7 @@ interface Props {
 // ---------------------------------------------------------------------------
 // Processar = enfileirar
 // ---------------------------------------------------------------------------
-// O botão "Processar prognósticos" cria jobs duráveis em /api/jobs/enfileirar
+// O botão "Gerar direcionamentos" cria jobs duráveis em /api/jobs/enfileirar
 // (ver processar-evento.ts). O processamento antigo em lote (/api/batch-process) foi
 // descontinuado como mecanismo oficial: ele só devolvia contagens, vivia dentro de
 // UMA requisição e não deixava registro por pessoa. Aqui NÃO há caminho de volta
@@ -280,7 +288,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
                 },
                 ...prev,
               ]);
-              toast.success(`${p.full_name} concluiu o quiz — gerando prognóstico…`);
+              toast.success(`${p.full_name} concluiu o questionário. Gerando o direcionamento…`);
             }
           }
         }
@@ -301,7 +309,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
             },
             ...prev,
           ]);
-          if (p) toast.success(`Prognóstico gerado — ${p.full_name}`);
+          if (p) toast.success(`Direcionamento gerado: ${p.full_name}`);
         }
       )
       .on(
@@ -465,8 +473,323 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
 
   const pendingNames = pendingParticipants.map((p) => p.full_name).join(", ");
 
+  // O texto de cada linha do registro de atividade, para os dois layouts.
+  function linhaDoRegistro(log: LogRecord): { time: string; label: string } {
+    const participant = participants.find((p) => p.id === log.participant_id);
+    const time = new Date(log.created_at).toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    let label = log.action;
+                if (log.action === "response_submitted" && participant) {
+                  // O `stage_id` do registro é um ID de linha; num evento da v2
+                  // isto escrevia "completou etapa 103" na timeline.
+                  const sid = (log.payload as { stage_id?: number })?.stage_id;
+                  label =
+                    sid === undefined
+                      ? `${participant.full_name} enviou uma resposta`
+                      : textoDeRespostaRecebida(leitura, participant.full_name, sid);
+                } else if (log.action === "stage_released") {
+                  label = textoDeEtapaLiberada(leitura, (log.payload as { stage_id?: number })?.stage_id);
+                } else if (log.action === "prognostic_generated" && participant) {
+                  label = `Direcionamento gerado: ${participant.full_name}`;
+                } else if (log.action === "pdf_generated" && participant) {
+                  label = `PDF pronto — ${participant.full_name}`;
+                } else if (log.action === "participant_completed" && participant) {
+                  label = `${participant.full_name} concluiu o quiz`;
+                } else if (log.action === "participant_joined" && participant) {
+                  label = `${participant.full_name} entrou na imersão`;
+                } else if (log.action === "jobs_enfileirados") {
+                  const c = log.payload as { criados?: unknown; reaproveitados?: unknown } | null;
+                  label =
+                    c && isCount(c.criados) && isCount(c.reaproveitados)
+                      ? `Processamento enfileirado: ${c.criados} ${c.criados === 1 ? "entrou" : "entraram"} na fila, ${c.reaproveitados} já ${c.reaproveitados === 1 ? "estava" : "estavam"} nela`
+                      : "Processamento enfileirado";
+                } else if (log.action === "batch_process_completed") {
+                  const c = log.payload as Partial<BatchSummary> | null;
+                  label =
+                    c && isCount(c.succeeded) && isCount(c.skipped) && isCount(c.failed)
+                      ? `Processamento concluído: ${c.succeeded} ${c.succeeded === 1 ? "gerado" : "gerados"}, ${c.skipped} ${c.skipped === 1 ? "pulado" : "pulados"}, ${c.failed} ${c.failed === 1 ? "falhou" : "falharam"}`
+                      : `Processamento concluído`;
+                }
+    return { time, label };
+  }
+
+  // O Processar e o aviso da fila, iguais nos dois layouts: mesma habilitacao,
+  // mesma confirmacao, mesma recusa do servidor.
+  const podeOferecerProcessar = eventStatus !== "processing" && eventStatus !== "completed";
+  const blocoDeProcessar = (
+            <div className="space-y-2">
+              <AlertDialog open={confirmProcessOpen} onOpenChange={setConfirmProcessOpen}>
+                <AlertDialogTrigger
+                  render={
+                    <Button
+                      className="w-full h-12 bg-primary text-primary-foreground hover:bg-primary/90 uppercase tracking-[0.08em] text-sm"
+                      disabled={processing || fila !== "ok"}
+                    />
+                  }
+                >
+                  {processing
+                    ? "Enviando para a fila..."
+                    : fila === "ok"
+                      ? "Gerar direcionamentos"
+                      : fila === "verificando"
+                        ? "Verificando a fila..."
+                        : "Processamento indisponível"}
+                </AlertDialogTrigger>
+                <AlertDialogContent className="bg-card border-border">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="font-display text-foreground">
+                      Colocar os direcionamentos na fila?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription className="text-muted-foreground">
+                      Vamos colocar na fila o direcionamento de cada pessoa que concluiu o questionário ({participantesConcluidos}).
+                      Cada um leva cerca de 1 minuto e a fila trabalha poucos de cada vez, então uma turma cheia
+                      leva vários minutos. O andamento de cada pessoa fica salvo e qualquer administrador vê o
+                      mesmo resultado. Mantenha uma página aberta até terminar, para a fila continuar andando.
+                      Clicar duas vezes não duplica nada. Quem já está em revisão, revisado ou entregue é
+                      pulado, sem alterar o documento.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="border-border">Cancelar</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => {
+                        setConfirmProcessOpen(false);
+                        void processPrognostics();
+                      }}
+                      className="bg-primary text-primary-foreground hover:bg-primary/90"
+                    >
+                      Colocar na fila
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+
+              {fila !== "ok" && (
+                <div
+                  role="status"
+                  data-testid="fila-indisponivel"
+                  className="space-y-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-foreground/80"
+                >
+                  <p>
+                    {fila === "verificando"
+                      ? "Verificando se a fila de processamento está disponível..."
+                      : fila === "indisponivel"
+                        ? MENSAGEM_FILA_INDISPONIVEL
+                        : "Não foi possível verificar a fila agora (conexão ou sessão). O botão libera quando a verificação funcionar."}
+                  </p>
+                  {fila !== "verificando" && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setSinalDeLeitura((n) => n + 1)}
+                      className="h-9 border-border text-xs uppercase tracking-[0.08em]"
+                    >
+                      Verificar de novo
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+  );
+  const avisoDoEnfileiramento = avisoDeEnfileiramento && !processing && (
+    <p role="status" data-testid="aviso-enfileiramento" className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-foreground/80">
+      {avisoDeEnfileiramento}
+    </p>
+  );
+
+  const tipo = tipoDaOperacao(event);
+
+  // O EVENTO ASSINCRONO DO MARCO ZERO COMO ROTEIRO (CTO, Rodada 82): quatro
+  // passos na ordem da operacao, uma acao principal por passo. As pecas sao as
+  // mesmas do painel de sempre; muda so a ordem e o que fica a vista.
+  if (tipo === "assincrona") {
+    const prazo = prazoNaTela(event.form_closes_at, new Date());
+    const passos = passosDaOperacao({
+      status: eventStatus,
+      prazoPassou: prazo.passou,
+      resumo: resumoDosDocumentos,
+      concluidos: participantesConcluidos,
+    });
+    const prontos = resumoDosDocumentos?.comDocumento ?? 0;
+    const textoDaColeta =
+      prazo.passou === null
+        ? "Sem prazo válido no cadastro, o formulário não aceita respostas. Corrija o prazo do evento."
+        : prazo.passou
+          ? "O prazo passou. O formulário não aceita mais respostas."
+          : "O formulário está aberto e recebendo respostas.";
+
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="mx-auto w-full max-w-3xl space-y-8 px-4 py-6 lg:py-10">
+          <header className="space-y-3">
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Geração Preparada</p>
+            <h1 className="font-display text-3xl font-bold leading-tight text-foreground">{event.name}</h1>
+            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <span className="rounded-full border border-border px-2.5 py-0.5 text-xs font-medium text-foreground">
+                {rotuloDoEstado(eventStatus, resumoDosDocumentos)}
+              </span>
+              <span>Questionário pré-evento e direcionamentos individuais</span>
+            </div>
+          </header>
+
+          <ol className="space-y-4" aria-label="Etapas da operação">
+            <Passo numero="01" titulo="Coleta de respostas" situacao={passos.coleta}>
+              <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs text-muted-foreground">Prazo para responder</dt>
+                  <dd className="text-sm text-foreground">{prazo.texto}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Questionários completos</dt>
+                  <dd className="text-sm text-foreground">
+                    {participantesConcluidos} de {participants.length} {participants.length === 1 ? "cadastro" : "cadastros"}
+                  </dd>
+                </div>
+              </dl>
+              <p className="text-sm text-foreground/80">{textoDaColeta}</p>
+              <details className="group">
+                <summary className="cursor-pointer text-sm text-foreground underline-offset-4 hover:underline">
+                  Ver quem respondeu
+                </summary>
+                <ul className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
+                  {participants.map((p) => (
+                    <li key={p.id} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="truncate text-foreground">{p.full_name}</span>
+                      <span className={p.completed_at ? "shrink-0 text-xs text-success" : "shrink-0 text-xs text-muted-foreground"}>
+                        {p.completed_at ? "Completo" : "Incompleto"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+              <button
+                type="button"
+                onClick={() => router.push(`/admin/events/${event.id}/importacao`)}
+                className="text-left text-sm text-foreground underline underline-offset-4"
+              >
+                Segundas respostas e respostas de fora do app
+              </button>
+            </Passo>
+
+            <Passo numero="02" titulo="Testar a inteligência artificial" situacao={passos.testarIA}>
+              <p className="text-sm text-foreground/80">
+                Antes de gerar, confirme que a IA responde hoje. É uma chamada real com dados fictícios: não grava nada.
+              </p>
+              <TesteDaIACard embutido />
+            </Passo>
+
+            <Passo numero="03" titulo="Gerar direcionamentos" situacao={passos.gerar}>
+              {podeOferecerProcessar && passos.gerar !== "feito" && (
+                <>
+                  <p className="text-sm text-foreground/80">
+                    Coloque os direcionamentos na fila depois do prazo. Mantenha esta página aberta até terminar.
+                  </p>
+                  {blocoDeProcessar}
+                </>
+              )}
+              {/* Todos ja tem documento: o mesmo botao, com as mesmas regras, sai do
+                  caminho principal. Quem ja tem documento e pulado pelo servidor. */}
+              {podeOferecerProcessar && passos.gerar === "feito" && (
+                <details>
+                  <summary className="cursor-pointer text-sm text-foreground underline-offset-4 hover:underline">
+                    Gerar de novo para quem ainda não tem
+                  </summary>
+                  <div className="mt-3">{blocoDeProcessar}</div>
+                </details>
+              )}
+              {avisoDoEnfileiramento}
+              {mostrarPrognosticos ? (
+                <SituacaoPrognosticos
+                  embutido
+                  eventId={event.id}
+                  eventStatus={eventStatus}
+                  pessoas={pessoasDoPrognostico}
+                  sinalDeLeitura={sinalDeLeitura}
+                  aoMudarFila={setFila}
+                  aoIrParaRevisao={() => router.push(`/admin/events/${event.id}/review`)}
+                  aoResumir={setResumoDosDocumentos}
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">Nenhum questionário completo ainda.</p>
+              )}
+            </Passo>
+
+            <Passo numero="04" titulo="Revisar e enviar" situacao={passos.revisar}>
+              <p className="text-sm text-foreground/80">
+                Leia cada direcionamento, salve a revisão e envie pelo contato oficial, um por vez.
+              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  onClick={() => router.push(`/admin/events/${event.id}/review`)}
+                  className="h-11 bg-primary px-5 text-primary-foreground hover:bg-primary/90"
+                >
+                  Abrir revisão e envio
+                </Button>
+                {prontos > 0 && (
+                  <span className="text-sm text-muted-foreground">
+                    {prontos} {prontos === 1 ? "direcionamento pronto" : "direcionamentos prontos"}
+                  </span>
+                )}
+              </div>
+            </Passo>
+          </ol>
+
+          <section className="space-y-3" aria-labelledby="materiais-titulo">
+            <h2 id="materiais-titulo" className="font-display text-lg text-foreground">Materiais do encontro</h2>
+            <details className="rounded-lg border border-border bg-card">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-foreground">
+                Caderno de Condução <span className="font-normal text-muted-foreground">· para imprimir e usar no dia</span>
+              </summary>
+              <div className="border-t border-border px-4 py-4">
+                <CadernoDeConducaoCard />
+              </div>
+            </details>
+            <details className="rounded-lg border border-border bg-card">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-foreground">
+                Guia do Facilitador <span className="font-normal text-muted-foreground">· só para quem conduz</span>
+              </summary>
+              <div className="border-t border-border px-4 py-4">
+                <GuiaDoFacilitadorCard eventId={event.id} />
+              </div>
+            </details>
+          </section>
+
+          <section className="space-y-3" aria-labelledby="ferramentas-titulo">
+            <h2 id="ferramentas-titulo" className="font-display text-lg text-foreground">Ferramentas</h2>
+            <div className="flex flex-wrap items-center gap-3">
+              <EventQRDialog event={{ event_code: event.event_code, mode: event.mode }} />
+            </div>
+            <details className="rounded-lg border border-border bg-card">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-foreground">Registro de atividade</summary>
+              <ul className="max-h-80 space-y-2 overflow-y-auto border-t border-border px-4 py-4">
+                {logs.length === 0 && <li className="text-sm text-muted-foreground">Nenhuma atividade ainda.</li>}
+                {logs.map((log, i) => {
+                  const { time, label } = linhaDoRegistro(log);
+                  return (
+                    <li key={i} className="flex gap-3 text-xs">
+                      <span className="shrink-0 pt-0.5 font-mono text-muted-foreground">{time}</span>
+                      <span className="text-foreground/80">{label}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </details>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background p-4 lg:p-8">
+      {tipo === "nao_verificado" && (
+        <p role="status" className="mb-6 rounded-md border border-border bg-muted/30 px-4 py-3 text-sm text-foreground/80">
+          Não foi possível confirmar o tipo deste evento: o cadastro não traz modo e versão do questionário que combinem.
+          O painel completo está aberto. Confira o cadastro do evento antes de operar.
+        </p>
+      )}
       {/* Header */}
       <div className="mb-8 space-y-1">
         <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Painel ao vivo</p>
@@ -673,85 +996,10 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
           {(coletaDeEtapasConcluida(leitura, currentStage) || !leitura.suportado) &&
             eventStatus !== "processing" &&
             eventStatus !== "completed" && (
-            <div className="space-y-2">
-              <AlertDialog open={confirmProcessOpen} onOpenChange={setConfirmProcessOpen}>
-                <AlertDialogTrigger
-                  render={
-                    <Button
-                      className="w-full h-12 bg-primary text-primary-foreground hover:bg-primary/90 uppercase tracking-[0.08em] text-sm"
-                      disabled={processing || fila !== "ok"}
-                    />
-                  }
-                >
-                  {processing
-                    ? "Enviando para a fila..."
-                    : fila === "ok"
-                      ? "Processar prognósticos"
-                      : fila === "verificando"
-                        ? "Verificando a fila..."
-                        : "Processamento indisponível"}
-                </AlertDialogTrigger>
-                <AlertDialogContent className="bg-card border-border">
-                  <AlertDialogHeader>
-                    <AlertDialogTitle className="font-display text-foreground">
-                      Colocar os prognósticos na fila?
-                    </AlertDialogTitle>
-                    <AlertDialogDescription className="text-muted-foreground">
-                      Vamos colocar na fila o prognóstico de cada pessoa que concluiu o quiz ({participantesConcluidos}).
-                      Cada um leva cerca de 1 minuto e a fila trabalha poucos de cada vez, então uma turma cheia
-                      leva vários minutos. O andamento de cada pessoa fica salvo e qualquer administrador vê o
-                      mesmo resultado. Mantenha uma página aberta até terminar, para a fila continuar andando.
-                      Clicar duas vezes não duplica nada. Quem já está em revisão, revisado ou entregue é
-                      pulado, sem alterar o documento.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel className="border-border">Cancelar</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={() => {
-                        setConfirmProcessOpen(false);
-                        void processPrognostics();
-                      }}
-                      className="bg-primary text-primary-foreground hover:bg-primary/90"
-                    >
-                      Colocar na fila
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-
-              {fila !== "ok" && (
-                <div
-                  role="status"
-                  data-testid="fila-indisponivel"
-                  className="space-y-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-foreground/80"
-                >
-                  <p>
-                    {fila === "verificando"
-                      ? "Verificando se a fila de processamento está disponível..."
-                      : fila === "indisponivel"
-                        ? MENSAGEM_FILA_INDISPONIVEL
-                        : "Não foi possível verificar a fila agora (conexão ou sessão). O botão libera quando a verificação funcionar."}
-                  </p>
-                  {fila !== "verificando" && (
-                    <Button
-                      variant="outline"
-                      onClick={() => setSinalDeLeitura((n) => n + 1)}
-                      className="h-9 border-border text-xs uppercase tracking-[0.08em]"
-                    >
-                      Verificar de novo
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
+            blocoDeProcessar
           )}
 
-          {avisoDeEnfileiramento && !processing && (
-            <p role="status" data-testid="aviso-enfileiramento" className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-foreground/80">
-              {avisoDeEnfileiramento}
-            </p>
-          )}
+          {avisoDoEnfileiramento}
         </div>
 
         {/* Column 2 — Participants */}
@@ -848,45 +1096,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
           <ScrollArea className="h-[500px]">
             <div className="space-y-2 pr-3">
               {logs.map((log, i) => {
-                const participant = participants.find((p) => p.id === log.participant_id);
-                const time = new Date(log.created_at).toLocaleTimeString("pt-BR", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                });
-
-                let label = log.action;
-                if (log.action === "response_submitted" && participant) {
-                  // O `stage_id` do registro é um ID de linha; num evento da v2
-                  // isto escrevia "completou etapa 103" na timeline.
-                  const sid = (log.payload as { stage_id?: number })?.stage_id;
-                  label =
-                    sid === undefined
-                      ? `${participant.full_name} enviou uma resposta`
-                      : textoDeRespostaRecebida(leitura, participant.full_name, sid);
-                } else if (log.action === "stage_released") {
-                  label = textoDeEtapaLiberada(leitura, (log.payload as { stage_id?: number })?.stage_id);
-                } else if (log.action === "prognostic_generated" && participant) {
-                  label = `Prognóstico gerado — ${participant.full_name}`;
-                } else if (log.action === "pdf_generated" && participant) {
-                  label = `PDF pronto — ${participant.full_name}`;
-                } else if (log.action === "participant_completed" && participant) {
-                  label = `${participant.full_name} concluiu o quiz`;
-                } else if (log.action === "participant_joined" && participant) {
-                  label = `${participant.full_name} entrou na imersão`;
-                } else if (log.action === "jobs_enfileirados") {
-                  const c = log.payload as { criados?: unknown; reaproveitados?: unknown } | null;
-                  label =
-                    c && isCount(c.criados) && isCount(c.reaproveitados)
-                      ? `Processamento enfileirado: ${c.criados} ${c.criados === 1 ? "entrou" : "entraram"} na fila, ${c.reaproveitados} já ${c.reaproveitados === 1 ? "estava" : "estavam"} nela`
-                      : "Processamento enfileirado";
-                } else if (log.action === "batch_process_completed") {
-                  const c = log.payload as Partial<BatchSummary> | null;
-                  label =
-                    c && isCount(c.succeeded) && isCount(c.skipped) && isCount(c.failed)
-                      ? `Processamento concluído: ${c.succeeded} ${c.succeeded === 1 ? "gerado" : "gerados"}, ${c.skipped} ${c.skipped === 1 ? "pulado" : "pulados"}, ${c.failed} ${c.failed === 1 ? "falhou" : "falharam"}`
-                      : `Processamento concluído`;
-                }
-
+                const { time, label } = linhaDoRegistro(log);
                 return (
                   <div key={i} className="flex gap-3 text-xs">
                     <span className="text-muted-foreground font-mono shrink-0 pt-0.5">{time}</span>
@@ -902,5 +1112,42 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
         </div>
       </div>
     </div>
+  );
+}
+
+const ESTILO_DA_SITUACAO: Record<SituacaoDoPasso, string> = {
+  se_precisar: "bg-muted text-muted-foreground",
+  feito: "bg-success/10 text-success",
+  agora: "bg-primary text-primary-foreground",
+  depois: "bg-muted text-muted-foreground",
+  atencao: "bg-destructive/10 text-destructive",
+};
+
+function Passo({
+  numero,
+  titulo,
+  situacao,
+  children,
+}: {
+  numero: string;
+  titulo: string;
+  situacao: SituacaoDoPasso;
+  children: React.ReactNode;
+}) {
+  const ativo = situacao === "agora" || situacao === "atencao";
+  return (
+    <li
+      className={`rounded-xl border bg-card p-4 sm:p-5 ${ativo ? "border-foreground/30 shadow-sm" : "border-border"}`}
+      aria-current={situacao === "agora" ? "step" : undefined}
+    >
+      <div className="flex items-center gap-3">
+        <span className="font-mono text-sm text-muted-foreground">{numero}</span>
+        <h2 className="flex-1 font-display text-base font-semibold text-foreground sm:text-lg">{titulo}</h2>
+        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${ESTILO_DA_SITUACAO[situacao]}`}>
+          {ROTULO_DA_SITUACAO[situacao]}
+        </span>
+      </div>
+      <div className="mt-4 space-y-4 sm:pl-8">{children}</div>
+    </li>
   );
 }

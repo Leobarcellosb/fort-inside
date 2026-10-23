@@ -36,11 +36,8 @@ export default async function ReviewPage({ params }: Props) {
   return (
     <div className="min-h-screen bg-background p-4 lg:p-8">
       <div className="mb-8 space-y-1">
-        <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Revisão de prognósticos</p>
+        <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Revisão e envio</p>
         <h1 className="font-display text-2xl text-foreground">{event.name}</h1>
-        <p className="text-muted-foreground text-sm">
-          {prognostics?.filter((p) => p.status === "delivered").length ?? 0} de {prognostics?.length ?? 0} com link liberado
-        </p>
       </div>
 
       <PrognosticReviewGrid

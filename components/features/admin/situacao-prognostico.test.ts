@@ -153,7 +153,7 @@ describe("montarSituacao: uma pessoa é uma pessoa", () => {
     const c = contarPorGrupo(r);
     expect(Object.values(c).reduce((x, y) => x + y, 0)).toBe(pessoas.length);
     expect(c).toMatchObject({ atencao: 1, andamento: 1, pulados: 2, quiz_aberto: 1 });
-    expect(resumoDaTurma(r)).toBe("2 de 4 com prognóstico · 1 em andamento · 1 precisa de atenção");
+    expect(resumoDaTurma(r)).toBe("2 de 4 com direcionamento · 1 em andamento · 1 precisa de atenção");
   });
 });
 

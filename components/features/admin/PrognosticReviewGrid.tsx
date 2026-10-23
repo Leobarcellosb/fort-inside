@@ -9,6 +9,13 @@ import { Badge } from "@/components/ui/badge";
 import { EditPrognosticDialog } from "./EditPrognosticDialog";
 import { SuspenderDocumentoDialog } from "./SuspenderDocumentoDialog";
 import { EnviarDocumentoDialog } from "./EnviarDocumentoDialog";
+import {
+  ROTULO_DA_ETAPA,
+  contarPorEtapa,
+  etapaDaRevisao,
+  ordenarParaRevisao,
+  type EtapaDaRevisao,
+} from "./fila-da-revisao";
 import { idDaRazao, situacaoDaEntrega } from "./entrega-do-documento";
 import {
   ROTULO_SUSPENDER,
@@ -40,6 +47,7 @@ const TRAIL_COLORS: Record<string, string> = {
 
 export function PrognosticReviewGrid({ eventId, pdfDisponivel, participants, prognostics }: Props) {
   const [localPrognostics, setLocalPrognostics] = useState<Prognostic[]>(prognostics);
+  const [filtro, setFiltro] = useState<"todos" | EtapaDaRevisao>("todos");
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [suspendingId, setSuspendingId] = useState<string | null>(null);
@@ -188,11 +196,49 @@ export function PrognosticReviewGrid({ eventId, pdfDisponivel, participants, pro
     ? participants.find((pt) => pt.id === suspendingProg.participant_id)?.full_name ?? ""
     : "";
 
+  // A lista como fila de trabalho: o que da para fazer agora vem primeiro.
+  const itens = ordenarParaRevisao(
+    participants.map((participant) => {
+      const prog = localPrognostics.find((p) => p.participant_id === participant.id);
+      return { participant, prog, nome: participant.full_name, etapa: etapaDaRevisao(prog?.status) };
+    }),
+  );
+  const contagem = contarPorEtapa(itens.map((i) => i.etapa));
+  const visiveis = filtro === "todos" ? itens : itens.filter((i) => i.etapa === filtro);
+  const filtros: { valor: "todos" | EtapaDaRevisao; rotulo: string; n: number }[] = [
+    { valor: "todos", rotulo: "Todos", n: itens.length },
+    ...(["revisar", "enviar", "enviado", "fora_do_ar", "sem_documento"] as EtapaDaRevisao[])
+      .filter((e) => contagem[e] > 0)
+      .map((e) => ({ valor: e, rotulo: ROTULO_DA_ETAPA[e], n: contagem[e] })),
+  ];
+
   return (
     <>
+    <div className="mb-6 space-y-3">
+      <p className="text-sm text-foreground">
+        <strong>{contagem.revisar}</strong> para revisar · <strong>{contagem.enviar}</strong> prontos para enviar ·{" "}
+        <strong>{contagem.enviado}</strong> com link liberado
+      </p>
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Filtrar por situação">
+        {filtros.map((f) => (
+          <button
+            key={f.valor}
+            type="button"
+            onClick={() => setFiltro(f.valor)}
+            aria-pressed={filtro === f.valor}
+            className={`rounded-full border px-3 py-1 text-xs ${
+              filtro === f.valor
+                ? "border-foreground bg-foreground text-background"
+                : "border-border text-foreground hover:border-foreground/40"
+            }`}
+          >
+            {f.rotulo} · {f.n}
+          </button>
+        ))}
+      </div>
+    </div>
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-      {participants.map((participant) => {
-        const prog = localPrognostics.find((p) => p.participant_id === participant.id);
+      {visiveis.map(({ participant, prog }) => {
         const content = (prog?.edited_content ?? prog?.raw_ai_output) as
           | PrognosticContent
           | undefined;
@@ -230,18 +276,11 @@ export function PrognosticReviewGrid({ eventId, pdfDisponivel, participants, pro
                       : "bg-muted text-muted-foreground border-border"
                   }`}
                 >
-                  {prog.status === "delivered"
-                    ? // "Link liberado" e nao "Entregue": o sistema sabe que
-                      // disponibilizou, nao que a mensagem chegou (Rodada 67).
-                      "Link liberado"
-                    : prog.status === "suspended"
-                    ? // "Fora do ar" e nao "Suspenso": o rotulo fala do ponto de
-                      // vista de quem lia o documento, que e o que o operador
-                      // precisa decidir. "Suspenso" e o nome da coluna.
-                      "Fora do ar"
-                    : prog.status === "reviewed"
-                    ? "Revisado"
-                    : "Gerado"}
+                  {/* O mesmo nome do filtro no topo. "Link liberado" e nao
+                      "Entregue": o sistema sabe que disponibilizou, nao que a
+                      mensagem chegou (Rodada 67). "Fora do ar" fala do ponto de
+                      vista de quem lia o documento. */}
+                  {ROTULO_DA_ETAPA[etapaDaRevisao(prog.status)]}
                 </Badge>
               )}
             </div>
@@ -315,14 +354,20 @@ export function PrognosticReviewGrid({ eventId, pdfDisponivel, participants, pro
 
             <div className="flex gap-2 pt-1">
               {prog && prog.status !== "delivered" && (
+                // Antes da revisao, revisar E o passo: botao principal. Depois,
+                // editar vira acao secundaria e o envio assume o destaque.
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant={entrega?.liberada ? "outline" : "default"}
                   onClick={() => setEditingId(prog.id)}
                   disabled={saving}
-                  className="text-xs border-border text-muted-foreground hover:text-foreground"
+                  className={
+                    entrega?.liberada
+                      ? "text-xs border-border text-muted-foreground hover:text-foreground"
+                      : "flex-1 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+                  }
                 >
-                  Editar
+                  {entrega?.liberada ? "Editar" : "Revisar"}
                 </Button>
               )}
               {prog && prog.status !== "delivered" && entrega && (
@@ -343,9 +388,13 @@ export function PrognosticReviewGrid({ eventId, pdfDisponivel, participants, pro
                   onClick={() => setSendingId(prog.id)}
                   disabled={saving || !entrega.liberada}
                   aria-describedby={entrega.liberada ? undefined : idDaRazao(prog.id)}
-                  className="flex-1 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+                  className={
+                    entrega.liberada
+                      ? "flex-1 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+                      : "text-xs border border-border bg-transparent text-muted-foreground"
+                  }
                 >
-                  Entregar
+                  Enviar
                 </Button>
               )}
               {prog?.status === "delivered" && (

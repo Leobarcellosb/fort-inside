@@ -37,7 +37,7 @@ import { TEXTO_CAMINHO_DA_RETIFICACAO } from "./suspensao-do-documento";
  * nao ha motivo para reescrever o que ja instrui. O que muda e o LUGAR.
  */
 export const TEXTO_SEM_REVISAO_SALVA =
-  "Este documento ainda não tem revisão salva. Abra em Editar, revise o texto e salve: a entrega é liberada em seguida.";
+  "Ainda sem revisão. Toque em Revisar, leia o texto inteiro e salve: o envio é liberado em seguida.";
 
 /**
  * O SEGUNDO motivo, acrescentado com a migration 027.

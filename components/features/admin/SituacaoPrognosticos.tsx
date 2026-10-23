@@ -289,6 +289,12 @@ interface Props {
    * fecha o evento quando nao sobra job pendente, falho ou nao (Rodada 69).
    */
   aoResumir?: (r: { comDocumento: number; falharam: number }) => void;
+  /**
+   * Dentro de um passo do painel do Marco Zero: sem o titulo, sem o botao de
+   * revisao (o passo seguinte ja leva la) e sem a explicacao longa. Os dados, as
+   * falhas e o reprocessamento continuam iguais.
+   */
+  embutido?: boolean;
 }
 
 export function SituacaoPrognosticos({
@@ -299,6 +305,7 @@ export function SituacaoPrognosticos({
   aoMudarFila,
   aoIrParaRevisao,
   aoResumir,
+  embutido = false,
 }: Props) {
   const [documentos, setDocumentos] = useState<LinhaDocumento[] | null>(null);
   const [jobs, setJobs] = useState<LinhaJob[] | null>(null);
@@ -478,16 +485,16 @@ export function SituacaoPrognosticos({
     // Nenhuma das duas leituras voltou com dados.
     return (
       <section className="space-y-2" aria-busy={!tentouLer}>
-        <h2 className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Prognósticos</h2>
+        <h2 className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Direcionamentos</h2>
         {tentouLer ? (
           <div role="status" className="space-y-2 text-sm text-foreground/80">
-            <p>Não foi possível ler a situação dos prognósticos agora. Isto não significa que algo deu errado com eles.</p>
+            <p>Não foi possível ler a situação dos direcionamentos agora. Isto não significa que algo deu errado com eles.</p>
             <Button variant="outline" onClick={() => void atualizar()} className="h-10 border-border text-xs uppercase tracking-[0.08em]">
               Ler de novo
             </Button>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">Lendo a situação dos prognósticos...</p>
+          <p className="text-sm text-muted-foreground">Lendo a situação dos direcionamentos...</p>
         )}
       </section>
     );
@@ -500,24 +507,28 @@ export function SituacaoPrognosticos({
   return (
     <section className="space-y-4" aria-labelledby="situacao-titulo">
       <div className="space-y-1">
-        <div className="flex items-start justify-between gap-3">
-          <h2 id="situacao-titulo" className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-            Prognósticos
-          </h2>
-          <Button
-            onClick={aoIrParaRevisao}
-            className="h-9 bg-primary text-primary-foreground hover:bg-primary/90 uppercase tracking-[0.08em] text-xs"
-          >
-            Ir para a revisão
-          </Button>
-        </div>
+        {!embutido && (
+          <div className="flex items-start justify-between gap-3">
+            <h2 id="situacao-titulo" className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              Direcionamentos
+            </h2>
+            <Button
+              onClick={aoIrParaRevisao}
+              className="h-9 bg-primary text-primary-foreground hover:bg-primary/90 uppercase tracking-[0.08em] text-xs"
+            >
+              Ir para a revisão
+            </Button>
+          </div>
+        )}
         <p className="font-display text-lg text-foreground" data-testid="resumo-turma">
           {resumoDaTurma(situacoes)}
         </p>
-        <p className="text-xs text-muted-foreground">
-          Cada pessoa aparece uma vez. Para cada uma mostramos duas coisas separadas: em que estado o
-          documento está agora e o que aconteceu no último processamento.
-        </p>
+        {!embutido && (
+          <p className="text-xs text-muted-foreground">
+            Cada pessoa aparece uma vez. Para cada uma mostramos duas coisas separadas: em que estado o
+            documento está agora e o que aconteceu no último processamento.
+          </p>
+        )}
       </div>
 
       {(falhaDeLeitura || semFila) && (

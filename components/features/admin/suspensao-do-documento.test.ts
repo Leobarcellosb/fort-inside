@@ -92,9 +92,9 @@ describe("validarMotivoDaSuspensao: ato de operador sem motivo não é ato regis
 
 describe("os textos INSTRUEM, e dizem as duas metades do princípio", () => {
   it("o caminho da retificação nomeia a ação, o passo que aprova e a entrega", () => {
-    expect(TEXTO_CAMINHO_DA_RETIFICACAO).toContain("Editar");
+    expect(TEXTO_CAMINHO_DA_RETIFICACAO).toContain("Revisar");
     expect(TEXTO_CAMINHO_DA_RETIFICACAO).toContain("salve");
-    expect(TEXTO_CAMINHO_DA_RETIFICACAO).toContain("entrega é liberada");
+    expect(TEXTO_CAMINHO_DA_RETIFICACAO).toContain("envio é liberado");
   });
 
   it("o caminho da retificação diz que a versão anterior NÃO é reaberta nem perdida", () => {
