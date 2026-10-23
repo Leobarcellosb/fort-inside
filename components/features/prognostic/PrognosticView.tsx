@@ -1,5 +1,6 @@
 "use client";
 
+import { assinaturaDoAnfitriao } from "@/lib/marca";
 import { useEffect, useState } from "react";
 import type { PrognosticContent } from "@/types/database";
 import { Button } from "@/components/ui/button";
@@ -407,7 +408,7 @@ export function PrognosticView({
         {yuriNote && (
           <section className="space-y-4 border-l-2 border-foreground pl-6 py-2">
             <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-display">
-              Observação de {hostName}
+              Observação de {assinaturaDoAnfitriao(hostName)}
             </p>
             <p className="font-display text-xl md:text-2xl text-foreground leading-[1.5] italic">
               &ldquo;{yuriNote}&rdquo;
@@ -420,7 +421,7 @@ export function PrognosticView({
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-display">
             Prognóstico Inicial de Direção
           </p>
-          <p className="text-sm text-foreground font-display">por {hostName}</p>
+          <p className="text-sm text-foreground font-display">por {assinaturaDoAnfitriao(hostName)}</p>
         </footer>
       </article>
     </main>

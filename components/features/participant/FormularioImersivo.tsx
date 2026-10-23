@@ -42,6 +42,7 @@ import {
   type CampoDeTextoHandle,
 } from "./formulario-imersivo/controles";
 import { ehToque, useViewportVisivel } from "./formulario-imersivo/viewport-visivel";
+import { MARCA } from "@/lib/marca";
 
 /*
  * O FORMULARIO IMERSIVO -- a versao "uma coisa de cada vez" do formulario
@@ -1584,7 +1585,7 @@ function TelaFinal({ nome, dataDoEvento }: { nome: string; eventName: string; da
           vida.{" "}
           {dataDoEvento ? <>A gente se vê {dataCurtaPorExtenso(dataDoEvento)}.</> : <>A gente se vê no encontro.</>}
         </p>
-        <footer className="text-[13px] font-medium tracking-wide text-white/60">Yuri Fortes</footer>
+        <footer className="text-[13px] font-medium tracking-wide text-white/60">{MARCA}</footer>
       </blockquote>
 
       <p className="text-[13.5px] leading-relaxed text-white/50">

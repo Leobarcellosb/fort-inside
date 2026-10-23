@@ -1,5 +1,6 @@
 "use client";
 
+import { assinaturaDoAnfitriao } from "@/lib/marca";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -233,7 +234,7 @@ export default function WaitingPage() {
           )}
           {eventName && (
             <p className="text-xs text-muted-foreground">
-              {eventName} · com {hostName}
+              {eventName} · com {assinaturaDoAnfitriao(hostName)}
             </p>
           )}
         </div>

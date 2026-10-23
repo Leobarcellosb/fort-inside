@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { cn } from "@/lib/utils";
+import { MARCA } from "@/lib/marca";
 
 type Size = "sm" | "md" | "lg" | "xl";
 
@@ -16,7 +17,7 @@ const SIZES: Record<Size, number> = {
   xl: 120,
 };
 
-export function Logo({ size = "md", className, alt = "Yuri Fortes" }: Props) {
+export function Logo({ size = "md", className, alt = MARCA }: Props) {
   const dimension = SIZES[size];
   return (
     <Image
