@@ -131,7 +131,7 @@ export function NewEventForm() {
       <div className="space-y-1.5">
         <Label className="text-xs uppercase tracking-[0.1em] text-muted-foreground">Nome do evento</Label>
         <Input
-          placeholder="Fort Inside — Abril 2026"
+          placeholder="Marco Zero · Outubro 2026"
           className="bg-transparent border-0 border-b border-border rounded-none focus-visible:ring-0 focus-visible:border-primary px-0"
           {...register("name")}
         />

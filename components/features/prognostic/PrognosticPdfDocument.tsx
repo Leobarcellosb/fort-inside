@@ -12,7 +12,7 @@ const HAIRLINE = "#E0E0E0";
 
 // Logo loaded via absolute URL — react-pdf renders server-side and needs a
 // reachable URL. NEXT_PUBLIC_APP_URL is set in Vercel; fallback to prod URL.
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://fort-inside.vercel.app";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://marcozero-gp.vercel.app";
 const LOGO_URL = `${APP_URL}/logo-yuri.png`;
 
 const styles = StyleSheet.create({

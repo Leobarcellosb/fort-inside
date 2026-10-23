@@ -128,8 +128,8 @@ export default function FeedbackPage() {
       <div className="relative">
         <CinematicHero
           imageSrc="/cinematic/hero-join.jpg"
-          imageAlt="Fort Inside"
-          eyebrow="Fort Inside"
+          imageAlt="Geração Preparada"
+          eyebrow="Geração Preparada"
           title="Sua avaliação"
           subtitle="Conta pra gente como foi a imersão"
         />
@@ -159,7 +159,7 @@ export default function FeedbackPage() {
         <section className="space-y-3">
           <span className={sectionLabel}>Pergunta 2 de 5</span>
           <p className="text-foreground text-lg font-body font-medium">
-            De 0 a 10, o quanto você recomendaria a imersão Fort Inside com Yuri Fortes para um amigo?
+            De 0 a 10, o quanto você recomendaria a Geração Preparada, com Yuri Fortes, para um amigo?
           </p>
           <div className="grid grid-cols-11 gap-1">
             {Array.from({ length: 11 }, (_, i) => i).map((n) => {

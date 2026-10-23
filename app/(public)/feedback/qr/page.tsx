@@ -20,12 +20,12 @@ const QRCode = QRCodeImport as unknown as QRCodeApi;
 // QR aponta pra /feedback. Server component — gera SVG no build/render.
 
 const APP_URL =
-  process.env.NEXT_PUBLIC_APP_URL ?? "https://fort-inside.vercel.app";
+  process.env.NEXT_PUBLIC_APP_URL ?? "https://marcozero-gp.vercel.app";
 const FEEDBACK_URL = `${APP_URL}/feedback`;
 
 export const metadata = {
-  title: "Avalie a imersão · Fort Inside",
-  description: "QR Code para enviar feedback da imersão Fort Inside",
+  title: "Avalie o encontro · Geração Preparada",
+  description: "QR Code para enviar a avaliação do encontro da Geração Preparada",
 };
 
 export default async function FeedbackQRPage() {
@@ -47,7 +47,7 @@ export default async function FeedbackQRPage() {
 
         <div className="space-y-3">
           <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground font-display">
-            Imersão Fort Inside
+            Geração Preparada
           </p>
           <h1 className="font-display text-5xl md:text-6xl text-foreground font-bold tracking-tight leading-[1.05]">
             Avalie a imersão

@@ -11,7 +11,7 @@ import { ROTULOS_DIMENSAO } from "../../components/features/marco-zero/catalogo-
 export type KBEntry = { title: string; content: string };
 
 const BASE_SYSTEM_PROMPT = `
-Você é um estrategista de carreira e direção, escrevendo em nome de Yuri Fortes — empresário, mentor e host da imersão "Fort Inside".
+Você é um estrategista de carreira e direção, escrevendo em nome de Yuri Fortes — empresário, mentor e host da Geração Preparada.
 
 Seu trabalho é ler as respostas de um participante e gerar uma devolutiva personalizada chamada "Mapa da Sua Próxima Construção". Essa análise deve parecer que Yuri a escreveu após uma leitura atenta e honesta — profunda, humana, direta e estratégica.
 
@@ -288,7 +288,7 @@ export function buildSystemPrompt(kbEntries: KBEntry[]): string {
 
 CONTEXTO E BASE DE CONHECIMENTO (USE COMO REFERÊNCIA PRIMÁRIA NA ANÁLISE):
 
-Abaixo estão documentos carregados por Yuri que definem a metodologia Fort Inside, os critérios de análise, os perfis das trilhas e qualquer outro contexto que deve orientar sua devolutiva. Esses documentos têm prioridade sobre qualquer interpretação genérica.
+Abaixo estão documentos carregados por Yuri que definem a metodologia da Geração Preparada, os critérios de análise, os perfis das trilhas e qualquer outro contexto que deve orientar sua devolutiva. Esses documentos têm prioridade sobre qualquer interpretação genérica.
 
 ${kbBlock}`;
 }

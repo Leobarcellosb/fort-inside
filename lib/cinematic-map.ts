@@ -73,7 +73,7 @@ export function imagemDoAmbiente(
 export function rotuloDaMarca(quizVersion: number | null | undefined): string {
   return ehMarcoZero(quizVersion)
     ? "Marco Zero · Geração Preparada"
-    : "Imersão Fort Inside";
+    : "Imersão Geração Preparada";
 }
 
 /**

@@ -106,7 +106,7 @@ export default async function NpsAdminPage() {
               Admin
             </p>
             <h1 className="font-display text-2xl text-foreground mt-1">
-              Avaliações Fort Inside
+              Avaliações Geração Preparada
             </h1>
           </div>
           <div className="flex gap-2">

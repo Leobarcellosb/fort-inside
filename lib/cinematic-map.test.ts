@@ -82,12 +82,12 @@ describe("selo da tela de entrada", () => {
     expect(selo).not.toMatch(/fort inside/i);
   });
 
-  it("Fort Inside mantem o selo de sempre", () => {
-    expect(rotuloDaMarca(1)).toBe("Imersão Fort Inside");
+  it("evento antigo (v1) tambem se apresenta como Geracao Preparada, nunca Fort Inside", () => {
+    expect(rotuloDaMarca(1)).toBe("Imersão Geração Preparada");
   });
 
   it("versao desconhecida fica no legado, nao vira Marco Zero", () => {
-    expect(rotuloDaMarca(null)).toBe("Imersão Fort Inside");
-    expect(rotuloDaMarca(undefined)).toBe("Imersão Fort Inside");
+    expect(rotuloDaMarca(null)).toBe("Imersão Geração Preparada");
+    expect(rotuloDaMarca(undefined)).toBe("Imersão Geração Preparada");
   });
 });

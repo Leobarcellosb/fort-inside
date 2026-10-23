@@ -102,7 +102,7 @@ export function KnowledgeBaseManager() {
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Título</Label>
             <Input
-              placeholder="ex: Metodologia Fort Inside"
+              placeholder="ex: Metodologia Geração Preparada"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="bg-transparent border-0 border-b border-border rounded-none focus-visible:ring-0 focus-visible:border-primary px-0"

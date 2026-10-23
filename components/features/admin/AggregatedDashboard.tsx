@@ -98,7 +98,7 @@ export function AggregatedDashboard({ participants, responses, prognostics }: Pr
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "fort-inside-dashboard.csv";
+    a.download = "geracao-preparada-dashboard.csv";
     a.click();
     URL.revokeObjectURL(url);
   }
