@@ -84,8 +84,11 @@ Escolha uma das duas e me diga no chat:
 
 ## Decisões que podem esperar a tarde, mas precisam acontecer antes de segunda
 
-1. **Os 3 cadastros de teste** (você, eu e o Carlos). Eu mostro cada identificador e você
-   responde sim ou não para cada um. Sem isso, a geração cria documento para eles.
+1. **Os 3 cadastros de teste** (você, eu e o Carlos). Rode docs/aplicar/cadastros-de-teste.sql
+   no editor SQL do Supabase (só leitura) e responda no chat, para cada linha, "remove <id>"
+   ou "mantém <id>". Eu não consegui rodar essa consulta esta noite: ela lê nome e e-mail de
+   produção, e a trava de segurança bloqueou, com razão. Sem a sua decisão, a geração cria
+   documento para eles.
 2. **Administrador substituto:** nome e e-mail de quem entra no painel se você não puder.
 3. **Revisores de segunda:** quem lê, ajusta e envia, e em que horário.
 4. **Cinco documentos fictícios cronometrados** com quem vai revisar de verdade (o kit está
