@@ -22,26 +22,15 @@ o que fazer se aparecer outra coisa.
 tela (ou tire um print) e pare aqui. É a primeira coisa a resolver, porque sem ela nada de
 segunda acontece.
 
-### 1b. Fechar o cadastro de conta nova (3 min)
+### 1b. Fechar o cadastro de conta nova: FEITO (24/10 08h53)
 
-Hoje qualquer pessoa com um e-mail pode criar conta no app e, pela API, criar um "concluído"
-no Marco Zero, que a geração de segunda pegaria (docs/AUDITORIA-DA-CONCLUSAO.md). O CTO
-recomenda fechar hoje, antes de qualquer Gerar.
+"Allow new users to sign up" desligado e salvo; conferido de novo depois de recarregar a
+página. Contas existentes: só uma (a do Leonardo, criada em 22/10); nenhuma desconhecida. O
+"10 users (estimated)" do Supabase é estimativa do banco, não contagem.
 
-1. Supabase > Authentication > **Sign In / Providers** > desligue **"Allow new users to sign
-   up"** > **Save changes**. Recarregue a página e confira que ficou desligado.
-2. Saia e entre de novo no painel publicado: o seu login tem de continuar funcionando (contas
-   que já existem não são afetadas).
-3. Supabase > Authentication > **Users**: confira se todas as contas são de gente conhecida.
-   Conta desconhecida: me mande o e-mail e a data de criação, e não gere nada até entendermos.
-4. O administrador reserva, se precisar, nasce por **Add user** nessa mesma tela, sem reabrir
-   o cadastro.
-
-**O que isso desliga:** a entrada antiga de participante por código no e-mail (/join), que
-precisa do cadastro aberto. O Marco Zero não usa: no sábado ninguém abre /join, e o
-formulário público não cria conta. Um evento futuro que use /join vai precisar do cadastro
-aberto, mas religar **não é automático**: antes, as permissões que deixam uma conta criar
-"concluído" (achados A1, A2 e A4) precisam ser corrigidas ou aceitas por você (CTO, Rodada 91).
+Isso desliga a entrada antiga por código no e-mail (/join), que o Marco Zero não usa. Religar
+não é automático: antes, os achados A1, A2 e A4 precisam ser corrigidos ou aceitos
+(docs/AUDITORIA-DA-CONCLUSAO.md).
 
 ### 2. Testar a IA (2 min)
 
