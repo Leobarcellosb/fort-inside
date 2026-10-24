@@ -138,6 +138,23 @@ Um "quase pronto" numa manhã corrida não é autorização para gerar.
 
 ---
 
+## Quem NÃO recebe documento na segunda
+
+A geração processa todo mundo que concluiu o questionário (hoje, 34). Quem está nesta lista
+tem documento gerado, mas ele **não é revisado nem enviado**. Ao chegar no cartão dessa
+pessoa na revisão, pule.
+
+| Quem | Identificador | Motivo | Decidido por |
+|---|---|---|---|
+| Carlos Vieira | 4ae643b9-c917-497f-a3a3-7223af27be9f | Equipe, não é participante. Cadastro mantido; documento gerado fica interno (opção A, CTO Rodada 92) | Leonardo, 24/10 10h17 |
+| Camila e Miguel | a conferir | Equipe da Fort, "não participarão como jovens". Conferir se estão entre os 34 | pendente |
+
+Regra padrão de quem recebe (CTO, Rodada 92): respondeu o questionário, está na lista oficial
+dos 39 e esteve presente no sábado, com identidade conferida e documento revisado. Caso fora
+dessa regra só com decisão registrada do Leonardo.
+
+---
+
 ## Regras da revisão de segunda
 
 Por que existem: com dois operadores no mesmo documento, o segundo pode apagar a edição do
