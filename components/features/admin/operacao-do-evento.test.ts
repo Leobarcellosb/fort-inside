@@ -59,12 +59,12 @@ describe("passos da operacao", () => {
   });
 
   it("documentos prontos: revisar e o passo de agora; o teste da IA nunca aparece como feito", () => {
-    const p = passosDaOperacao({ status: "completed", prazoPassou: true, resumo: { comDocumento: 50, falharam: 0, emAndamento: 0 }, concluidos: 50 });
+    const p = passosDaOperacao({ status: "completed", prazoPassou: true, resumo: { comDocumento: 50, falharam: 0, emAndamento: 0, pedemAtencao: 0 }, concluidos: 50 });
     expect(p).toEqual({ coleta: "feito", testarIA: "se_precisar", gerar: "feito", revisar: "agora" });
   });
 
   it("todos com documento conta como feito mesmo antes do banco fechar o evento", () => {
-    expect(passosDaOperacao({ status: "live", prazoPassou: true, resumo: { comDocumento: 50, falharam: 0, emAndamento: 0 }, concluidos: 50 }).gerar).toBe("feito");
+    expect(passosDaOperacao({ status: "live", prazoPassou: true, resumo: { comDocumento: 50, falharam: 0, emAndamento: 0, pedemAtencao: 0 }, concluidos: 50 }).gerar).toBe("feito");
     expect(passosDaOperacao({ status: "live", prazoPassou: true, resumo: { comDocumento: 30, falharam: 0 }, concluidos: 50 }).gerar).toBe("agora");
   });
 
@@ -74,6 +74,17 @@ describe("passos da operacao", () => {
 
   it("sem saber quantos estao na fila, nao afirma feito", () => {
     expect(passosDaOperacao({ status: "live", prazoPassou: true, resumo: { comDocumento: 50, falharam: 0 }, concluidos: 50 }).gerar).not.toBe("feito");
+  });
+
+  it("alguem em atencao que a fila nao reprocessa tambem impede o feito (CTO, Rodada 84)", () => {
+    // Ex.: o registro diz que gerou, mas o documento nao foi achado. Nao entra em `falharam`.
+    const resumo = { comDocumento: 50, falharam: 0, emAndamento: 0, pedemAtencao: 1 };
+    expect(passosDaOperacao({ status: "live", prazoPassou: true, resumo, concluidos: 50 }).gerar).toBe("atencao");
+  });
+
+  it("sem saber quantos pedem atencao, nao afirma feito", () => {
+    const resumo = { comDocumento: 50, falharam: 0, emAndamento: 0 };
+    expect(passosDaOperacao({ status: "live", prazoPassou: true, resumo, concluidos: 50 }).gerar).not.toBe("feito");
   });
 
   it("falhas na geracao pedem atencao", () => {

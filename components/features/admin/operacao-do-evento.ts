@@ -85,11 +85,12 @@ export function passosDaOperacao(entrada: {
   const { status, prazoPassou, resumo, concluidos } = entrada;
   const gerando = status === "processing";
   const temDocumentos = (resumo?.comDocumento ?? 0) > 0;
-  const temFalhas = (resumo?.falharam ?? 0) > 0;
+  // Qualquer pessoa em "Atencao", nao so a falha que a fila reprocessa (CTO, Rodada 84).
+  const temFalhas = (resumo?.falharam ?? 0) > 0 || (resumo?.pedemAtencao ?? 0) > 0;
   const coletaFechada = prazoPassou === true || gerando || status === "completed";
-  // "Feito" so com documento para todos E nada na fila nem gerando. Sem saber
-  // quantos estao em andamento, nao se afirma que terminou (CTO, Rodada 83).
-  const filaParada = resumo?.emAndamento === 0;
+  // "Feito" so com documento para todos E nada na fila, gerando ou em atencao.
+  // Sem essas contagens, nao se afirma que terminou (CTO, Rodadas 83 e 84).
+  const filaParada = resumo?.emAndamento === 0 && resumo?.pedemAtencao === 0;
   const todosComDocumento = temDocumentos && (resumo?.comDocumento ?? 0) >= concluidos && filaParada;
 
   const coleta: SituacaoDoPasso = coletaFechada ? "feito" : prazoPassou === null ? "atencao" : "agora";

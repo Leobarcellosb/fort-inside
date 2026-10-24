@@ -696,6 +696,12 @@ export interface ResumoDosDocumentos {
    * a fila so momentaneamente vazia (CTO, Rodada 83). Ausente = nao se sabe.
    */
   emAndamento?: number;
+  /**
+   * Em "Atenção" por qualquer motivo, ou com versao indeterminada. `falharam` so
+   * conta o que a fila sabe reprocessar; este conta tudo que impede dizer que
+   * gerar terminou (CTO, Rodada 84). Ausente = nao se sabe.
+   */
+  pedemAtencao?: number;
 }
 
 /**

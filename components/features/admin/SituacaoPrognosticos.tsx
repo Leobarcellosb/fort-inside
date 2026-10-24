@@ -18,6 +18,7 @@ import {
   ORDEM_GRUPOS,
   TEXTO_GRUPO,
   contarPorGrupo,
+  documentoTemConteudo,
   montarSituacao,
   resumoDaTurma,
   textoConfirmacao,
@@ -288,7 +289,7 @@ interface Props {
    * para nao chamar de "Concluido" um processamento em que tudo falhou: o banco
    * fecha o evento quando nao sobra job pendente, falho ou nao (Rodada 69).
    */
-  aoResumir?: (r: { comDocumento: number; falharam: number; emAndamento: number }) => void;
+  aoResumir?: (r: { comDocumento: number; falharam: number; emAndamento: number; pedemAtencao: number }) => void;
   /**
    * Dentro de um passo do painel do Marco Zero: sem o titulo, sem o botao de
    * revisao (o passo seguinte ja leva la) e sem a explicacao longa. Os dados, as
@@ -359,11 +360,22 @@ export function SituacaoPrognosticos({
   const falhasDoLote = situacoes
     ? situacoes.filter((s) => s.grupo === "atencao" && s.retentativa?.tipo === "fila")
     : [];
-  const comDocumento = situacoes ? situacoes.filter((s) => s.documento !== null).length : 0;
+  // Documento com conteudo, a mesma regra da lista ("50 de 51 com direcionamento").
+  // Linha ainda "pendente" nao conta: o resumo dizia 51 gerados com 50 (CTO, Rodada 84).
+  const comDocumento = situacoes ? situacoes.filter((s) => documentoTemConteudo(s.documento)).length : 0;
   const quantosEmAndamento = situacoes ? situacoes.filter((s) => s.grupo === "andamento").length : 0;
+  const quantosPedemAtencao = situacoes
+    ? situacoes.filter((s) => s.grupo === "atencao" || s.grupo === "indeterminado").length
+    : 0;
   useEffect(() => {
-    if (situacoes) aoResumir?.({ comDocumento, falharam: falhasDoLote.length, emAndamento: quantosEmAndamento });
-  }, [situacoes, comDocumento, falhasDoLote.length, quantosEmAndamento, aoResumir]);
+    if (situacoes)
+      aoResumir?.({
+        comDocumento,
+        falharam: falhasDoLote.length,
+        emAndamento: quantosEmAndamento,
+        pedemAtencao: quantosPedemAtencao,
+      });
+  }, [situacoes, comDocumento, falhasDoLote.length, quantosEmAndamento, quantosPedemAtencao, aoResumir]);
 
   const emAndamento = situacoes ? situacoes.some((s) => s.grupo === "andamento") : false;
   const ativoRef = useRef(false);
