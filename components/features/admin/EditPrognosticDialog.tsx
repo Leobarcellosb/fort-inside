@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import type { PrognosticContent, TrailRecommendation } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { textosDaRevisao } from "./textos-da-revisao";
+import { conteudoDoDocumentoValido } from "./conteudo-do-documento";
 
 const TRAILS: TrailRecommendation[] = [
   "Exploração",
@@ -17,7 +18,11 @@ const TRAILS: TrailRecommendation[] = [
 interface Props {
   prognosticId: string;
   participantName: string;
-  initialContent: PrognosticContent;
+  /**
+   * `unknown` de proposito (CTO, Rodada 86): a coluna e JSON e linhas antigas
+   * nao tem a forma do tipo. Quem confere e conteudoDoDocumentoValido, abaixo.
+   */
+  initialContent: unknown;
   initialYuriNote: string | null;
   /** O evento gera PDF (questionario v1)? Muda so o que a tela diz. */
   pdfDisponivel: boolean;
@@ -25,7 +30,80 @@ interface Props {
   onSaved: () => void;
 }
 
-export function EditPrognosticDialog({
+/**
+ * Porta do editor: confere o conteudo ANTES de montar o formulario. Os hooks e o
+ * `.map` do formulario assumem um documento completo; montar o formulario sobre
+ * `{}` ou sobre linha sem secoes derrubava a pagina inteira. Sem conteudo
+ * utilizavel o formulario nem existe: so o aviso, sem botao de salvar (CTO,
+ * Rodada 86). Nada e reconstruido nem gravado.
+ */
+export function EditPrognosticDialog(props: Props) {
+  const conteudo = conteudoDoDocumentoValido(props.initialContent);
+  if (!conteudo.valido) {
+    return (
+      <ConteudoIndisponivel
+        participantName={props.participantName}
+        problemas={conteudo.problemas}
+        texto={conteudo.texto}
+        onClose={props.onClose}
+      />
+    );
+  }
+  return <EditorDoPrognostico {...props} initialContent={conteudo.conteudo} />;
+}
+
+function ConteudoIndisponivel({
+  participantName,
+  problemas,
+  texto,
+  onClose,
+}: {
+  participantName: string;
+  problemas: string[];
+  texto: string;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="edit-prognostic-title"
+      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="bg-background border border-border rounded-lg max-w-md w-full p-5 space-y-4">
+        <div>
+          <h2
+            id="edit-prognostic-title"
+            className="font-display text-base font-bold text-foreground"
+          >
+            Conteúdo indisponível
+          </h2>
+          <p className="text-xs text-muted-foreground">{participantName}</p>
+        </div>
+        <p data-testid="conteudo-indisponivel" className="text-sm text-foreground leading-relaxed">
+          {texto}
+        </p>
+        {problemas.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            O que foi encontrado: {problemas.join("; ")}.
+          </p>
+        )}
+        <div className="flex justify-end">
+          <Button variant="outline" onClick={onClose} className="text-xs">
+            Fechar
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type PropsDoEditor = Omit<Props, "initialContent"> & { initialContent: PrognosticContent };
+
+function EditorDoPrognostico({
   prognosticId,
   participantName,
   initialContent,
@@ -33,7 +111,7 @@ export function EditPrognosticDialog({
   pdfDisponivel,
   onClose,
   onSaved,
-}: Props) {
+}: PropsDoEditor) {
   const [content, setContent] = useState<PrognosticContent>(initialContent);
   const [yuriNote, setYuriNote] = useState(initialYuriNote ?? "");
   const [saving, setSaving] = useState(false);

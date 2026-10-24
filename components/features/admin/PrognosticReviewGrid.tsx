@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import type { Prognostic, PrognosticContent } from "@/types/database";
+import type { Prognostic } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EditPrognosticDialog } from "./EditPrognosticDialog";
 import { SuspenderDocumentoDialog } from "./SuspenderDocumentoDialog";
 import { EnviarDocumentoDialog } from "./EnviarDocumentoDialog";
-import { idDaRazao, situacaoDaEntrega } from "./entrega-do-documento";
+import { idDaRazao } from "./entrega-do-documento";
+import { conteudoDaLinha, situacaoDaEntregaDoDocumento } from "./conteudo-do-documento";
 import {
   ROTULO_SUSPENDER,
   situacaoDaSuspensao,
@@ -110,7 +111,16 @@ export function PrognosticReviewGrid({ eventId, pdfDisponivel, participants, pro
       const prog = localPrognostics.find((p) => p.id === prognosticId);
       if (!prog) return false;
 
-      const final = prog.edited_content ?? prog.raw_ai_output;
+      // Documento sem conteudo utilizavel NUNCA vai para `final_content`
+      // (CTO, Rodada 86). O botao ja fica desligado; isto cobre o caminho que
+      // chega aqui por outro lado (janela aberta antes do realtime trazer a
+      // linha ruim, por exemplo). Nao grava nada e nao reconstroi nada.
+      const conteudoDaEntrega = conteudoDaLinha(prog);
+      if (!conteudoDaEntrega.valido) {
+        toast.error(conteudoDaEntrega.texto);
+        return false;
+      }
+      const final = conteudoDaEntrega.conteudo;
 
       type MutResult = { data: unknown; error: { message: string } | null };
       const { error } = await ((supabase.from("prognostics") as unknown as {
@@ -126,7 +136,7 @@ export function PrognosticReviewGrid({ eventId, pdfDisponivel, participants, pro
       setLocalPrognostics((prev) =>
         prev.map((p) =>
           p.id === prognosticId
-            ? { ...p, final_content: final as PrognosticContent, status: "delivered" }
+            ? { ...p, final_content: final, status: "delivered" }
             : p
         )
       );
@@ -193,16 +203,20 @@ export function PrognosticReviewGrid({ eventId, pdfDisponivel, participants, pro
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
       {participants.map((participant) => {
         const prog = localPrognostics.find((p) => p.participant_id === participant.id);
-        const content = (prog?.edited_content ?? prog?.raw_ai_output) as
-          | PrognosticContent
-          | undefined;
-        const trail = content?.trilha_recomendada;
-        const previewText = content?.analise_geral?.split(/\n\n+/)[0] ?? "";
+        // O conteudo e CONFERIDO antes de qualquer leitura de campo (CTO,
+        // Rodada 86): `{}`, null ou sem secoes antes derrubava esta pagina
+        // inteira. Sem conteudo utilizavel nao ha trilha nem previa, so o aviso.
+        const conteudo = prog ? conteudoDaLinha(prog) : null;
+        const semConteudo = conteudo !== null && !conteudo.valido;
+        const trail = conteudo?.valido ? conteudo.conteudo.trilha_recomendada : undefined;
+        const previewText = conteudo?.valido
+          ? conteudo.conteudo.analise_geral.split(/\n\n+/)[0]
+          : "";
         // A razão de "Entregar" estar desligado é calculada POR DOCUMENTO: o
         // texto nasce no cartão de quem está bloqueado e desaparece sozinho
         // quando aquele documento ganha revisão salva. Um aviso só no topo da
         // tela seria igual em todos os cartões e não diria QUAL documento.
-        const entrega = prog ? situacaoDaEntrega(prog) : null;
+        const entrega = prog ? situacaoDaEntregaDoDocumento(prog) : null;
         // E a MESMA ideia para "Tirar do ar" (migration 027): quem decide se o
         // controle aparece e uma funcao pura, e o banco e quem garante.
         const suspensao = prog ? situacaoDaSuspensao(prog) : null;
@@ -295,7 +309,7 @@ export function PrognosticReviewGrid({ eventId, pdfDisponivel, participants, pro
                 entra na ordem de foco, então a descrição nunca é anunciada.
                 Aqui o texto é lido por quem olha, por quem toca e por quem
                 ouve a página, sem gesto nenhum. */}
-            {prog && prog.status !== "delivered" && entrega && !entrega.liberada && (
+            {prog && entrega && !entrega.liberada && (prog.status !== "delivered" || semConteudo) && (
               <div
                 id={idDaRazao(prog.id)}
                 data-testid={idDaRazao(prog.id)}
@@ -353,7 +367,8 @@ export function PrognosticReviewGrid({ eventId, pdfDisponivel, participants, pro
                   size="sm"
                   variant="outline"
                   onClick={() => setSendingId(prog.id)}
-                  disabled={saving}
+                  disabled={saving || semConteudo}
+                  aria-describedby={semConteudo ? idDaRazao(prog.id) : undefined}
                   className="flex-1 text-xs border-border text-muted-foreground hover:text-foreground"
                 >
                   Enviar de novo
@@ -421,9 +436,7 @@ export function PrognosticReviewGrid({ eventId, pdfDisponivel, participants, pro
       <EditPrognosticDialog
         prognosticId={editingProg.id}
         participantName={editingParticipantName}
-        initialContent={
-          (editingProg.edited_content ?? editingProg.raw_ai_output) as PrognosticContent
-        }
+        initialContent={editingProg.edited_content ?? editingProg.raw_ai_output}
         initialYuriNote={editingProg.yuri_note}
         pdfDisponivel={pdfDisponivel}
         onClose={() => setEditingId(null)}

@@ -58,7 +58,12 @@ export const TEXTO_SEM_REVISAO_SALVA =
  * por fato nesta tela. Duas redações do mesmo bloqueio divergiriam na primeira
  * vez que alguém corrigisse uma delas.
  */
-export type MotivoDeBloqueio = "sem_revisao_salva" | "suspenso_aguardando_nova_revisao";
+export type MotivoDeBloqueio =
+  | "sem_revisao_salva"
+  | "suspenso_aguardando_nova_revisao"
+  // Acrescentado na Rodada 86 (CTO): documento sem conteudo utilizavel. Quem
+  // decide e conteudo-do-documento.ts; esta lista so conhece o nome do motivo.
+  | "conteudo_indisponivel";
 
 export type SituacaoDaEntrega =
   | { liberada: true }
