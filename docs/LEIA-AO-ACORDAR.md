@@ -45,6 +45,9 @@ Abra no celular e no computador:
   o preview.
 - O preview usa **o mesmo banco** do app publicado (conferido esta noite). Olhe, mas **não
   aperte Gerar, Enviar nem Tirar do ar** lá.
+- **Só olhe o preview antes de qualquer Gerar.** Hoje a fila está vazia e abrir o painel não
+  dispara nada (docs/AUDITORIA-DO-PREVIEW.md). Com a fila andando, o painel do preview
+  passaria a empurrar o processador com o código do preview.
 
 O que conferir:
 
@@ -78,7 +81,7 @@ Escolha uma das duas e me diga no chat:
    em docs/ensaios/REVISAO-CRONOMETRADA.md).
 5. **Links de posse:** o link do documento abre para quem tiver o endereço. Você aceita esse
    risco para segunda, ou não.
-6. **Conferir as respostas antes de gerar:** cole docs/aplicar/conferencia-das-respostas.sql
+6. **Conferir as respostas antes de gerar** (condição 8 da folha abaixo): cole docs/aplicar/conferencia-das-respostas.sql
    no editor SQL do Supabase e rode. Não grava nada. Esperado: "pessoas_com_problema" igual
    a 0. Cada linha de problema é um documento que falharia na segunda; me mande a saída.
 
@@ -86,7 +89,8 @@ Escolha uma das duas e me diga no chat:
 
 ## Liberação da operação de segunda (GO / NO-GO)
 
-Marque só com evidência na mão. Caixa marcada não é autorização: o GO é você dizendo "pode
+Marque só com evidência na mão. Se a conferência das respostas achar problema: não corrija a
+resposta, não troque por zero e não tire a pessoa em silêncio. Me mande a saída. Caixa marcada não é autorização: o GO é você dizendo "pode
 gerar" depois de olhar esta folha inteira.
 
 | # | Condição | Evidência | Situação |
@@ -98,8 +102,22 @@ gerar" depois de olhar esta folha inteira.
 | 5 | Revisores e responsáveis definidos | Quadro de funções do OPERACAO-SEGUNDA.md preenchido | [ ] |
 | 6 | Jornada fictícia aprovada no ambiente publicado | Um documento fictício gerado, revisado e liberado | [ ] |
 | 7 | Entrega por link de posse aceita por você | Sua resposta no chat | [ ] |
+| 8 | Respostas de quem vai ser gerado conferidas (docs/aplicar/conferencia-das-respostas.sql), depois de decidir os 3 testes e antes de Gerar | "pessoas_com_problema" = 0. Consulta que falhou não é zero | [ ] |
 
-**Pendências: 7.** Com qualquer item aberto, a resposta é **NO-GO**: não gere os
+**Pendências: 8.** Com qualquer item aberto, a resposta é **NO-GO**: não gere os
 direcionamentos reais.
 
 Um "quase pronto" numa manhã corrida não é autorização para gerar.
+
+---
+
+## Regras da revisão de segunda
+
+Por que existem: com dois operadores no mesmo documento, o segundo pode apagar a edição do
+primeiro sem aviso (reproduzido esta noite, docs/AUDITORIA-DO-PREVIEW.md).
+
+- Cada documento tem **um** revisor responsável por vez.
+- Ninguém abre o mesmo documento em duas abas, nem dois operadores ao mesmo tempo.
+- Ninguém mexe em conteúdo direto no banco durante a operação.
+- **Recarregue a página antes de abrir um documento e antes de enviar**, e confira que o texto
+  é o que você aprovou. Divergência: pare, revise de novo e salve.
