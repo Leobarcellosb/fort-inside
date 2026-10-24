@@ -37,17 +37,26 @@ resto.
 
 ### 3. Olhar o painel novo, no preview (7 min)
 
-Abra no celular e no computador:
-**https://fort-inside-6u1fgaw0h-infinityexpertsoficial-2370s-projects.vercel.app/admin/login**
+O preview usa **o mesmo banco** do app publicado (conferido esta noite). Olhar é seguro só
+enquanto a fila estiver vazia (docs/AUDITORIA-DO-PREVIEW.md). Por isso, um protocolo curto
+(CTO, Rodada 88):
 
-- O preview pede login da **Vercel** antes de abrir: use a conta que enxerga o projeto.
-- Depois, entre no app com **senha**. O "link no e-mail" leva para o app publicado, não para
-  o preview.
-- O preview usa **o mesmo banco** do app publicado (conferido esta noite). Olhe, mas **não
-  aperte Gerar, Enviar nem Tirar do ar** lá.
-- **Só olhe o preview antes de qualquer Gerar.** Hoje a fila está vazia e abrir o painel não
-  dispara nada (docs/AUDITORIA-DO-PREVIEW.md). Com a fila andando, o painel do preview
-  passaria a empurrar o processador com o código do preview.
+1. **Antes de abrir:** cole docs/aplicar/fila-vazia.sql no editor SQL do Supabase e rode.
+   Precisa dar nenhum job "pending" nem "running" e nenhum evento "processing". Se der,
+   **não abra o preview**: eu mando capturas de tela.
+2. Ninguém gera, revisa ou mexe em documento enquanto você olha.
+3. Abra **https://fort-inside-6u1fgaw0h-infinityexpertsoficial-2370s-projects.vercel.app/admin/login**
+   (é o commit 85ddb16, conferido pelo registro de deploy do GitHub). Ele pede login da
+   **Vercel** antes; depois, entre no app com **senha** (o link no e-mail leva para o app
+   publicado).
+4. **Pode:** entrar, navegar pelos quatro passos, abrir as seções, ver no celular e no
+   computador, abrir a revisão.
+5. **Não pode:** Gerar, Reprocessar, Salvar, Enviar, Disponibilizar, Tirar do ar,
+   Regularizar ou **Testar a IA** (o teste da IA é no app publicado, passo 2).
+6. Se, enquanto você olha, alguém começar a gerar: **feche o preview na hora.**
+7. **Ao terminar:** feche **todas** as abas do preview (não basta trocar de página) e rode
+   fila-vazia.sql de novo. Deve dar as mesmas contagens, e nada em "mudou na última hora" que
+   você não tenha feito pelo app publicado.
 
 O que conferir:
 
@@ -58,6 +67,8 @@ O que conferir:
 
 **Se algo impedir o uso** (botão sumiu, tela quebrada, texto que confunde de verdade): não
 autorize. Anote o que viu. Segunda funciona com o painel que já está no ar.
+
+O preview **nunca** fica aberto durante a operação de segunda.
 
 ### 4. Decidir a publicação (3 min)
 
@@ -116,6 +127,15 @@ Um "quase pronto" numa manhã corrida não é autorização para gerar.
 Por que existem: com dois operadores no mesmo documento, o segundo pode apagar a edição do
 primeiro sem aviso (reproduzido esta noite, docs/AUDITORIA-DO-PREVIEW.md).
 
+- **Divisão nominal antes de começar:** cada participante tem um revisor, sem sobreposição.
+  Preencha antes das 9h:
+
+  | Revisor | Participantes (nome ou faixa alfabética) |
+  |---|---|
+  | | |
+  | | |
+
+  Sem garantir essa divisão, não ponha vários revisores na mesma lista ao mesmo tempo.
 - Cada documento tem **um** revisor responsável por vez.
 - Ninguém abre o mesmo documento em duas abas, nem dois operadores ao mesmo tempo.
 - Ninguém mexe em conteúdo direto no banco durante a operação.
