@@ -60,4 +60,6 @@ Nada técnico novo antes de segunda (CTO). A proteção é conferir **antes de G
 
 **Desligar "Allow new users to sign up"** no Supabase fecha o caminho de fora (contas novas).
 O administrador reserva continua possível pelo próprio painel do Supabase ("Add user").
+Isso também desliga a entrada antiga por código no e-mail (/join), que o Marco Zero não usa.
+Religar depois não é automático: antes, A1, A2 e A4 precisam ser corrigidos ou aceitos.
 Não mexi: é configuração de produção e a decisão é sua.

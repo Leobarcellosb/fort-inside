@@ -39,7 +39,9 @@ recomenda fechar hoje, antes de qualquer Gerar.
 
 **O que isso desliga:** a entrada antiga de participante por código no e-mail (/join), que
 precisa do cadastro aberto. O Marco Zero não usa: no sábado ninguém abre /join, e o
-formulário público não cria conta. **Antes de um evento futuro que use /join, religue.**
+formulário público não cria conta. Um evento futuro que use /join vai precisar do cadastro
+aberto, mas religar **não é automático**: antes, as permissões que deixam uma conta criar
+"concluído" (achados A1, A2 e A4) precisam ser corrigidas ou aceitas por você (CTO, Rodada 91).
 
 ### 2. Testar a IA (2 min)
 
