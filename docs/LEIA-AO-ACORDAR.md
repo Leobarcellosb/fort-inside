@@ -1,181 +1,102 @@
-# Leia ao acordar — 23 de outubro
+# Leia ao acordar: sábado, 24/10
 
-Quatro coisas têm prazo **hoje ou amanhã**. Três não são código; a quarta é uma decisão
-sua sobre código que já existe.
+Uma página. Quinze minutos. Ao final dela, você terá decidido o que vai ao ar e saberá se a
+IA responde. Nada aqui gera documento de verdade nem fala com participante.
 
----
-
-## 0. O que a madrugada construiu está no repositório, não no banco
-
-Cinco alterações de banco foram escritas esta noite — a revalidação da importação, o selo
-que amarra a aprovação ao conteúdo, o histórico do que o jovem leu, a suspensão/retificação
-e a trava da etapa. **Nenhuma delas está aplicada no banco que serve sábado.**
-
-> **Correção.** Uma versão anterior deste documento dizia que nenhuma estava aplicada *em
-> lugar nenhum, nem no ambiente local*. Isso era falso, e a culpa é minha: eu mesmo apliquei
-> as duas primeiras no ambiente local às 7h, para conseguir abrir o app no navegador, e
-> depois escrevi a frase esquecendo disso. Uma auditoria encontrou o erro.
->
-> E ele importa mais do que parece: todo teste do fluxo de entrega feito esta madrugada
-> rodou contra um banco que **já tinha** essa alteração. Foi por isso que o pior modo de
-> falha deste release — descrito em [RELEASE-23-OUT.md](RELEASE-23-OUT.md) — não apareceu
-> para ninguém.
-
-Dito sem rodeio: as proteções existem no código e **não existem no banco que vai rodar o
-evento**. Hoje, lá, a importação ainda pode sobrescrever a resposta de quem respondeu pelo
-app, e a aprovação continua solta do conteúdo entregue.
-
-Eu **não apliquei nada** e não vou aplicar sozinho: mexer no banco de produção na véspera
-de um evento é exatamente o tipo de ato que passamos a semana cercando. E também não
-consigo medir o que falta lá, porque o banco de produção está fora do meu alcance até para
-leitura — essa regra foi posta por um bom motivo e eu não a contornei para conferir.
-
-A decisão é sua, e são três caminhos: aplicar tudo antes de sábado, aplicar só o que sábado
-exercita, ou não aplicar nada e deixar para depois do evento. **Os três têm custo** — e o
-custo de não aplicar é ir para sábado com o banco sem travas que protegem dado de
-participante.
+Este é um roteiro proposto, não algo que já foi feito. Cada passo diz o que você deve ver e
+o que fazer se aparecer outra coisa.
 
 ---
 
-## 1. Os gabaritos dos cinco casos estão públicos no site do evento
+## Os primeiros 15 minutos
 
-Medi agora, sem estar logado em nada:
+### 1. Entrar no painel publicado (3 min)
 
-- `evento-marcozero.velvoramedia.com.br/caso-1.html` até `caso-5.html` respondem **HTTP 200**
-  para qualquer pessoa;
-- cada uma tem uma seção chamada, literalmente, **"Gabarito (só concierge)"**, com cerca de
-  2.400 caracteres de conteúdo;
-- as cinco estão **linkadas na página inicial pública** — não é preciso adivinhar URL;
-- não há autenticação, nem senha, nem cabeçalho de não-indexação.
+1. Abra **https://marcozero-gp.vercel.app/admin/login** e entre com o seu e-mail (senha ou
+   "Entrar com link no e-mail").
+2. Abra **Eventos** e depois o Marco Zero.
 
-Ou seja: qualquer um dos 50 participantes que abrir o site do evento chega, em dois cliques,
-na solução do caso que o Núcleo dele vai receber à tarde. A Missão 03 perde o sentido para
-quem olhar.
+**Esperado:** você entra, vê a lista de eventos e o painel do Marco Zero abre.
 
-Isso é do site, não do app — eu não tenho acesso para corrigir. Quem publicou o site precisa
-pôr as cinco fichas atrás de senha, tirar do ar até sábado, ou trocar as URLs por algo não
-listado. **É a correção mais barata e mais urgente desta lista.**
+**Se der diferente:** não tente trocar papel nem senha às cegas. Anote a mensagem exata da
+tela (ou tire um print) e pare aqui. É a primeira coisa a resolver, porque sem ela nada de
+segunda acontece.
 
-**E tirar do ar não resolve sozinho.** As fichas estiveram públicas por tempo que ninguém
-mediu, linkadas na home. Não dá para saber quem olhou — e não dá para perguntar sem plantar
-a ideia. Então há uma segunda decisão, e ela é pedagógica, não técnica: a Missão 03 vai ser
-conduzida como está, sabendo que alguns podem ter lido a solução, ou os casos vão ser
-trocados antes de sábado? Quem planejou as missões decide. Eu registro que a pergunta existe.
+### 2. Testar a IA (2 min)
 
-## 2. A gráfica fecha e falta conteúdo para dois materiais
+1. No painel do Marco Zero, procure o quadro **"Teste da IA antes de processar"**.
+2. Clique em **Testar a IA** e depois em **Sim, testar**. É uma chamada real, com dados
+   fictícios. Custa centavos e não grava nada.
 
-O roteiro oficial do evento tem uma lista chamada **"Produzir até sexta, 23/10"**. Dois
-itens dela **não têm conteúdo escrito em lugar nenhum**:
+**Esperado:** "A IA respondeu. Modelo ..., servidor api.anthropic.com, em ... s."
 
-| Material | O que falta | De quem |
-|---|---|---|
-| **50 Murais do Futuro** impressos | as instruções e o conteúdo da folha | Carlos (envia ao Yuri e à Malu) |
-| **Pacto** em tamanho grande para assinatura | o texto do pacto e o formato da assinatura | Yuri e Carlos |
+**Se der diferente:** a própria tela diz a causa (chave recusada, sem crédito, limite,
+instabilidade). Não processe nada. Se for crédito ou chave, isso é com quem paga a conta da
+IA: resolva e teste de novo. Esse é o maior risco de segunda, e é por isso que vem antes do
+resto.
 
-Não é possível imprimir 50 folhas de um material cujo conteúdo ninguém escreveu. Se
-isso não sair hoje, sábado acontece sem o Mural — e o Mural é a entrada do
-direcionamento individual prometido para segunda.
+### 3. Olhar o painel novo, no preview (7 min)
 
-Eu **não escrevi** esses conteúdos de propósito: formular o Mural e o pacto é
-planejamento pedagógico, não é meu. O que eu fiz foi deixar a falta nomeada, com
-responsável, dentro do Caderno de Condução.
+Abra no celular e no computador:
+**https://fort-inside-6u1fgaw0h-infinityexpertsoficial-2370s-projects.vercel.app/admin/login**
 
-## 3. O Forms pré-evento deveria sair hoje, e o e-mail continua travado
+- O preview pede login da **Vercel** antes de abrir: use a conta que enxerga o projeto.
+- Depois, entre no app com **senha**. O "link no e-mail" leva para o app publicado, não para
+  o preview.
+- O preview usa **o mesmo banco** do app publicado (conferido esta noite). Olhe, mas **não
+  aperte Gerar, Enviar nem Tirar do ar** lá.
 
-O próprio roteiro oficial diz: **"Quinta 22 ou sexta 23: Forms pré-evento, enviado entre
-48h e 24h antes, respostas até sexta — Carlos e Léo montam, Malu valida e envia."**
+O que conferir:
 
-O app está no ar e funciona: **https://fort-inside.vercel.app/join/MARCOZERO**
+- O painel do Marco Zero mostra **4 passos**: Coleta, Testar a IA, Gerar, Revisar e enviar.
+- Cada passo diz se está **Feito**, **Agora**, **Depois** ou **Atenção**.
+- **Materiais do encontro** e **Ferramentas** continuam acessíveis no fim da página.
+- **Abrir revisão e envio** leva à fila de revisão, com os filtros no topo.
 
-O que não funciona é a entrega do código de acesso por e-mail, e a causa é uma só, já
-descrita abaixo. Sem ela, ninguém entra.
+**Se algo impedir o uso** (botão sumiu, tela quebrada, texto que confunde de verdade): não
+autorize. Anote o que viu. Segunda funciona com o painel que já está no ar.
 
----
+### 4. Decidir a publicação (3 min)
 
-## O bloqueio do e-mail, inalterado
+Escolha uma das duas e me diga no chat:
 
-O Supabase manda **2 e-mails por hora** no plano free, e o campo é **desabilitado**. Com
-SMTP próprio sobe para **30/hora**, que cobre os 50 com folga. E só com SMTP próprio dá
-para **editar o template** — sem ele o Supabase manda link em vez de código, que foi o
-que você recebeu no teste. Os dois sintomas têm a mesma causa.
-
-**Plano A — verificar um domínio seu no Resend.** Resend → Domains → Add domain → copiar
-os registros DNS → colar no provedor do domínio. Depois disso eu termino em minutos.
-
-**Plano B — SMTP de conta institucional** (Google Workspace, com senha de aplicativo).
-O CTO foi explícito: conta institucional autorizada, **não** conta pessoal improvisada.
-
-| Campo | Valor |
-|---|---|
-| Servidor | `smtp.gmail.com` |
-| Porta | 465 (SSL) ou 587 (STARTTLS) |
-| Usuário | o e-mail da conta autorizada |
-| Senha | **senha de aplicativo**, não a senha normal |
-
-**NO-GO do CTO:** se nenhum funcionar, **não** trocar o código por e-mail digitado, link
-compartilhável ou autenticação simulada.
+- **"Publica o painel depois das atividades de hoje."** Eu junto no main em janela
+  combinada e confiro o app publicado logo em seguida. Se algo quebrar, volto para a
+  versão de hoje.
+- **"Não publica antes de segunda."** A operação de segunda roda com o painel atual. O
+  roteiro OPERACAO-SEGUNDA.md vale para os dois.
 
 ---
 
-## O que ficou pronto esta noite
+## Decisões que podem esperar a tarde, mas precisam acontecer antes de segunda
 
-**Caderno de Condução** — o roteiro operacional do sábado, que não existia. Montado do
-roteiro oficial do site, com **proveniência item por item**: 44 itens `[OFICIAL]` com a
-fonte ao lado, 21 `[OPERAÇÃO]` (conferência de material, guarda, digitalização, o que
-fazer sem internet) e **18 `[FALTA]`** nomeadas com responsável. Imprime, funciona sem
-internet, e tem versão e hash para se saber depois qual versão estava na mão de quem
-conduziu. O Yuri consegue conduzir o dia inteiro com **zero respostas digitais**.
-
-As 18 lacunas são a lista de cobrança antes de sábado. As duas da gráfica estão nela.
-
-**Guia de Preparação do Facilitador** — agora com caminho para pedir (rota e botão no
-painel); antes o gerador existia e ninguém conseguia produzir o documento.
-
-**Importação de respostas de fora** — a tela de resolver pendências e conflitos de
-identidade, que antes exigia SQL na mão. E uma correção de integridade: a importação
-decidia fora da transação e gravava dentro dela, então se alguém respondesse pelo app
-nesse intervalo, **a resposta dele era sobrescrita em silêncio**. Agora o banco recusa.
-
-**Dois defeitos que eu achei medindo, não lendo relatório:**
-- o gate de 30 respostas aprovava publicação com até 20 participantes contados
-  diferente pelo banco e pelo gerador, sem ruído nenhum;
-- o piso de privacidade e a supressão de células pequenas são **a mesma constante** hoje,
-  fazendo dois trabalhos diferentes. Separar é decisão de metodologia, não minha.
+1. **Os 3 cadastros de teste** (você, eu e o Carlos). Eu mostro cada identificador e você
+   responde sim ou não para cada um. Sem isso, a geração cria documento para eles.
+2. **Administrador substituto:** nome e e-mail de quem entra no painel se você não puder.
+3. **Revisores de segunda:** quem lê, ajusta e envia, e em que horário.
+4. **Cinco documentos fictícios cronometrados** com quem vai revisar de verdade (o kit está
+   em docs/ensaios/REVISAO-CRONOMETRADA.md).
+5. **Links de posse:** o link do documento abre para quem tiver o endereço. Você aceita esse
+   risco para segunda, ou não.
 
 ---
 
-## Uma coisa sobre segunda-feira que você precisa decidir
+## Liberação da operação de segunda (GO / NO-GO)
 
-A cadeia que gera o documento individual foi percorrida inteira pela primeira vez esta
-noite. Ela **funciona** — mas tem um detalhe operacional que não é defeito, é configuração
-ausente, e ele decide se os documentos saem na segunda:
+Marque só com evidência na mão. Caixa marcada não é autorização: o GO é você dizendo "pode
+gerar" depois de olhar esta folha inteira.
 
-**Não existe agendador.** Não há `vercel.json` no projeto, então a fila de geração só anda
-enquanto alguém mantém uma página do painel aberta — a própria página empurra um ciclo a
-cada 45 segundos. Se ninguém abrir o painel na segunda, **nada é gerado**.
+| # | Condição | Evidência | Situação |
+|---|---|---|---|
+| 1 | Administrador titular entrou no painel publicado | Print do painel aberto | [ ] |
+| 2 | Administrador substituto confirmado e entrou uma vez | Nome, e-mail, print | [ ] |
+| 3 | A IA respondeu no ambiente publicado | Texto "A IA respondeu ... api.anthropic.com" | [ ] |
+| 4 | Os 3 cadastros de teste resolvidos | Sim/não por identificador, e o boletim depois | [ ] |
+| 5 | Revisores e responsáveis definidos | Quadro de funções do OPERACAO-SEGUNDA.md preenchido | [ ] |
+| 6 | Jornada fictícia aprovada no ambiente publicado | Um documento fictício gerado, revisado e liberado | [ ] |
+| 7 | Entrega por link de posse aceita por você | Sua resposta no chat | [ ] |
 
-São dois caminhos: configurar o agendador (é mudança de deploy, e eu não vou mexer nisso
-sem você), ou tratar como procedimento — alguém da operação fica com o painel aberto até a
-fila esvaziar. O segundo funciona e é o que existe hoje; só precisa estar combinado com
-alguém, e não descoberto na segunda de manhã.
+**Pendências: 7.** Com qualquer item aberto, a resposta é **NO-GO**: não gere os
+direcionamentos reais.
 
-Dois defeitos reais da mesma cadeia foram encontrados e **corrigidos**: questionário
-respondido pela metade virava documento como se estivesse completo, e texto alterado depois
-de aprovado chegava ao participante sem nova aprovação.
-
-**E a correção mudou uma coisa no seu dia de segunda, então decida antes:** entregar um
-documento que nunca foi revisado deixou de ser possível. Antes passava. Agora quem entregar
-os 50 precisa abrir e salvar a revisão de cada um — salvar a revisão *é* o ato de aprovar.
-É mais trabalho e é a promessa de revisão humana sendo cumprida de verdade. Se você quiser
-o contrário, é mudança de uma linha, mas tem que ser escolha sua e não descoberta na pressa.
-
-## Duas dívidas que eu declaro
-
-1. **Nenhuma tela foi vista em navegador.** Importação, decisões de identidade, Caderno e
-   Guia estão cobertos por teste de lógica contra as rotas de verdade e por Postgres real,
-   mas layout e interação precisam de olho humano antes de sábado. Vale abrir o
-   `.html` do Caderno e dar Ctrl+P uma vez.
-
-2. **O DNA Coletivo não sai para este evento.** Faltam três peças: não há código que o
-   gere a partir do banco, não há caminho para publicá-lo, e não há onde o banco guarde
-   o estado de publicação. O Guia é o que existe, e ele é suficiente para conduzir.
+Um "quase pronto" numa manhã corrida não é autorização para gerar.
