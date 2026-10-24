@@ -78,6 +78,9 @@ Escolha uma das duas e me diga no chat:
    em docs/ensaios/REVISAO-CRONOMETRADA.md).
 5. **Links de posse:** o link do documento abre para quem tiver o endereço. Você aceita esse
    risco para segunda, ou não.
+6. **Conferir as respostas antes de gerar:** cole docs/aplicar/conferencia-das-respostas.sql
+   no editor SQL do Supabase e rode. Não grava nada. Esperado: "pessoas_com_problema" igual
+   a 0. Cada linha de problema é um documento que falharia na segunda; me mande a saída.
 
 ---
 
