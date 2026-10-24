@@ -95,9 +95,16 @@ Escolha uma das duas e me diga no chat:
    em docs/ensaios/REVISAO-CRONOMETRADA.md).
 5. **Links de posse:** o link do documento abre para quem tiver o endereço. Você aceita esse
    risco para segunda, ou não.
-6. **Conferir as respostas antes de gerar** (condição 8 da folha abaixo): cole docs/aplicar/conferencia-das-respostas.sql
-   no editor SQL do Supabase e rode. Não grava nada. Esperado: "pessoas_com_problema" igual
-   a 0. Cada linha de problema é um documento que falharia na segunda; me mande a saída.
+6. **Conferir as respostas e quem vai ser gerado** (condição 8 da folha abaixo). Depois de
+   decidir os 3 testes e antes de Gerar, rode no editor SQL do Supabase (nenhuma grava nada):
+   - docs/aplicar/conferencia-das-respostas.sql: esperado "pessoas_com_problema" igual a 0.
+   - docs/aplicar/elegibilidade-antes-de-gerar.sql: esperado nenhum "ALERTA".
+   
+   Me mande as duas saídas.
+7. **Cadastro de conta nova está aberto em produção.** Qualquer pessoa com um e-mail pode criar
+   conta e, pela API, criar um "concluído" no Marco Zero
+   (docs/AUDITORIA-DA-CONCLUSAO.md). Você decide se desliga "Allow new users to sign up" em
+   Supabase > Authentication > Sign In / Providers. Eu não mexi.
 
 ---
 
@@ -116,7 +123,7 @@ gerar" depois de olhar esta folha inteira.
 | 5 | Revisores e responsáveis definidos | Quadro de funções do OPERACAO-SEGUNDA.md preenchido | [ ] |
 | 6 | Jornada fictícia aprovada no ambiente publicado | Um documento fictício gerado, revisado e liberado | [ ] |
 | 7 | Entrega por link de posse aceita por você | Sua resposta no chat | [ ] |
-| 8 | Respostas de quem vai ser gerado conferidas (docs/aplicar/conferencia-das-respostas.sql), depois de decidir os 3 testes e antes de Gerar | "pessoas_com_problema" = 0. Consulta que falhou não é zero | [ ] |
+| 8 | Respostas e elegibilidade conferidas (conferencia-das-respostas.sql e elegibilidade-antes-de-gerar.sql), depois de decidir os 3 testes e antes de Gerar | "pessoas_com_problema" = 0 e nenhum "ALERTA". Consulta que falhou não é zero | [ ] |
 
 **Pendências: 8.** Com qualquer item aberto, a resposta é **NO-GO**: não gere os
 direcionamentos reais.
