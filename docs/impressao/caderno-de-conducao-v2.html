@@ -29,26 +29,27 @@ b { font-weight: 800; }
 @page capa { margin: 0; @top-left { content: none; } @top-right { content: none; } @bottom-right { content: none; } @bottom-left { content: none; } }
 
 /* CAPA */
-.capa { page: capa; height: 297mm; width: 210mm; background: var(--noite); color: #fff; padding: 18mm 18mm 16mm;
+.capa { page: capa; height: 297mm; width: 210mm; background: #fff; color: var(--tinta); padding: 18mm 18mm 16mm;
   display: flex; flex-direction: column; position: relative; overflow: hidden; break-after: page; }
-.capa::before { content: ""; position: absolute; right: -34mm; top: 34mm; width: 132mm; height: 178mm; border-radius: 50%;
-  border: 9mm solid rgba(217,194,145,.10); }
-.capa::after { content: ""; position: absolute; right: -10mm; top: 58mm; width: 84mm; height: 130mm; border-radius: 50%;
-  border: .5mm solid rgba(217,194,145,.35); }
-.capa-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 10mm; position: relative; z-index: 1; }
-.capa-marca { font: 800 9pt "Manrope", sans-serif; letter-spacing: .28em; text-transform: uppercase; color: var(--ouro); }
-.capa-restrito { font: 700 6.6pt/1.5 "Manrope", sans-serif; letter-spacing: .16em; text-align: right; max-width: 70mm; color: rgba(255,255,255,.55); }
+.capa::before { content: ""; position: absolute; right: -52mm; top: 30mm; width: 128mm; height: 174mm; border-radius: 50%;
+  border: .7mm solid var(--areia); }
+.capa::after { content: ""; position: absolute; right: -30mm; top: 54mm; width: 84mm; height: 126mm; border-radius: 50%;
+  border: .35mm solid var(--ouro); }
+.capa-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 10mm; position: relative; z-index: 1;
+  padding-bottom: 4mm; border-bottom: .35mm solid var(--carvao); }
+.capa-marca { font: 800 9pt "Manrope", sans-serif; letter-spacing: .28em; text-transform: uppercase; color: var(--carvao); }
+.capa-restrito { font: 700 6.6pt/1.5 "Manrope", sans-serif; letter-spacing: .16em; text-align: right; max-width: 70mm; color: var(--cinza); }
 .capa-meio { margin-top: auto; position: relative; z-index: 1; }
-.capa-sobre { font: 800 13pt "Manrope", sans-serif; letter-spacing: .5em; text-transform: uppercase; color: var(--ouro); margin-bottom: 5mm; }
-.capa h1 { font-weight: 800; font-size: 58pt; line-height: .95; letter-spacing: -.035em; max-width: 150mm; }
+.capa-sobre { font: 800 13pt "Manrope", sans-serif; letter-spacing: .5em; text-transform: uppercase; color: var(--ouro-escuro); margin-bottom: 5mm; }
+.capa h1 { font-weight: 800; font-size: 58pt; line-height: .95; letter-spacing: -.035em; max-width: 150mm; color: var(--carvao); }
 .capa-fio { width: 28mm; height: 1.4mm; background: var(--ouro); margin: 9mm 0 7mm; }
-.capa-evento { font-size: 11pt; line-height: 1.55; color: rgba(255,255,255,.82); max-width: 135mm; }
-.capa-numeros { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-top: 16mm; border-top: .3mm solid rgba(255,255,255,.18);
+.capa-evento { font-size: 11pt; line-height: 1.55; color: #3a3935; max-width: 135mm; }
+.capa-numeros { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-top: 16mm; border-top: .35mm solid var(--carvao);
   position: relative; z-index: 1; }
 .capa-numeros div { padding: 5mm 0 0; }
-.capa-numeros strong { display: block; font: 800 28pt/1 "Manrope", sans-serif; color: #fff; }
-.capa-numeros span { font: 700 7pt "Manrope", sans-serif; letter-spacing: .2em; text-transform: uppercase; color: var(--ouro); }
-.capa-versao { margin-top: 12mm; font: 500 6.4pt/1.5 ui-monospace, Menlo, monospace; color: rgba(255,255,255,.4); word-break: break-all; position: relative; z-index: 1; }
+.capa-numeros strong { display: block; font: 800 28pt/1 "Manrope", sans-serif; color: var(--carvao); }
+.capa-numeros span { font: 700 7pt "Manrope", sans-serif; letter-spacing: .2em; text-transform: uppercase; color: var(--ouro-escuro); }
+.capa-versao { margin-top: 12mm; font: 500 6.4pt/1.5 ui-monospace, Menlo, monospace; color: #9a9993; word-break: break-all; position: relative; z-index: 1; }
 .capa-versao.escuro { color: var(--cinza); margin-top: 10mm; border-top: .3mm solid var(--linha); padding-top: 3mm; }
 
 /* TAGS */
