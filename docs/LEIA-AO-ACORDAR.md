@@ -135,14 +135,14 @@ gerar" depois de olhar esta folha inteira.
 |---|---|---|---|
 | 1 | Administrador titular entrou no painel publicado | Print do painel aberto | [ ] |
 | 2 | Administrador substituto confirmado e entrou uma vez | Nome, e-mail, print | [ ] |
-| 3 | A IA respondeu no ambiente publicado | Texto "A IA respondeu ... api.anthropic.com" | [ ] |
+| 3 | A IA respondeu no ambiente publicado | Feito em 24/10 08h50: "A IA respondeu. Modelo claude-opus-5, servidor api.anthropic.com, em 0.9 s." Repetir na segunda antes de Gerar | [x] |
 | 4 | Os 3 cadastros de teste resolvidos | Sim/não por identificador, e o boletim depois | [ ] |
 | 5 | Revisores e responsáveis definidos | Quadro de funções do OPERACAO-SEGUNDA.md preenchido | [ ] |
 | 6 | Jornada fictícia aprovada no ambiente publicado | Um documento fictício gerado, revisado e liberado | [ ] |
 | 7 | Entrega por link de posse aceita por você | Sua resposta no chat | [ ] |
 | 8 | Respostas e elegibilidade conferidas (conferencia-das-respostas.sql e elegibilidade-antes-de-gerar.sql), depois de decidir os 3 testes e antes de Gerar | "pessoas_com_problema" = 0 e nenhum "ALERTA". Consulta que falhou não é zero | [ ] |
 
-**Pendências: 8.** Com qualquer item aberto, a resposta é **NO-GO**: não gere os
+**Pendências: 7.** Com qualquer item aberto, a resposta é **NO-GO**: não gere os
 direcionamentos reais.
 
 Um "quase pronto" numa manhã corrida não é autorização para gerar.
