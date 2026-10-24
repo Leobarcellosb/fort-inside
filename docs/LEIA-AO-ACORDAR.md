@@ -22,6 +22,25 @@ o que fazer se aparecer outra coisa.
 tela (ou tire um print) e pare aqui. É a primeira coisa a resolver, porque sem ela nada de
 segunda acontece.
 
+### 1b. Fechar o cadastro de conta nova (3 min)
+
+Hoje qualquer pessoa com um e-mail pode criar conta no app e, pela API, criar um "concluído"
+no Marco Zero, que a geração de segunda pegaria (docs/AUDITORIA-DA-CONCLUSAO.md). O CTO
+recomenda fechar hoje, antes de qualquer Gerar.
+
+1. Supabase > Authentication > **Sign In / Providers** > desligue **"Allow new users to sign
+   up"** > **Save changes**. Recarregue a página e confira que ficou desligado.
+2. Saia e entre de novo no painel publicado: o seu login tem de continuar funcionando (contas
+   que já existem não são afetadas).
+3. Supabase > Authentication > **Users**: confira se todas as contas são de gente conhecida.
+   Conta desconhecida: me mande o e-mail e a data de criação, e não gere nada até entendermos.
+4. O administrador reserva, se precisar, nasce por **Add user** nessa mesma tela, sem reabrir
+   o cadastro.
+
+**O que isso desliga:** a entrada antiga de participante por código no e-mail (/join), que
+precisa do cadastro aberto. O Marco Zero não usa: no sábado ninguém abre /join, e o
+formulário público não cria conta. **Antes de um evento futuro que use /join, religue.**
+
 ### 2. Testar a IA (2 min)
 
 1. No painel do Marco Zero, procure o quadro **"Teste da IA antes de processar"**.
@@ -101,10 +120,6 @@ Escolha uma das duas e me diga no chat:
    - docs/aplicar/elegibilidade-antes-de-gerar.sql: esperado nenhum "ALERTA".
    
    Me mande as duas saídas.
-7. **Cadastro de conta nova está aberto em produção.** Qualquer pessoa com um e-mail pode criar
-   conta e, pela API, criar um "concluído" no Marco Zero
-   (docs/AUDITORIA-DA-CONCLUSAO.md). Você decide se desliga "Allow new users to sign up" em
-   Supabase > Authentication > Sign In / Providers. Eu não mexi.
 
 ---
 
