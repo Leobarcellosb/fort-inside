@@ -59,13 +59,21 @@ describe("passos da operacao", () => {
   });
 
   it("documentos prontos: revisar e o passo de agora; o teste da IA nunca aparece como feito", () => {
-    const p = passosDaOperacao({ status: "completed", prazoPassou: true, resumo: { comDocumento: 50, falharam: 0 }, concluidos: 50 });
+    const p = passosDaOperacao({ status: "completed", prazoPassou: true, resumo: { comDocumento: 50, falharam: 0, emAndamento: 0 }, concluidos: 50 });
     expect(p).toEqual({ coleta: "feito", testarIA: "se_precisar", gerar: "feito", revisar: "agora" });
   });
 
   it("todos com documento conta como feito mesmo antes do banco fechar o evento", () => {
-    expect(passosDaOperacao({ status: "live", prazoPassou: true, resumo: { comDocumento: 50, falharam: 0 }, concluidos: 50 }).gerar).toBe("feito");
+    expect(passosDaOperacao({ status: "live", prazoPassou: true, resumo: { comDocumento: 50, falharam: 0, emAndamento: 0 }, concluidos: 50 }).gerar).toBe("feito");
     expect(passosDaOperacao({ status: "live", prazoPassou: true, resumo: { comDocumento: 30, falharam: 0 }, concluidos: 50 }).gerar).toBe("agora");
+  });
+
+  it("com algo ainda na fila, gerar nao e feito, mesmo que todos ja tenham documento", () => {
+    expect(passosDaOperacao({ status: "live", prazoPassou: true, resumo: { comDocumento: 50, falharam: 0, emAndamento: 2 }, concluidos: 50 }).gerar).toBe("agora");
+  });
+
+  it("sem saber quantos estao na fila, nao afirma feito", () => {
+    expect(passosDaOperacao({ status: "live", prazoPassou: true, resumo: { comDocumento: 50, falharam: 0 }, concluidos: 50 }).gerar).not.toBe("feito");
   });
 
   it("falhas na geracao pedem atencao", () => {

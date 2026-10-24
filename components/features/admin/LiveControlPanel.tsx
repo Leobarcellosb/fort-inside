@@ -729,7 +729,7 @@ export function LiveControlPanel({ event, stages, participants: initialParticipa
                 </Button>
                 {prontos > 0 && (
                   <span className="text-sm text-muted-foreground">
-                    {prontos} {prontos === 1 ? "direcionamento pronto" : "direcionamentos prontos"}
+                    {prontos} {prontos === 1 ? "direcionamento gerado" : "direcionamentos gerados"}
                   </span>
                 )}
               </div>

@@ -87,14 +87,17 @@ export function passosDaOperacao(entrada: {
   const temDocumentos = (resumo?.comDocumento ?? 0) > 0;
   const temFalhas = (resumo?.falharam ?? 0) > 0;
   const coletaFechada = prazoPassou === true || gerando || status === "completed";
-  const todosComDocumento = temDocumentos && (resumo?.comDocumento ?? 0) >= concluidos;
+  // "Feito" so com documento para todos E nada na fila nem gerando. Sem saber
+  // quantos estao em andamento, nao se afirma que terminou (CTO, Rodada 83).
+  const filaParada = resumo?.emAndamento === 0;
+  const todosComDocumento = temDocumentos && (resumo?.comDocumento ?? 0) >= concluidos && filaParada;
 
   const coleta: SituacaoDoPasso = coletaFechada ? "feito" : prazoPassou === null ? "atencao" : "agora";
   // Com documentos ja gerados, o teste so importa para gerar de novo: "se precisar".
   const testarIA: SituacaoDoPasso = temDocumentos ? "se_precisar" : coletaFechada && !gerando ? "agora" : "depois";
   const gerar: SituacaoDoPasso = temFalhas
     ? "atencao"
-    : gerando
+    : gerando || (resumo?.emAndamento ?? 0) > 0
       ? "agora"
       : todosComDocumento
         ? "feito"

@@ -1,6 +1,7 @@
 "use client";
 
 import { assinaturaDoAnfitriao } from "@/lib/marca";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import type { PrognosticContent } from "@/types/database";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,12 @@ interface Props {
   pdfUrl: string | null;
   /** Evento sem PDF (lib/pdf/politica-do-pdf.ts): sem botao e sem consulta de status. */
   pdfDisponivel?: boolean;
+  /**
+   * Questionario do Marco Zero (v2): o topo ganha a identidade do formulario
+   * (CTO, Rodada 83). So apresentacao: o conteudo aprovado, o link e as regras de
+   * acesso nao mudam. Evento v1 fica como sempre foi.
+   */
+  marcoZero?: boolean;
 }
 
 export function PrognosticView({
@@ -31,6 +38,7 @@ export function PrognosticView({
   token,
   pdfUrl: initialPdfUrl,
   pdfDisponivel = true,
+  marcoZero = false,
 }: Props) {
   const [pdfUrl, setPdfUrl] = useState<string | null>(initialPdfUrl);
   const [generatingPdf, setGeneratingPdf] = useState(false);
@@ -110,8 +118,8 @@ export function PrognosticView({
 
   return (
     <main className="min-h-screen bg-background text-foreground relative">
-      {/* Logo top-left */}
-      <div className="fixed top-4 left-4 z-30">
+      {/* Logo top-left. Sobre o topo escuro do Marco Zero, claro. */}
+      <div className={`fixed top-4 left-4 z-30 ${marcoZero ? "invert" : ""}`}>
         <Logo size="md" />
       </div>
 
@@ -179,20 +187,57 @@ export function PrognosticView({
       )}
 
       {/* Hero */}
-      <CinematicHero
-        eyebrow="Mapa da Sua Próxima Construção"
-        title={firstName}
-        subtitle={`${eventName}${formattedDate ? ` · ${formattedDate}` : ""}`}
-      >
-        <div className="inline-flex items-center gap-3 px-5 py-2 rounded-full border border-foreground bg-background/50 mt-3">
-          <span className="text-[10px] uppercase tracking-[0.2em] font-display text-foreground">
-            Trilha
-          </span>
-          <span className="text-sm font-medium font-display text-foreground">
-            {content.trilha_recomendada}
-          </span>
-        </div>
-      </CinematicHero>
+      {marcoZero ? (
+        <section className="relative overflow-hidden bg-[#0D0C0A] text-white">
+          <div className="absolute inset-0 lg:left-auto lg:w-[55%]">
+            <Image
+              src="/marco-zero/capa-yuri.jpg"
+              alt=""
+              fill
+              preload
+              sizes="(min-width: 1024px) 55vw, 100vw"
+              className="object-cover object-[50%_30%] opacity-70 lg:opacity-100"
+            />
+            <div
+              aria-hidden="true"
+              className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(13,12,10,0.45)_0%,rgba(13,12,10,0.2)_30%,rgba(13,12,10,0.85)_70%,#0D0C0A_100%)] lg:bg-[linear-gradient(to_right,#0D0C0A_0%,rgba(13,12,10,0.6)_35%,rgba(13,12,10,0)_70%)]"
+            />
+          </div>
+          <div className="relative mx-auto flex min-h-[64dvh] max-w-5xl flex-col justify-end px-6 pb-12 pt-28 lg:min-h-[56vh] lg:pb-16">
+            <div className="max-w-xl space-y-4">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.22em] text-[#D9C291]">
+                Geração Preparada · Marco Zero
+              </p>
+              <h1 className="text-[36px] font-semibold leading-[1.05] tracking-[-0.02em] text-balance sm:text-[52px]">
+                Seu direcionamento individual
+              </h1>
+              <p className="text-[17px] leading-relaxed text-white/80">
+                Preparado para <span className="font-semibold text-white">{firstName}</span>
+                {formattedDate ? ` · ${formattedDate}` : ""}
+              </p>
+              <div className="inline-flex items-center gap-3 rounded-full border border-white/40 px-5 py-2">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-white/70">Trilha</span>
+                <span className="text-sm font-medium text-white">{content.trilha_recomendada}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : (
+        <CinematicHero
+          eyebrow="Mapa da Sua Próxima Construção"
+          title={firstName}
+          subtitle={`${eventName}${formattedDate ? ` · ${formattedDate}` : ""}`}
+        >
+          <div className="inline-flex items-center gap-3 px-5 py-2 rounded-full border border-foreground bg-background/50 mt-3">
+            <span className="text-[10px] uppercase tracking-[0.2em] font-display text-foreground">
+              Trilha
+            </span>
+            <span className="text-sm font-medium font-display text-foreground">
+              {content.trilha_recomendada}
+            </span>
+          </div>
+        </CinematicHero>
+      )}
 
       {/* Editorial content */}
       <article className="mx-auto max-w-2xl px-6 py-16 md:py-24 space-y-20 md:space-y-24">
@@ -419,7 +464,7 @@ export function PrognosticView({
         {/* Footer */}
         <footer className="pt-10 border-t border-border text-center space-y-2">
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-display">
-            Prognóstico Inicial de Direção
+            {marcoZero ? "Direcionamento individual · Marco Zero" : "Prognóstico Inicial de Direção"}
           </p>
           <p className="text-sm text-foreground font-display">por {assinaturaDoAnfitriao(hostName)}</p>
         </footer>

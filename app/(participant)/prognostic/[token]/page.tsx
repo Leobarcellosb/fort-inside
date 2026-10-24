@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notFound } from "next/navigation";
 import type { PrognosticContent, Prognostic, Event } from "@/types/database";
+import { ehMarcoZero } from "@/lib/cinematic-map";
 import { PrognosticView } from "@/components/features/prognostic/PrognosticView";
 import { DocumentoSuspensoView } from "@/components/features/prognostic/DocumentoSuspensoView";
 import { pdfPermitido } from "@/lib/pdf/politica-do-pdf";
@@ -79,6 +80,7 @@ export default async function PrognosticPage({ params }: Props) {
       token={token}
       pdfUrl={comPdf ? (prognostic.pdf_url ?? null) : null}
       pdfDisponivel={comPdf}
+      marcoZero={ehMarcoZero(event?.quiz_version)}
     />
   );
 }

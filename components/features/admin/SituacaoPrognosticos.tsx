@@ -288,7 +288,7 @@ interface Props {
    * para nao chamar de "Concluido" um processamento em que tudo falhou: o banco
    * fecha o evento quando nao sobra job pendente, falho ou nao (Rodada 69).
    */
-  aoResumir?: (r: { comDocumento: number; falharam: number }) => void;
+  aoResumir?: (r: { comDocumento: number; falharam: number; emAndamento: number }) => void;
   /**
    * Dentro de um passo do painel do Marco Zero: sem o titulo, sem o botao de
    * revisao (o passo seguinte ja leva la) e sem a explicacao longa. Os dados, as
@@ -360,9 +360,10 @@ export function SituacaoPrognosticos({
     ? situacoes.filter((s) => s.grupo === "atencao" && s.retentativa?.tipo === "fila")
     : [];
   const comDocumento = situacoes ? situacoes.filter((s) => s.documento !== null).length : 0;
+  const quantosEmAndamento = situacoes ? situacoes.filter((s) => s.grupo === "andamento").length : 0;
   useEffect(() => {
-    if (situacoes) aoResumir?.({ comDocumento, falharam: falhasDoLote.length });
-  }, [situacoes, comDocumento, falhasDoLote.length, aoResumir]);
+    if (situacoes) aoResumir?.({ comDocumento, falharam: falhasDoLote.length, emAndamento: quantosEmAndamento });
+  }, [situacoes, comDocumento, falhasDoLote.length, quantosEmAndamento, aoResumir]);
 
   const emAndamento = situacoes ? situacoes.some((s) => s.grupo === "andamento") : false;
   const ativoRef = useRef(false);

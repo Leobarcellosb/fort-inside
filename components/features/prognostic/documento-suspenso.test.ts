@@ -68,6 +68,10 @@ describe("sem jargão e sem alarme", () => {
     }
   });
 
+  it("sem travessão: texto que alguém lê não tem cara de IA (pedido do dono)", () => {
+    expect(TEXTO).not.toMatch(/[—–]/);
+  });
+
   it("o título fala do DOCUMENTO dele, não do sistema", () => {
     expect(TITULO_DOCUMENTO_SUSPENSO.toLowerCase()).toContain("seu documento");
   });

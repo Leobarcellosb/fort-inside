@@ -48,7 +48,7 @@ export const TITULO_DOCUMENTO_SUSPENSO = "Seu documento está fora do ar por enq
 export const PARAGRAFOS_DOCUMENTO_SUSPENSO: readonly string[] = [
   "Você não fez nada errado, e o link que você tem continua sendo o seu.",
   "Nós encontramos algo incorreto no texto deste documento e tiramos ele do ar por nossa conta. Ele fala da sua vida, e a gente não quer que você leia uma versão com algo errado nela.",
-  "A equipe já está preparando a versão corrigida. Quando ela estiver pronta, nós vamos avisar você, e este mesmo link volta a abrir o seu documento — você não vai precisar de um link novo.",
+  "A equipe já está preparando a versão corrigida. Quando ela estiver pronta, nós vamos avisar você, e este mesmo link volta a abrir o seu documento: você não vai precisar de um link novo.",
   "Nada do que você respondeu foi perdido.",
   "Se quiser conversar sobre isso antes, fale com quem conduziu o encontro com você.",
 ];

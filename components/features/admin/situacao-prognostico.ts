@@ -691,6 +691,11 @@ export function textoConfirmacao(s: SituacaoPessoa): { titulo: string; corpo: st
 export interface ResumoDosDocumentos {
   comDocumento: number;
   falharam: number;
+  /**
+   * Na fila ou gerando agora. Sem este numero, "gerar: feito" podia aparecer com
+   * a fila so momentaneamente vazia (CTO, Rodada 83). Ausente = nao se sabe.
+   */
+  emAndamento?: number;
 }
 
 /**
