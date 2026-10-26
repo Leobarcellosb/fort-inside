@@ -5,6 +5,7 @@ import type { PrognosticContent, Prognostic, Event } from "@/types/database";
 import { PrognosticView } from "@/components/features/prognostic/PrognosticView";
 import { DocumentoSuspensoView } from "@/components/features/prognostic/DocumentoSuspensoView";
 import { pdfPermitido } from "@/lib/pdf/politica-do-pdf";
+import { ehMarcoZero } from "@/lib/cinematic-map";
 
 // Sem o nome da pessoa no titulo: o link vai por WhatsApp, onde o titulo vira a
 // previa da conversa. E documento pessoal nao entra em buscador.
@@ -79,6 +80,7 @@ export default async function PrognosticPage({ params }: Props) {
       token={token}
       pdfUrl={comPdf ? (prognostic.pdf_url ?? null) : null}
       pdfDisponivel={comPdf}
+      marcoZero={ehMarcoZero(event?.quiz_version)}
     />
   );
 }

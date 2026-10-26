@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { CinematicHero } from "@/components/features/participant/CinematicHero";
 import { Logo } from "@/components/ui/Logo";
+import Image from "next/image";
 
 interface Props {
   participantName: string;
@@ -19,6 +20,8 @@ interface Props {
   pdfUrl: string | null;
   /** Evento sem PDF (lib/pdf/politica-do-pdf.ts): sem botao e sem consulta de status. */
   pdfDisponivel?: boolean;
+  /** Evento do Marco Zero: capa escura, a mesma linguagem da capa do formulario. */
+  marcoZero?: boolean;
 }
 
 export function PrognosticView({
@@ -31,6 +34,7 @@ export function PrognosticView({
   token,
   pdfUrl: initialPdfUrl,
   pdfDisponivel = true,
+  marcoZero = false,
 }: Props) {
   const [pdfUrl, setPdfUrl] = useState<string | null>(initialPdfUrl);
   const [generatingPdf, setGeneratingPdf] = useState(false);
@@ -71,6 +75,8 @@ export function PrognosticView({
         day: "numeric",
         month: "long",
         year: "numeric",
+        // Sem fuso, o navegador do jovem converte do UTC e o 24 vira 23.
+        timeZone: "America/Sao_Paulo",
       })
     : "";
 
@@ -110,10 +116,12 @@ export function PrognosticView({
 
   return (
     <main className="min-h-screen bg-background text-foreground relative">
-      {/* Logo top-left */}
+      {/* Logo top-left (na capa do Marco Zero ele vai dentro da capa) */}
+      {!marcoZero && (
       <div className="fixed top-4 left-4 z-30">
         <Logo size="md" />
       </div>
+      )}
 
       {/* Fixed PDF download — top-right */}
       {pdfDisponivel && (
@@ -178,6 +186,16 @@ export function PrognosticView({
       </div>
       )}
 
+      {marcoZero ? (
+        <CapaMarcoZero
+          primeiroNome={firstName}
+          eventName={eventName}
+          data={formattedDate}
+          trilha={content.trilha_recomendada}
+          assinatura={assinaturaDoAnfitriao(hostName)}
+        />
+      ) : (
+      <>
       {/* Hero */}
       <CinematicHero
         eyebrow="Mapa da Sua Próxima Construção"
@@ -193,6 +211,8 @@ export function PrognosticView({
           </span>
         </div>
       </CinematicHero>
+      </>
+      )}
 
       {/* Editorial content */}
       <article className="mx-auto max-w-2xl px-6 py-16 md:py-24 space-y-20 md:space-y-24">
@@ -419,11 +439,84 @@ export function PrognosticView({
         {/* Footer */}
         <footer className="pt-10 border-t border-border text-center space-y-2">
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-display">
-            Prognóstico Inicial de Direção
+            {marcoZero ? "Direcionamento individual" : "Prognóstico Inicial de Direção"}
           </p>
           <p className="text-sm text-foreground font-display">por {assinaturaDoAnfitriao(hostName)}</p>
         </footer>
       </article>
     </main>
+  );
+}
+
+// A CAPA DO MARCO ZERO. A mesma linguagem da capa do formulario, que o jovem ja
+// viu: fundo quase preto, a foto do encontro, rotulo dourado, nome grande. No
+// celular a foto fica no alto e o texto sobe por cima da parte de baixo dela; a
+// partir de lg a foto vai para a direita e o texto fica numa coluna a esquerda.
+function CapaMarcoZero(p: {
+  primeiroNome: string;
+  eventName: string;
+  data: string;
+  trilha: string;
+  assinatura: string;
+}) {
+  const i = p.eventName.indexOf(" · ");
+  const evento = i < 0 ? p.eventName : p.eventName.slice(0, i);
+  return (
+    <section className="relative overflow-hidden bg-[#0D0C0A] text-white">
+      <div className="absolute inset-x-0 top-0 h-[62svh] lg:bottom-0 lg:left-auto lg:h-auto lg:w-[52%]">
+        <Image
+          src="/marco-zero/capa-yuri.jpg"
+          alt=""
+          fill
+          priority
+          sizes="(min-width: 1024px) 52vw, 100vw"
+          className="object-cover object-[50%_30%]"
+        />
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(13,12,10,0.6)_0%,rgba(13,12,10,0)_24%,rgba(13,12,10,0)_40%,rgba(13,12,10,0.85)_74%,#0D0C0A_100%)] lg:bg-[linear-gradient(to_right,#0D0C0A_0%,rgba(13,12,10,0.5)_32%,rgba(13,12,10,0)_62%)]"
+        />
+      </div>
+
+      <div className="relative min-h-[92svh] lg:min-h-[86vh] flex flex-col">
+        <div className="w-full max-w-6xl mx-auto px-6 pt-6 flex items-center justify-between">
+          <Logo size="md" className="invert mix-blend-screen" />
+          {p.data && (
+            <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70">{p.data}</span>
+          )}
+        </div>
+
+        <div className="flex-1 min-h-[30svh] lg:min-h-0" />
+
+        <div className="w-full max-w-6xl mx-auto px-6 pb-12 lg:pb-20">
+          <div className="max-w-lg space-y-7">
+            <div className="space-y-4">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.24em] text-[#D9C291]">
+                Seu direcionamento individual
+              </p>
+              <h1 className="text-[56px] sm:text-[80px] leading-[0.95] font-semibold tracking-[-0.03em] text-balance">
+                {p.primeiroNome}
+              </h1>
+              <p className="text-[17px] leading-relaxed text-white/75">
+                Escrito a partir das suas respostas ao {evento}.
+              </p>
+            </div>
+
+            <div className="h-px w-16 bg-[#D9C291]" />
+
+            <div className="flex flex-wrap items-end gap-x-10 gap-y-5">
+              <div className="space-y-1">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/55">Trilha recomendada</p>
+                <p className="text-[26px] font-semibold tracking-[-0.01em] text-[#D9C291]">{p.trilha}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/55">Por</p>
+                <p className="text-[15px] text-white/85">{p.assinatura}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
