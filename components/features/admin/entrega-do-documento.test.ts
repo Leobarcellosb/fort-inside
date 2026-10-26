@@ -36,10 +36,10 @@ describe("o texto INSTRUI: diz o caminho, não só que não dá", () => {
   it("nomeia a ação, a tela e o passo que libera a entrega", () => {
     // Estes três são o caminho. Se alguém reescrever a frase para "entrega
     // bloqueada" e nada mais, este teste cai -- de propósito.
-    expect(TEXTO_SEM_REVISAO_SALVA).toContain("Editar");
-    expect(TEXTO_SEM_REVISAO_SALVA).toContain("revise");
+    expect(TEXTO_SEM_REVISAO_SALVA).toContain("Revisar");
+    expect(TEXTO_SEM_REVISAO_SALVA).toContain("leia");
     expect(TEXTO_SEM_REVISAO_SALVA).toContain("salve");
-    expect(TEXTO_SEM_REVISAO_SALVA).toContain("entrega é liberada");
+    expect(TEXTO_SEM_REVISAO_SALVA).toContain("envio é liberado");
   });
 
   it("é uma frase de verdade, não um rótulo de três palavras", () => {

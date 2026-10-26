@@ -204,9 +204,9 @@ const ROTULO_ESTADO_NO_PULO: Record<string, string> = {
 export function explicarErro(codigo: string | null, textoOriginal: string | null): string {
   switch (codigo) {
     case "http_404":
-      return "Não encontramos este participante ou as respostas dele para gerar o prognóstico.";
+      return "Não encontramos este participante ou as respostas dele para gerar o direcionamento.";
     case "http_400":
-      return "As respostas do quiz desta pessoa estão incompletas, então não dá para gerar o prognóstico.";
+      return "As respostas do questionário desta pessoa estão incompletas, então não dá para gerar o direcionamento.";
     case "http_502":
       return "A inteligência artificial recusou ou não respondeu.";
     case "http_500":
@@ -269,7 +269,7 @@ function aPartirDeJobs(linhas: LinhaJob[]): Processamento {
         ...base,
         resultado: "gerado",
         rotulo: ROTULO_PROCESSAMENTO.gerado,
-        motivo: "O prognóstico foi gerado nesta rodada.",
+        motivo: "O direcionamento foi gerado nesta rodada.",
         erro: null,
         detalheTecnico: null,
       };
@@ -351,7 +351,7 @@ function aPartirDoLote(l: ResultadoLote): Processamento {
       ...base,
       resultado: "gerado",
       rotulo: ROTULO_PROCESSAMENTO.gerado,
-      motivo: "O prognóstico foi gerado nesta rodada.",
+      motivo: "O direcionamento foi gerado nesta rodada.",
       erro: null,
       detalheTecnico: null,
     };
@@ -508,7 +508,7 @@ export function montarSituacao(entrada: {
         ...processamento,
         rotulo: ROTULO_SEM_REGISTRO,
         motivo:
-          "O prognóstico existe, mas veio de um processamento que não guardou o registro por pessoa. O estado do documento ao lado é o que vale.",
+          "O direcionamento existe, mas veio de um processamento que não guardou o registro por pessoa. O estado do documento ao lado é o que vale.",
       };
     }
 
@@ -533,8 +533,8 @@ export function montarSituacao(entrada: {
         grupo = "prontos";
         aviso =
           r === "falhou"
-            ? "A última tentativa falhou, mas o prognóstico já existia e foi mantido como está."
-            : "A última tentativa foi cancelada, mas o prognóstico já existia e foi mantido como está.";
+            ? "A última tentativa falhou, mas o direcionamento já existia e foi mantido como está."
+            : "A última tentativa foi cancelada, mas o direcionamento já existia e foi mantido como está.";
       } else {
         grupo = "atencao";
       }
@@ -618,7 +618,7 @@ export const TEXTO_GRUPO: Record<GrupoId, TextoGrupo> = {
       "O sistema ainda não marca qual versão é a atual, então não mostramos um estado que poderia estar errado. Confira na tela de revisão.",
   },
   atencao: {
-    titulo: (n) => (n === 1 ? "1 pessoa sem prognóstico" : `${n} pessoas sem prognóstico`),
+    titulo: (n) => (n === 1 ? "1 pessoa sem direcionamento" : `${n} pessoas sem direcionamento`),
     explicacao:
       "A geração falhou e o documento ainda não existe. É o único grupo que precisa de ação.",
   },
@@ -628,7 +628,7 @@ export const TEXTO_GRUPO: Record<GrupoId, TextoGrupo> = {
   },
   aguardando: {
     titulo: (n) => (n === 1 ? "1 pessoa aguardando processamento" : `${n} pessoas aguardando processamento`),
-    explicacao: "Concluíram o quiz, mas o prognóstico ainda não foi gerado.",
+    explicacao: "Concluíram o questionário, mas o direcionamento ainda não foi gerado.",
   },
   pulados: {
     titulo: (n) => (n === 1 ? "1 pessoa preservada (pulada)" : `${n} pessoas preservadas (puladas)`),
@@ -636,7 +636,7 @@ export const TEXTO_GRUPO: Record<GrupoId, TextoGrupo> = {
       "O documento já estava em revisão, revisado ou entregue, então o sistema não mexeu nele de propósito. Isto não é erro.",
   },
   prontos: {
-    titulo: (n) => (n === 1 ? "1 pessoa com prognóstico pronto" : `${n} pessoas com prognóstico pronto`),
+    titulo: (n) => (n === 1 ? "1 pessoa com direcionamento pronto" : `${n} pessoas com direcionamento pronto`),
     explicacao: "O documento existe e está seguro.",
   },
   quiz_aberto: {
@@ -650,7 +650,7 @@ export function resumoDaTurma(situacoes: SituacaoPessoa[]): string {
   const c = contarPorGrupo(situacoes);
   const concluidos = situacoes.length - c.quiz_aberto;
   const comDocumento = c.prontos + c.pulados;
-  const partes = [`${comDocumento} de ${concluidos} com prognóstico`];
+  const partes = [`${comDocumento} de ${concluidos} com direcionamento`];
   if (c.indeterminado > 0) partes.push(`${c.indeterminado} com mais de uma versão`);
   if (c.andamento > 0) partes.push(`${c.andamento} em andamento`);
   if (c.aguardando > 0) partes.push(`${c.aguardando} aguardando`);
@@ -669,7 +669,7 @@ export function textoConfirmacao(s: SituacaoPessoa): { titulo: string; corpo: st
   if (s.retentativa.tipo === "fila") {
     const feitas = s.processamento.tentativas;
     return {
-      titulo: `Tentar gerar de novo o prognóstico de ${s.nome}?`,
+      titulo: `Tentar gerar de novo o direcionamento de ${s.nome}?`,
       corpo:
         `${feitas ? `Já houve ${feitas} ${feitas === 1 ? "tentativa" : "tentativas"} sem sucesso. ` : ""}` +
         `Vamos recolocar esta pessoa na fila com tentativas novas e dar andamento à fila, o que também atende quem já estava esperando. Leva cerca de 1 minuto por pessoa e usa a inteligência artificial. ${protecao}`,
@@ -677,8 +677,8 @@ export function textoConfirmacao(s: SituacaoPessoa): { titulo: string; corpo: st
     };
   }
   return {
-    titulo: `Gerar o prognóstico de ${s.nome} agora?`,
-    corpo: `Vamos gerar só o prognóstico desta pessoa. Leva cerca de 1 minuto e usa a inteligência artificial. ${protecao}`,
+    titulo: `Gerar o direcionamento de ${s.nome} agora?`,
+    corpo: `Vamos gerar só o direcionamento desta pessoa. Leva cerca de 1 minuto e usa a inteligência artificial. ${protecao}`,
     botao: "Gerar agora",
   };
 }
@@ -691,6 +691,17 @@ export function textoConfirmacao(s: SituacaoPessoa): { titulo: string; corpo: st
 export interface ResumoDosDocumentos {
   comDocumento: number;
   falharam: number;
+  /**
+   * Na fila ou gerando agora. Sem este numero, "gerar: feito" podia aparecer com
+   * a fila so momentaneamente vazia (CTO, Rodada 83). Ausente = nao se sabe.
+   */
+  emAndamento?: number;
+  /**
+   * Em "Atenção" por qualquer motivo, ou com versao indeterminada. `falharam` so
+   * conta o que a fila sabe reprocessar; este conta tudo que impede dizer que
+   * gerar terminou (CTO, Rodada 84). Ausente = nao se sabe.
+   */
+  pedemAtencao?: number;
 }
 
 /**

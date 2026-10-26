@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
  * Se a chave, o saldo ou o modelo falharem, a equipe descobre aqui, e nao
  * depois de 50 tentativas. Pede confirmacao porque a chamada custa (pouco).
  */
-export function TesteDaIACard() {
+/** `embutido`: dentro de um passo do painel, sem titulo e sem caixa propria (o passo ja diz o que e). */
+export function TesteDaIACard({ embutido = false }: { embutido?: boolean } = {}) {
   const [estado, setEstado] = useState<"parado" | "confirmando" | "testando">("parado");
   const [resultado, setResultado] = useState<{ ok: boolean; texto: string } | null>(null);
 
@@ -31,12 +32,16 @@ export function TesteDaIACard() {
   }
 
   return (
-    <section className="rounded-md border border-border bg-card/50 px-4 py-3 space-y-2">
-      <h2 className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Teste da IA antes de processar</h2>
-      <p className="text-xs leading-relaxed text-foreground/80">
-        Faz uma chamada real e mínima à IA, com dados fictícios, pela mesma configuração que vai gerar os
-        documentos. Use antes de apertar Processar. Custa centavos e não grava nada.
-      </p>
+    <section className={embutido ? "space-y-2" : "rounded-md border border-border bg-card/50 px-4 py-3 space-y-2"}>
+      {!embutido && (
+        <>
+          <h2 className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Teste da IA antes de processar</h2>
+          <p className="text-xs leading-relaxed text-foreground/80">
+            Faz uma chamada real e mínima à IA, com dados fictícios, pela mesma configuração que vai gerar os
+            documentos. Use antes de apertar Processar. Custa centavos e não grava nada.
+          </p>
+        </>
+      )}
       {estado === "confirmando" ? (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-foreground">Fazer uma chamada real agora?</span>

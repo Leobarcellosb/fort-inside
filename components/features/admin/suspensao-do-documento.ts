@@ -142,7 +142,7 @@ export function situacaoDaSuspensao(documento: { status?: string | null }): Situ
  * mesmo com palavras diferentes.
  */
 export const TEXTO_CAMINHO_DA_RETIFICACAO =
-  "Fora do ar: o participante não está lendo este documento. Para corrigir, abra em Editar, ajuste o texto e salve — salvar é a nova aprovação. Depois disso a entrega é liberada e o link que ele já tem volta a funcionar. A versão anterior não é reaberta: ela fica no histórico, com a data em que ele a leu.";
+  "Fora do ar: o participante não está lendo este documento. Para corrigir, toque em Revisar, ajuste o texto e salve: salvar é a nova aprovação. Depois disso o envio é liberado e o link que ele já tem volta a funcionar. A versão anterior não é reaberta: ela fica no histórico, com a data em que ele a leu.";
 
 /**
  * Id do parágrafo que explica por que "Tirar do ar" está desligado, para ligar o
