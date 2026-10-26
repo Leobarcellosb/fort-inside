@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   linkDoDocumento,
   linkDoWhatsApp,
+  numeroDoWhatsApp,
+  telefoneLegivel,
   mensagemDeEnvio,
   origemDoLink,
   primeiroNomeDoDestinatario,
@@ -36,6 +38,28 @@ describe("envio do documento", () => {
     expect(decodeURIComponent(w.slice("https://wa.me/?text=".length))).toBe(
       "Ana, seu link: https://x/p?a=1&b=2",
     );
+  });
+
+  it("com numero, o WhatsApp abre direto na conversa", () => {
+    const w = linkDoWhatsApp("Ana, seu link", "5511987654321");
+    expect(w.startsWith("https://wa.me/5511987654321?text=")).toBe(true);
+    expect(linkDoWhatsApp("x", null).startsWith("https://wa.me/?text=")).toBe(true);
+  });
+
+  it("o telefone do formulario vira numero do WhatsApp so quando tem formato brasileiro", () => {
+    expect(numeroDoWhatsApp("(11) 98765-4321")).toBe("5511987654321");
+    expect(numeroDoWhatsApp("011 98765 4321")).toBe("5511987654321");
+    expect(numeroDoWhatsApp("+55 11 98765-4321")).toBe("5511987654321");
+    expect(numeroDoWhatsApp("(48) 3222-1100")).toBe("554832221100");
+    expect(numeroDoWhatsApp("98765-4321")).toBeNull();
+    expect(numeroDoWhatsApp("+1 415 555 0100")).toBeNull();
+    expect(numeroDoWhatsApp("")).toBeNull();
+    expect(numeroDoWhatsApp(null)).toBeNull();
+  });
+
+  it("o numero aparece legivel para o operador conferir", () => {
+    expect(telefoneLegivel("5511987654321")).toBe("+55 (11) 98765-4321");
+    expect(telefoneLegivel("554832221100")).toBe("+55 (48) 3222-1100");
   });
 
   it("a conferencia nomeia a pessoa inteira", () => {

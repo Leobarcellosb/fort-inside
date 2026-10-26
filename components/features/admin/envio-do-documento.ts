@@ -57,12 +57,37 @@ export function mensagemDeEnvio(nomeCompleto: string, link: string): string {
 }
 
 /**
- * Link do WhatsApp com a mensagem pronta e SEM numero: o operador escolhe a
- * conversa. O numero nao entra de proposito -- quem confere o destinatario e a
- * pessoa, no contato oficial, nao um campo autodeclarado do formulario.
+ * O telefone que o jovem deixou no formulario, no formato do wa.me: so digitos,
+ * com o 55 do Brasil. Aceita "(11) 98765-4321", "011 98765 4321" e "+55 11...".
+ * Null quando o numero nao tem cara de celular ou fixo brasileiro: nesse caso o
+ * botao abre o WhatsApp sem destino, como antes, e o operador escolhe a conversa.
  */
-export function linkDoWhatsApp(mensagem: string): string {
-  return `https://wa.me/?text=${encodeURIComponent(mensagem)}`;
+export function numeroDoWhatsApp(telefone: string | null | undefined): string | null {
+  const bruto = (telefone ?? "").trim();
+  // Codigo de outro pais escrito por extenso: nao e numero brasileiro.
+  if (bruto.startsWith("+") && !bruto.replace(/\s/g, "").startsWith("+55")) return null;
+  const digitos = bruto.replace(/\D/g, "").replace(/^0+/, "");
+  if (digitos.length === 10 || digitos.length === 11) return `55${digitos}`;
+  if ((digitos.length === 12 || digitos.length === 13) && digitos.startsWith("55")) return digitos;
+  return null;
+}
+
+/** "5511987654321" -> "+55 (11) 98765-4321", para o operador conferir na tela. */
+export function telefoneLegivel(numero: string): string {
+  const ddd = numero.slice(2, 4);
+  const resto = numero.slice(4);
+  const corte = resto.length - 4;
+  return `+55 (${ddd}) ${resto.slice(0, corte)}-${resto.slice(corte)}`;
+}
+
+/**
+ * Link do WhatsApp com a mensagem pronta. Com numero, abre direto a conversa
+ * daquele telefone (pedido da Malu, 26/10: procurar contato por contato tomava
+ * o envio inteiro). O numero e autodeclarado no formulario, por isso ele
+ * aparece na tela e a conferencia do contato oficial continua obrigatoria.
+ */
+export function linkDoWhatsApp(mensagem: string, numero?: string | null): string {
+  return `https://wa.me/${numero ?? ""}?text=${encodeURIComponent(mensagem)}`;
 }
 
 /** A frase que o operador confirma. Uma por documento, com o nome completo. */

@@ -7,6 +7,8 @@ import {
   linkDoDocumento,
   linkDoWhatsApp,
   mensagemDeEnvio,
+  numeroDoWhatsApp,
+  telefoneLegivel,
   textoDaConferencia,
 } from "./envio-do-documento";
 
@@ -15,6 +17,8 @@ interface Props {
   shareToken: string;
   participantName: string;
   participantEmail: string;
+  /** Telefone deixado no formulario (opcional). Com ele, o WhatsApp abre na conversa. */
+  participantPhone?: string | null;
   /** Ja disponibilizado: "Enviar de novo" nao libera nada, so mostra a mensagem. */
   jaEntregue: boolean;
   /** Disponibiliza o documento (status `delivered`). Devolve se o servidor confirmou. */
@@ -46,6 +50,7 @@ export function EnviarDocumentoDialog({
   shareToken,
   participantName,
   participantEmail,
+  participantPhone,
   jaEntregue: jaEntregueAoAbrir,
   onLiberar,
   onClose,
@@ -58,6 +63,7 @@ export function EnviarDocumentoDialog({
 
   const link = linkDoDocumento(window.location.origin, shareToken);
   const mensagem = mensagemDeEnvio(participantName, link);
+  const numero = numeroDoWhatsApp(participantPhone);
   const idDaRazao = `envio-razao-${prognosticId}`;
   const idDoTitulo = `envio-titulo-${prognosticId}`;
   const ocupado = fase === "liberando";
@@ -108,6 +114,11 @@ export function EnviarDocumentoDialog({
           <div className="rounded-md border border-border bg-muted/30 px-3 py-2.5 space-y-1">
             <p className="text-base font-semibold text-foreground">{participantName}</p>
             <p className="text-xs text-muted-foreground">{participantEmail}</p>
+            <p className="text-xs text-foreground">
+              {numero
+                ? `WhatsApp informado no formulário: ${telefoneLegivel(numero)}`
+                : "Sem telefone no formulário: escolha a conversa no WhatsApp."}
+            </p>
             <p className="text-xs leading-relaxed text-foreground/80">
               Envie só pelo contato oficial da organização (lista de convidados ou conversa individual
               já conhecida). Nunca pelo grupo do evento.
@@ -172,12 +183,12 @@ export function EnviarDocumentoDialog({
                 Copiar mensagem
               </Button>
               <a
-                href={linkDoWhatsApp(mensagem)}
+                href={linkDoWhatsApp(mensagem, numero)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center h-8 px-3 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90"
               >
-                Abrir no WhatsApp
+                {numero ? "Abrir a conversa no WhatsApp" : "Abrir no WhatsApp"}
               </a>
             </>
           ) : (

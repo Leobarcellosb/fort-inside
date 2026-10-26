@@ -26,6 +26,7 @@ interface Participant {
   id: string;
   full_name: string;
   email: string;
+  phone?: string | null;
   completed_at: string | null;
 }
 
@@ -439,6 +440,7 @@ export function PrognosticReviewGrid({ eventId, pdfDisponivel, participants, pro
         shareToken={sendingProg.public_share_token}
         participantName={sendingParticipant.full_name}
         participantEmail={sendingParticipant.email}
+        participantPhone={sendingParticipant.phone}
         jaEntregue={sendingProg.status === "delivered"}
         onLiberar={() => liberar(sendingProg.id)}
         onClose={() => setSendingId(null)}
